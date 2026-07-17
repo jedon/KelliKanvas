@@ -87,11 +87,19 @@ class DlnaSourceAdapter(
         limit: Int,
     ): Page<SourceEntry> = normalize("list") {
         val objectId = decodeStableId(folder.objectId)
-        val lease = acquireCursor(cursor)
+        val lease = acquireCursor(cursor, objectId)
         var committed = false
         try {
             val start = lease.state.startingIndex
-            val page = backend.browse(objectId, start, limit)
+            val page =
+                try {
+                    backend.browse(objectId, start, limit)
+                } catch (failure: DlnaIndexBeyondRangeException) {
+                    if (!lease.isUnknownTotalContinuationFor(objectId)) throw failure
+                    val terminal = Page<SourceEntry>(items = emptyList(), nextCursor = transitionCursor(lease, null))
+                    committed = true
+                    return@normalize terminal
+                }
             val nextIndex = page.validateForRequest(start, limit)
             val pageIds = page.objects.map(DlnaObject::stableId)
             if (pageIds.any(lease.state.seenObjectIds::contains)) {
@@ -111,7 +119,16 @@ class DlnaSourceAdapter(
             val nextCursor =
                 transitionCursor(
                     lease,
-                    if (hasNext) CursorState(nextIndex, seenObjectIds) else null,
+                    if (hasNext) {
+                        CursorState(
+                            startingIndex = nextIndex,
+                            seenObjectIds = seenObjectIds,
+                            objectId = objectId,
+                            unknownTotal = page.totalMatches == 0,
+                        )
+                    } else {
+                        null
+                    },
                 )
             committed = true
             Page(items = entries, nextCursor = nextCursor)
@@ -158,12 +175,24 @@ class DlnaSourceAdapter(
         return id.value.substring(prefix.length)
     }
 
-    private fun acquireCursor(cursor: PageCursor?): CursorLease {
-        if (cursor == null) return CursorLease(null, CursorState(0, emptySet()), null)
+    private fun acquireCursor(
+        cursor: PageCursor?,
+        objectId: String,
+    ): CursorLease {
+        if (cursor == null) {
+            return CursorLease(
+                token = null,
+                state = CursorState(0, emptySet(), objectId, unknownTotal = false),
+                record = null,
+            )
+        }
         return synchronized(cursorStates) {
             val record =
                 cursorStates[cursor.value]
                     ?: throw DlnaProtocolException("Invalid or repeated DLNA page cursor")
+            if (record.state.objectId != objectId) {
+                throw DlnaProtocolException("DLNA page cursor belongs to a different object")
+            }
             if (record.inUse) {
                 throw DlnaProtocolException("DLNA page cursor is already in use")
             }
@@ -264,6 +293,8 @@ class DlnaSourceAdapter(
     private data class CursorState(
         val startingIndex: Int,
         val seenObjectIds: Set<String>,
+        val objectId: String,
+        val unknownTotal: Boolean,
     )
 
     private class CursorRecord(
@@ -275,7 +306,13 @@ class DlnaSourceAdapter(
         val token: String?,
         val state: CursorState,
         val record: CursorRecord?,
-    )
+    ) {
+        fun isUnknownTotalContinuationFor(objectId: String): Boolean = token != null &&
+            state.unknownTotal &&
+            state.startingIndex > 0 &&
+            state.seenObjectIds.isNotEmpty() &&
+            state.objectId == objectId
+    }
 }
 
 private class NormalizingDlnaPhotoByteStream(

@@ -18,7 +18,9 @@ internal const val XML_MAX_DEPTH = 32
 internal const val XML_MAX_TEXT_OR_ATTRIBUTE = 4 * 1024
 internal const val DIDL_MAX_OBJECTS = 500
 
-class DlnaProtocolException(message: String, cause: Throwable? = null) : IllegalArgumentException(message, cause)
+open class DlnaProtocolException(message: String, cause: Throwable? = null) : IllegalArgumentException(message, cause)
+
+class DlnaIndexBeyondRangeException : DlnaProtocolException("ContentDirectory index beyond available entries")
 
 data class DlnaDeviceDescription(
     val udn: String,
@@ -295,8 +297,9 @@ class ContentDirectoryClient(
                 if (response.code in setOf(301, 302, 303, 307, 308)) {
                     throw DlnaProtocolException("ContentDirectory redirect rejected")
                 }
-                if (parseUpnpErrorCode(bytes) in setOf(701, 714)) {
-                    throw DlnaObjectMissingException()
+                when (parseUpnpErrorCode(bytes)) {
+                    701, 714 -> throw DlnaObjectMissingException()
+                    720 -> throw DlnaIndexBeyondRangeException()
                 }
                 throw DlnaProtocolException("ContentDirectory HTTP ${response.code}")
             }

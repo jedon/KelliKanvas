@@ -180,6 +180,59 @@ class DlnaXmlTest {
     }
 
     @Test
+    fun `namespaced whitespace UPnP 720 fault maps structurally`() = runTest {
+        MockWebServer().use { server ->
+            server.enqueue(
+                MockResponse()
+                    .setResponseCode(500)
+                    .setBody(
+                        """
+                        <s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/">
+                          <s:Body><s:Fault><detail>
+                            <u:UPnPError xmlns:u="urn:schemas-upnp-org:control-1-0">
+                              <u:errorCode>
+                                720
+                              </u:errorCode>
+                            </u:UPnPError>
+                          </detail></s:Fault></s:Body>
+                        </s:Envelope>
+                        """.trimIndent(),
+                    ),
+            )
+            val client = ContentDirectoryClient(OkHttpClient(), server.url("/control").toUri(), "uuid:qnap", 1)
+
+            val failure = runCatching { client.browseDirectChildren("0", 4, 2) }.exceptionOrNull()
+
+            assertThat(failure).isInstanceOf(DlnaIndexBeyondRangeException::class.java)
+        }
+    }
+
+    @Test
+    fun `unscoped 720 element is not interpreted as UPnP terminal fault`() = runTest {
+        MockWebServer().use { server ->
+            server.enqueue(
+                MockResponse()
+                    .setResponseCode(500)
+                    .setBody(
+                        """
+                        <s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/">
+                          <s:Body><s:Fault><detail>
+                            <vendor:errorCode xmlns:vendor="urn:vendor">720</vendor:errorCode>
+                          </detail></s:Fault></s:Body>
+                        </s:Envelope>
+                        """.trimIndent(),
+                    ),
+            )
+            val client = ContentDirectoryClient(OkHttpClient(), server.url("/control").toUri(), "uuid:qnap", 1)
+
+            val failure = runCatching { client.browseDirectChildren("0", 4, 2) }.exceptionOrNull()
+
+            assertThat(failure).isInstanceOf(DlnaProtocolException::class.java)
+            assertThat(failure).isNotInstanceOf(DlnaIndexBeyondRangeException::class.java)
+        }
+    }
+
+    @Test
     fun `negative resource dimensions and lengths are filtered`() {
         val objects =
             DidlLiteParser().parse(

@@ -42,6 +42,64 @@ class DlnaPagingHardeningTest {
     }
 
     @Test
+    fun `unknown total continuation treats UPnP 720 as terminal`() = runTest {
+        val adapter =
+            adapter { _, start, _ ->
+                if (start == 0) {
+                    page(listOf(folder("first")), returned = 1, total = 0)
+                } else {
+                    throw DlnaIndexBeyondRangeException()
+                }
+            }
+
+        val first = adapter.listChildren(root, null, 2)
+        val terminal = adapter.listChildren(root, first.nextCursor, 2)
+
+        assertThat(terminal.items).isEmpty()
+        assertThat(terminal.nextCursor).isNull()
+    }
+
+    @Test
+    fun `initial and known total UPnP 720 remain protocol failures`() = runTest {
+        val initial = adapter { _, _, _ -> throw DlnaIndexBeyondRangeException() }
+        assertProtocolFailure { initial.listChildren(root, null, 2) }
+
+        val known =
+            adapter { _, start, _ ->
+                if (start == 0) {
+                    page(listOf(folder("first")), returned = 1, total = 2)
+                } else {
+                    throw DlnaIndexBeyondRangeException()
+                }
+            }
+        val first = known.listChildren(root, null, 1)
+
+        assertProtocolFailure { known.listChildren(root, first.nextCursor, 1) }
+    }
+
+    @Test
+    fun `unknown total terminal fault is scoped to cursor object`() = runTest {
+        var browseCalls = 0
+        val adapter =
+            adapter { _, start, _ ->
+                browseCalls++
+                if (start == 0) {
+                    page(listOf(folder("first")), returned = 1, total = 0)
+                } else {
+                    throw DlnaIndexBeyondRangeException()
+                }
+            }
+        val first = adapter.listChildren(root, null, 2)
+        val other = FolderRef(profileId, ProviderObjectId("$udn\u0000other"))
+
+        assertProtocolFailure { adapter.listChildren(other, first.nextCursor, 2) }
+        assertThat(browseCalls).isEqualTo(1)
+        val terminal = adapter.listChildren(root, first.nextCursor, 2)
+
+        assertThat(terminal.nextCursor).isNull()
+    }
+
+    @Test
     fun `paging rejects inconsistent counts duplicates and no progress`() = runTest {
         val inconsistent = adapter { _, _, _ -> page(listOf(folder("a")), returned = 2, total = 2) }
         val duplicates = adapter { _, _, _ -> page(listOf(folder("a"), folder("a")), returned = 2, total = 2) }
