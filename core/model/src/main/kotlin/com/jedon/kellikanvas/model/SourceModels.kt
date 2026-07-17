@@ -1,5 +1,7 @@
 package com.jedon.kellikanvas.model
 
+import java.util.Collections
+
 enum class SourceKind {
     DLNA,
     SMB,
@@ -71,10 +73,23 @@ sealed interface SourceEntry {
     }
 }
 
-data class Page<T>(
-    val items: List<T>,
+class Page<T>(
+    items: List<T>,
     val nextCursor: PageCursor? = null,
-)
+) {
+    val items: List<T> = Collections.unmodifiableList(ArrayList(items))
+
+    override fun equals(other: Any?): Boolean = this === other ||
+        (
+            other is Page<*> &&
+                items == other.items &&
+                nextCursor == other.nextCursor
+            )
+
+    override fun hashCode(): Int = 31 * items.hashCode() + (nextCursor?.hashCode() ?: 0)
+
+    override fun toString(): String = "Page(items=$items, nextCursor=$nextCursor)"
+}
 
 data class PhotoMetadata(
     val asset: AssetRef,

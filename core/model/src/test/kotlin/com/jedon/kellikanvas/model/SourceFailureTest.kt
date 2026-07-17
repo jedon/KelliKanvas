@@ -83,6 +83,18 @@ class SourceFailureTest {
                 "credential abc",
                 "authorization abc",
                 "secret",
+                "access_token abc",
+                "access-token abc",
+                "access token abc",
+                "client_secret abc",
+                "client-secret abc",
+                "client secret abc",
+                "password_hash abc",
+                "password-hash abc",
+                "password hash abc",
+                "api_key abc",
+                "api-key abc",
+                "bearer credentials",
             )
 
         failureFactories.forEach { createFailure ->

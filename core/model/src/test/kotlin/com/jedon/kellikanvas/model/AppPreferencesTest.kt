@@ -75,4 +75,23 @@ class AppPreferencesTest {
             AppPreferences(blurDimAmount = 1.01)
         }
     }
+
+    @Test
+    fun `valid boundary values are accepted`() {
+        val minimumSlide =
+            AppPreferences(
+                slideDurationMillis = 1_000,
+                transitionDurationMillis = 999,
+            )
+
+        assertThat(minimumSlide.slideDurationMillis).isEqualTo(1_000)
+        assertThat(minimumSlide.transitionDurationMillis).isEqualTo(999)
+        assertThat(AppPreferences(transitionDurationMillis = 0).transitionDurationMillis)
+            .isEqualTo(0)
+        assertThat(AppPreferences(blurDimAmount = 0.0).blurDimAmount).isEqualTo(0.0)
+        assertThat(AppPreferences(blurDimAmount = 1.0).blurDimAmount).isEqualTo(1.0)
+        assertThat(AppPreferences(portraitLookAhead = 1).portraitLookAhead).isEqualTo(1)
+        assertThat(AppPreferences(portraitLookAhead = 4).portraitLookAhead).isEqualTo(4)
+        assertThat(AppPreferences(pairGutterDp = 0).pairGutterDp).isEqualTo(0)
+    }
 }

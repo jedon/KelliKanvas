@@ -2,7 +2,11 @@ package com.jedon.kellikanvas.model
 
 private val uriPattern = Regex("""(?i)\b[a-z][a-z0-9+.-]*://\S*""")
 private val sensitiveDiagnosticTermPattern =
-    Regex("""(?i)\b(?:bearer|password|tokens?|credentials?|authorization|secrets?)\b|\bapi[\s_-]*key\b""")
+    Regex(
+        """(?i)(?<![a-z0-9])""" +
+            """(?:bearer|password|tokens?|credentials?|authorization|secrets?|api[\s_-]*key)""" +
+            """(?![a-z0-9])""",
+    )
 
 @JvmInline
 value class SourceProfileId(

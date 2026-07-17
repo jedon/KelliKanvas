@@ -20,6 +20,12 @@ import org.junit.Test
 class SourceAdapterTest {
     private val profileId = SourceProfileId("profile")
     private val folder = FolderRef(profileId, ProviderObjectId("folder"))
+    private val asset =
+        AssetRef(
+            profileId = profileId,
+            objectId = ProviderObjectId("asset"),
+            mimeType = "image/jpeg",
+        )
 
     @Test
     fun `adapter exposes identity capabilities and core source operations`() = runTest {
@@ -31,6 +37,11 @@ class SourceAdapterTest {
         assertThat(adapter.probe().available).isTrue()
         assertThat(adapter.listChildren(folder, null).items).isEmpty()
         assertThat(adapter.recordedLimit).isEqualTo(100)
+        assertThat(adapter.metadata(asset).asset).isEqualTo(asset)
+        adapter.open(asset).close()
+        assertThat(adapter.listChildrenCalls).isEqualTo(1)
+        assertThat(adapter.metadataCalls).isEqualTo(1)
+        assertThat(adapter.openCalls).isEqualTo(1)
     }
 
     @Test
@@ -43,6 +54,27 @@ class SourceAdapterTest {
         assertThat(adapter.recordedLimit).isNull()
         assertThat(adapter.listChildren(folder, PageCursor("next"), 1).items).isEmpty()
         assertThat(adapter.listChildren(folder, null, 500).items).isEmpty()
+    }
+
+    @Test
+    fun `adapter rejects cross-profile references before delegates run`() = runTest {
+        val otherProfile = SourceProfileId("other-profile")
+        val otherFolder = FolderRef(otherProfile, ProviderObjectId("folder"))
+        val otherAsset =
+            AssetRef(
+                profileId = otherProfile,
+                objectId = ProviderObjectId("asset"),
+                mimeType = "image/jpeg",
+            )
+        val adapter = RecordingAdapter()
+
+        assertProfileMismatch { adapter.listChildren(otherFolder, null) }
+        assertProfileMismatch { adapter.metadata(otherAsset) }
+        assertProfileMismatch { adapter.open(otherAsset) }
+
+        assertThat(adapter.listChildrenCalls).isEqualTo(0)
+        assertThat(adapter.metadataCalls).isEqualTo(0)
+        assertThat(adapter.openCalls).isEqualTo(0)
     }
 
     @Test
@@ -70,6 +102,15 @@ class SourceAdapterTest {
         }
     }
 
+    private suspend fun assertProfileMismatch(block: suspend () -> Unit) {
+        try {
+            block()
+            fail("Expected cross-profile reference to be rejected")
+        } catch (_: IllegalArgumentException) {
+            // Expected contract violation.
+        }
+    }
+
     private inner class RecordingAdapter(
         private val pageFailure: Throwable? = null,
     ) : SourceAdapter() {
@@ -77,6 +118,9 @@ class SourceAdapterTest {
         override val kind = SourceKind.SMB
         override val capabilities = SourceCapabilities(supportsPaging = true)
         var recordedLimit: Int? = null
+        var listChildrenCalls = 0
+        var metadataCalls = 0
+        var openCalls = 0
 
         override suspend fun probe() = SourceStatus(available = true, summary = "Connected")
 
@@ -85,13 +129,29 @@ class SourceAdapterTest {
             cursor: PageCursor?,
             limit: Int,
         ): Page<SourceEntry> {
+            listChildrenCalls += 1
             pageFailure?.let { throw it }
             recordedLimit = limit
             return Page(emptyList())
         }
 
-        override suspend fun metadata(asset: AssetRef): PhotoMetadata = PhotoMetadata(asset)
+        override suspend fun metadataFor(asset: AssetRef): PhotoMetadata {
+            metadataCalls += 1
+            return PhotoMetadata(asset)
+        }
 
-        override suspend fun open(asset: AssetRef): PhotoByteStream = error("Not needed by this test")
+        override suspend fun openStream(asset: AssetRef): PhotoByteStream {
+            openCalls += 1
+            return EmptyPhotoByteStream()
+        }
+    }
+
+    private class EmptyPhotoByteStream : PhotoByteStream(contentLength = 0) {
+        override suspend fun readAtMostTo(
+            sink: okio.Buffer,
+            byteCount: Long,
+        ): Long = -1
+
+        override fun close() = Unit
     }
 }

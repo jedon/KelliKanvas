@@ -61,6 +61,32 @@ class SourceModelsTest {
     }
 
     @Test
+    fun `page snapshots input for stable contents equality and hash`() {
+        val entry = SourceEntry.Folder(FolderRef(profileId, objectId), "Photos")
+        val input = mutableListOf<SourceEntry>(entry)
+        val page = Page(input)
+        val expected = Page(listOf(entry))
+        val originalHash = page.hashCode()
+
+        input.clear()
+
+        assertThat(page.items).containsExactly(entry)
+        assertThat(page).isEqualTo(expected)
+        assertThat(page.hashCode()).isEqualTo(originalHash)
+    }
+
+    @Test
+    fun `page does not expose a mutable collection`() {
+        val entry = SourceEntry.Folder(FolderRef(profileId, objectId), "Photos")
+        val page = Page(mutableListOf<SourceEntry>(entry))
+
+        assertThrows(UnsupportedOperationException::class.java) {
+            (page.items as MutableList).clear()
+        }
+        assertThat(page.items).containsExactly(entry)
+    }
+
+    @Test
     fun `source status exposes negotiated security without unsafe details`() {
         val status =
             SourceStatus(
@@ -90,6 +116,18 @@ class SourceModelsTest {
                 "credential abc",
                 "authorization abc",
                 "secret",
+                "access_token abc",
+                "access-token abc",
+                "access token abc",
+                "client_secret abc",
+                "client-secret abc",
+                "client secret abc",
+                "password_hash abc",
+                "password-hash abc",
+                "password hash abc",
+                "api_key abc",
+                "api-key abc",
+                "bearer credentials",
             )
 
         unsafeSummaries.forEach { unsafeSummary ->

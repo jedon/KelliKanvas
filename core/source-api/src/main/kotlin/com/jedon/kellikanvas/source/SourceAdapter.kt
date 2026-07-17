@@ -33,6 +33,7 @@ abstract class SourceAdapter {
         cursor: PageCursor?,
         limit: Int = DEFAULT_PAGE_LIMIT,
     ): Page<SourceEntry> {
+        validateProfile(folder.profileId)
         validatePageLimit(limit)
         return listChildrenPage(folder, cursor, limit)
     }
@@ -43,9 +44,25 @@ abstract class SourceAdapter {
         limit: Int,
     ): Page<SourceEntry>
 
-    abstract suspend fun metadata(asset: AssetRef): PhotoMetadata
+    final suspend fun metadata(asset: AssetRef): PhotoMetadata {
+        validateProfile(asset.profileId)
+        return metadataFor(asset)
+    }
 
-    abstract suspend fun open(asset: AssetRef): PhotoByteStream
+    protected abstract suspend fun metadataFor(asset: AssetRef): PhotoMetadata
+
+    final suspend fun open(asset: AssetRef): PhotoByteStream {
+        validateProfile(asset.profileId)
+        return openStream(asset)
+    }
+
+    protected abstract suspend fun openStream(asset: AssetRef): PhotoByteStream
+
+    private fun validateProfile(referenceProfileId: SourceProfileId) {
+        require(referenceProfileId == profileId) {
+            "Reference belongs to a different source profile"
+        }
+    }
 }
 
 private fun validatePageLimit(limit: Int) {
