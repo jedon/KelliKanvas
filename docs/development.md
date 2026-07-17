@@ -1,8 +1,14 @@
 # Development
 
-KelliKanvas builds with JDK 17, Gradle 9.4.1, and Android SDK 37. Newer
+KelliKanvas builds with JDK 17, Gradle 9.5.0, and Android SDK 37. Newer
 JDKs may be installed on the host, but Gradle and Android builds must run
 with JDK 17.
+
+Android modules use AGP 9.3's built-in Kotlin integration and its KGP 2.2.10
+runtime dependency. They do not declare or override KGP separately. The
+isolated `build-logic` build uses Kotlin 2.4.10 only to compile convention
+plugins; its Android-facing runtime dependencies remain aligned to KGP and the
+Compose compiler plugin 2.2.10 supplied for AGP built-in Kotlin.
 
 ## Windows setup
 
@@ -39,12 +45,29 @@ Run these commands from the repository root:
 ```powershell
 .\gradlew.bat --version
 .\gradlew.bat help --warning-mode all
-.\gradlew.bat -p build-logic test
+.\gradlew.bat :build-logic:test
 .\gradlew.bat projects
-.\gradlew.bat ktlintCheck lintDebug testDebugUnitTest assembleDebug --stacktrace
+.\gradlew.bat ktlintCheck lintDebug testDebugUnitTest assembleDebug assembleDebugAndroidTest --stacktrace
 ```
 
-The wrapper version must be Gradle 9.4.1. The final command performs the same
+The wrapper version must be Gradle 9.5.0. The final command performs the same
 smoke checks as continuous integration. Android compilation requires JDK 17
 and SDK Platform 37.0; GitHub Actions is the reproducible fallback when either
 is unavailable locally.
+
+## Dependency verification
+
+Gradle verifies plugin and dependency artifacts against SHA-256 checksums in
+`gradle/verification-metadata.xml`. When intentionally changing dependencies,
+resolve the complete build from trusted repositories and update the metadata:
+
+```powershell
+.\gradlew.bat --refresh-dependencies --write-verification-metadata sha256 `
+  :build-logic:test clean ktlintCheck lintDebug testDebugUnitTest `
+  assembleDebug assembleDebugAndroidTest `
+  --no-configuration-cache
+```
+
+Review the metadata diff before committing it. Unexpected artifacts or checksum
+changes must be investigated rather than accepted automatically. Run included
+build tasks through the root wrapper so this root metadata remains enforced.

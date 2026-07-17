@@ -1,7 +1,7 @@
 plugins {
     `java-gradle-plugin`
-    id("org.jetbrains.kotlin.jvm") version "2.3.21"
-    id("org.jlleitschuh.gradle.ktlint") version "13.1.0"
+    id("org.jetbrains.kotlin.jvm") version "2.4.10"
+    id("org.jlleitschuh.gradle.ktlint") version "14.2.0"
 }
 
 group = "com.jedon.kellikanvas.buildlogic"
@@ -18,9 +18,8 @@ kotlin {
 }
 
 dependencies {
-    implementation("com.android.tools.build:gradle:9.2.0")
-    implementation("org.jetbrains.kotlin:compose-compiler-gradle-plugin:2.3.21")
-    implementation("org.jetbrains.kotlin:kotlin-gradle-plugin:2.3.21")
+    implementation("com.android.tools.build:gradle:9.3.0")
+    implementation("org.jetbrains.kotlin:compose-compiler-gradle-plugin:2.2.10")
 
     testImplementation(gradleTestKit())
     testImplementation("junit:junit:4.13.2")
