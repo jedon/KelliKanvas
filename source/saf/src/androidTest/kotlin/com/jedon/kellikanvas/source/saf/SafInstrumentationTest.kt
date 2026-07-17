@@ -38,14 +38,17 @@ class SafInstrumentationTest {
 
     @Before
     fun setUp() {
-        AndroidTestDocumentsProvider.mode = AndroidTestDocumentsProvider.Mode.ACTIVE
         check(callGrantBroker(SafGrantBrokerProvider.METHOD_GRANT))
+        check(setProviderMode(AndroidTestDocumentsProvider.Mode.ACTIVE) == AndroidTestDocumentsProvider.Mode.ACTIVE)
     }
 
     @After
     fun tearDown() {
-        check(callGrantBroker(SafGrantBrokerProvider.METHOD_REVOKE))
-        AndroidTestDocumentsProvider.mode = AndroidTestDocumentsProvider.Mode.ACTIVE
+        try {
+            check(setProviderMode(AndroidTestDocumentsProvider.Mode.ACTIVE) == AndroidTestDocumentsProvider.Mode.ACTIVE)
+        } finally {
+            check(callGrantBroker(SafGrantBrokerProvider.METHOD_REVOKE))
+        }
     }
 
     @Test
@@ -67,17 +70,20 @@ class SafInstrumentationTest {
     fun revokedAndRemovedStatesRecoverWithSameProfile() = runTest {
         val adapter = adapter()
         val profileId = adapter.profileId
-        AndroidTestDocumentsProvider.mode = AndroidTestDocumentsProvider.Mode.REVOKED
+        assertThat(setProviderMode(AndroidTestDocumentsProvider.Mode.REVOKED))
+            .isEqualTo(AndroidTestDocumentsProvider.Mode.REVOKED)
         expectFailure<SourceFailure.PermissionRevoked> {
             adapter.listChildren(adapter.root, null)
         }
 
-        AndroidTestDocumentsProvider.mode = AndroidTestDocumentsProvider.Mode.REMOVED
+        assertThat(setProviderMode(AndroidTestDocumentsProvider.Mode.REMOVED))
+            .isEqualTo(AndroidTestDocumentsProvider.Mode.REMOVED)
         expectFailure<SourceFailure.SourceUnavailable> {
             adapter.listChildren(adapter.root, null)
         }
 
-        AndroidTestDocumentsProvider.mode = AndroidTestDocumentsProvider.Mode.ACTIVE
+        assertThat(setProviderMode(AndroidTestDocumentsProvider.Mode.ACTIVE))
+            .isEqualTo(AndroidTestDocumentsProvider.Mode.ACTIVE)
         val recovered = adapter.listChildren(adapter.root, null)
 
         assertThat(adapter.profileId).isEqualTo(profileId)
@@ -176,6 +182,24 @@ class SafInstrumentationTest {
         return targetContext.contentResolver
             .call(grantBrokerUri, method, targetPackageName, extras)
             ?.getBoolean(SafGrantBrokerProvider.EXTRA_SUCCESS) == true
+    }
+
+    private fun setProviderMode(mode: AndroidTestDocumentsProvider.Mode): AndroidTestDocumentsProvider.Mode {
+        val extras =
+            Bundle().apply {
+                putString(SafGrantBrokerProvider.EXTRA_PROVIDER_MODE, mode.name)
+            }
+        val result =
+            requireNotNull(
+                targetContext.contentResolver.call(
+                    grantBrokerUri,
+                    SafGrantBrokerProvider.METHOD_SET_PROVIDER_MODE,
+                    targetPackageName,
+                    extras,
+                ),
+            )
+        val acknowledged = requireNotNull(result.getString(SafGrantBrokerProvider.EXTRA_PROVIDER_MODE))
+        return AndroidTestDocumentsProvider.Mode.valueOf(acknowledged)
     }
 
     private fun adapter(observer: SafReadObserver = CloseObserver()): SafSourceAdapter {

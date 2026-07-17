@@ -2,8 +2,11 @@ package com.jedon.kellikanvas.source.saf
 
 import android.database.Cursor
 import android.database.MatrixCursor
+import android.os.Binder
+import android.os.Bundle
 import android.os.CancellationSignal
 import android.os.ParcelFileDescriptor
+import android.os.Process
 import android.provider.DocumentsContract
 import android.provider.DocumentsProvider
 import java.io.File
@@ -16,7 +19,42 @@ class AndroidTestDocumentsProvider : DocumentsProvider() {
         REMOVED,
     }
 
+    @Volatile
+    private var mode: Mode = Mode.ACTIVE
+
     override fun onCreate(): Boolean = true
+
+    override fun call(
+        method: String,
+        arg: String?,
+        extras: Bundle?,
+    ): Bundle {
+        require(method == METHOD_SET_MODE || method == METHOD_GET_MODE) {
+            "Unsupported instrumentation provider control method"
+        }
+        val ownerPackage = requireNotNull(context).packageName
+        require(callingPackage == ownerPackage) {
+            "Instrumentation provider control requires its owner package"
+        }
+        require(Binder.getCallingUid() == Process.myUid()) {
+            "Instrumentation provider control requires its owner UID"
+        }
+        require(extras == null || extras.isEmpty) {
+            "Instrumentation provider control does not accept extras"
+        }
+        if (method == METHOD_SET_MODE) {
+            mode =
+                requireNotNull(Mode.entries.singleOrNull { it.name == arg }) {
+                    "Unsupported instrumentation provider mode"
+                }
+        } else {
+            require(arg == null) { "Mode read-back does not accept an argument" }
+        }
+        return Bundle().apply {
+            putBoolean(EXTRA_SUCCESS, true)
+            putString(EXTRA_MODE, mode.name)
+        }
+    }
 
     override fun queryRoots(projection: Array<out String>?): Cursor {
         val columns = projection ?: ROOT_COLUMNS
@@ -136,9 +174,10 @@ class AndroidTestDocumentsProvider : DocumentsProvider() {
         const val PORTRAIT_ID = "instrumentation-portrait"
         const val PHOTO_ID = "instrumentation-photo"
         const val MODIFIED_AT = 1_700_000_000_000L
-
-        @Volatile
-        var mode: Mode = Mode.ACTIVE
+        const val METHOD_SET_MODE = "set_mode"
+        const val METHOD_GET_MODE = "get_mode"
+        const val EXTRA_MODE = "mode"
+        const val EXTRA_SUCCESS = "success"
 
         val PHOTO_BYTES: ByteArray = "instrumentation-photo-bytes".encodeToByteArray()
 
