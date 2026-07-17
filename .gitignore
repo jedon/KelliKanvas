@@ -28,6 +28,7 @@ replay_pid*
 
 # Local agent brainstorming artifacts
 .superpowers/
+.worktrees/
 
 # Local secrets
 .env
