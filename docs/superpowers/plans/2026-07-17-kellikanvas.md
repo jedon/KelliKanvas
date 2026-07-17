@@ -831,7 +831,14 @@ Release signing comes only from four environment variables. The Python tool veri
 
 - [ ] **Step 5: Implement QNAP publisher**
 
-Copy to `\\DarklingNAS\Public\KelliKanvas`, verify copied SHA-256, and atomically rename manifest last. nginx binds `192.168.68.81:8088` (not Tailscale), read-only mounts the least-privilege `/share/Public/KelliKanvas` child, disables listing, and serves only GET/HEAD.
+Stage outside the public share, then use the NAS-side
+`/share/Public/KelliKanvas/.kellikanvas-operation.lock` with owner metadata.
+Verify a unique temporary copy, publish the immutable APK with an atomic
+no-clobber hard link, regenerate and verify the index, and atomically replace
+the manifest last while still locked. Release only when APK, index, and manifest
+are consistent; failed recovery retains the lock. nginx binds
+`192.168.68.81:8088` (not Tailscale), read-only mounts the least-privilege
+`/share/Public/KelliKanvas` child, disables listing, and serves only GET/HEAD.
 
 - [ ] **Step 6: Verify**
 

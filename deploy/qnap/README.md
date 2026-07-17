@@ -119,11 +119,43 @@ $Start = @'
 set -eu
 CS="$(getcfg container-station Install_Path -f /etc/config/qpkg.conf)"
 test -x "$CS/bin/docker"
+CONTENT=/share/Public/KelliKanvas
+LOCK="$CONTENT/.kellikanvas-operation.lock"
+LOCK_HELD=0
+
+cleanup_initial_generation() {
+  STATUS=$?
+  trap - 0 HUP INT TERM
+  set +e
+  if [ "$LOCK_HELD" -eq 1 ]; then
+    rm -f "$LOCK/owner"
+    rmdir "$LOCK" || STATUS=1
+  fi
+  exit "$STATUS"
+}
+
+mkdir "$LOCK" || {
+  echo "Another APK/index operation holds $LOCK" >&2
+  exit 1
+}
+LOCK_HELD=1
+trap cleanup_initial_generation 0
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
+printf 'operation=regenerate\nname=-\npid=%s\n' "$$" >"$LOCK/owner"
+chmod 0644 "$LOCK/owner"
+
 "$CS/bin/docker" run --rm \
-  -v /share/Public/KelliKanvas:/content \
+  -v "$CONTENT":/content \
   -v /share/Container/KelliKanvas/generate_apk_index.py:/app/generate.py:ro \
   python:3.13-alpine@sha256:399babc8b49529dabfd9c922f2b5eea81d611e4512e3ed250d75bd2e7683f4b0 \
   python /app/generate.py --directory /content
+rm "$LOCK/owner"
+rmdir "$LOCK"
+LOCK_HELD=0
+trap - 0 HUP INT TERM
+
 "$CS/bin/docker" run --rm --user 101:101 \
   -v /share/Public/KelliKanvas:/content:ro \
   python:3.13-alpine@sha256:399babc8b49529dabfd9c922f2b5eea81d611e4512e3ed250d75bd2e7683f4b0 \
@@ -178,27 +210,98 @@ from a workstation, SCP it first to a restricted staging directory such as
 finish successfully, and use that staged file as `SOURCE`; never SCP directly
 into the public content directory.
 
-The command creates a unique temporary file in the content directory, compares
-the complete source and copied SHA-256 digests, and creates the final path with
-a same-filesystem hard link. `ln` is atomic and fails rather than replacing an
-existing version:
+The command acquires the one content-wide operation lock before creating public
+state, records minimal owner metadata, creates a unique temporary file, compares
+the complete source and copied SHA-256 digests, and publishes with a
+same-filesystem hard link. `ln` is atomic and fails rather than replacing an
+existing version. The lock remains held through index generation and HTTP
+verification:
 
 ```sh
 set -eu
 CONTENT=/share/Public/KelliKanvas
+BASE=http://darklingnas.local:8088
 SOURCE=/share/Container/KelliKanvas/incoming/KelliKanvas-1.2.3.apk
 NAME=KelliKanvas-1.2.3.apk
 FINAL="$CONTENT/$NAME"
-LOCK="$CONTENT/.$NAME.lock"
+LOCK="$CONTENT/.kellikanvas-operation.lock"
 TEMP=
+PAGE=
+FINAL_CREATED=0
+INDEX_CONSISTENT=0
 SEMVER_APK_PATTERN='^KelliKanvas-(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-(0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)(\.(0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?\.apk$'
+CS="$(getcfg container-station Install_Path -f /etc/config/qpkg.conf)"
+test -x "$CS/bin/docker"
+
+regenerate_index() {
+  "$CS/bin/docker" run --rm \
+    -v "$CONTENT":/content \
+    -v /share/Container/KelliKanvas/generate_apk_index.py:/app/generate.py:ro \
+    python:3.13-alpine@sha256:399babc8b49529dabfd9c922f2b5eea81d611e4512e3ed250d75bd2e7683f4b0 \
+    python /app/generate.py --directory /content
+}
+
+release_global_lock() {
+  rm -f "$LOCK/owner" && rmdir "$LOCK"
+}
 
 cleanup_publication() {
   STATUS=$?
   trap - 0 HUP INT TERM
   set +e
-  test -z "$TEMP" || rm -f "$TEMP"
-  rmdir "$LOCK" 2>/dev/null || true
+  test "$STATUS" -ne 0 || STATUS=1
+  RECOVERY_FAILED=0
+  OWN_FINAL="$FINAL_CREATED"
+
+  if [ -n "$PAGE" ] && ! rm -f "$PAGE"; then
+    echo "RECOVERY REQUIRED: failed to remove verification temporary: $PAGE" >&2
+    RECOVERY_FAILED=1
+  fi
+
+  if [ "$OWN_FINAL" -eq 0 ] &&
+    [ -n "$TEMP" ] &&
+    [ -f "$TEMP" ] && [ ! -L "$TEMP" ] &&
+    [ -f "$FINAL" ] && [ ! -L "$FINAL" ]; then
+    if TEMP_ID="$(stat -c '%d:%i' "$TEMP")" &&
+      FINAL_ID="$(stat -c '%d:%i' "$FINAL")"; then
+      test "$TEMP_ID" != "$FINAL_ID" || OWN_FINAL=1
+    else
+      echo "RECOVERY REQUIRED: failed to identify publication hard links" >&2
+      RECOVERY_FAILED=1
+    fi
+  fi
+
+  if [ "$INDEX_CONSISTENT" -eq 0 ] && [ "$OWN_FINAL" -eq 1 ]; then
+    if rm "$FINAL"; then
+      if ! regenerate_index; then
+        echo "RECOVERY REQUIRED: previous index regeneration failed" >&2
+        RECOVERY_FAILED=1
+      fi
+    else
+      echo "RECOVERY REQUIRED: failed to remove newly published FINAL" >&2
+      RECOVERY_FAILED=1
+    fi
+  elif [ "$INDEX_CONSISTENT" -eq 0 ] &&
+    { [ -e "$FINAL" ] || [ -L "$FINAL" ]; }; then
+    echo "RECOVERY REQUIRED: unexpected FINAL is not the publication temporary inode" >&2
+    RECOVERY_FAILED=1
+  fi
+
+  if [ "$RECOVERY_FAILED" -eq 0 ] &&
+    [ -n "$TEMP" ] && ! rm -f "$TEMP"; then
+    echo "RECOVERY REQUIRED: failed to remove publication temporary: $TEMP" >&2
+    RECOVERY_FAILED=1
+  fi
+
+  if [ "$RECOVERY_FAILED" -eq 0 ]; then
+    if ! release_global_lock; then
+      echo "RECOVERY REQUIRED: failed to release global operation lock" >&2
+      RECOVERY_FAILED=1
+    fi
+  fi
+  if [ "$RECOVERY_FAILED" -ne 0 ]; then
+    echo "RECOVERY REQUIRED: global lock retained for stale recovery." >&2
+  fi
   exit "$STATUS"
 }
 
@@ -211,13 +314,19 @@ printf '%s\n' "$NAME" | grep -Eq "$SEMVER_APK_PATTERN" || {
   exit 1
 }
 if ! mkdir "$LOCK"; then
-  echo "Another operation holds the version lock: $LOCK" >&2
+  echo "Another APK/index operation holds the global lock: $LOCK" >&2
   exit 1
 fi
 trap cleanup_publication 0
 trap 'exit 129' HUP
 trap 'exit 130' INT
 trap 'exit 143' TERM
+printf 'operation=publish\nname=%s\npid=%s\n' "$NAME" "$$" >"$LOCK/owner"
+chmod 0644 "$LOCK/owner"
+if [ -e "$FINAL" ] || [ -L "$FINAL" ]; then
+  echo "Version already exists; immutable APK will not be overwritten: $FINAL" >&2
+  exit 1
+fi
 
 TEMP="$(mktemp "$CONTENT/.$NAME.publish.XXXXXX")"
 cp "$SOURCE" "$TEMP"
@@ -237,80 +346,147 @@ if ! ln "$TEMP" "$FINAL"; then
   echo "Version already exists or cannot be published: $FINAL" >&2
   exit 1
 fi
+FINAL_CREATED=1
 rm "$TEMP"
 TEMP=
-rmdir "$LOCK"
+regenerate_index
+
+PAGE="$(mktemp)"
+curl -fsS "$BASE/" -o "$PAGE"
+grep -Fq "href=\"$NAME\"" "$PAGE" || {
+  echo "Published version is missing from generated page" >&2
+  exit 1
+}
+APK_STATUS="$(curl -fsSI -o /dev/null -w '%{http_code}' "$BASE/$NAME")"
+test "$APK_STATUS" = 200 || {
+  echo "Published APK HEAD returned $APK_STATUS, expected 200" >&2
+  exit 1
+}
+INDEX_CONSISTENT=1
+rm -f "$PAGE"
+PAGE=
+release_global_lock
 trap - 0 HUP INT TERM
 exit 0
 ```
 
 Do not continue after a digest mismatch or failed `ln`. The temporary and final
 links refer to the same verified inode until the temporary link is removed. A
-published version is immutable: never replace an existing final path. After a
-successful publication, regenerate the index.
+published version is immutable: never replace an existing final path. If
+generation or verification fails after the link is created, rollback removes
+that newly created final and regenerates the previous index before unlocking.
+Any rollback failure retains the global lock for stale recovery.
 
-`SIGKILL` and a NAS reboot cannot run shell traps. They can leave a locked
-version with a hidden publication temporary or quarantined APK while
-`index.html` reflects either the old or new state. If `mkdir "$LOCK"` reports a
-lock, run this conservative reconciliation on the NAS for exactly one version.
-It refuses ambiguous states before changing anything, requires interactive
-confirmation, reconciles the APK, regenerates the index, and removes the lock
-only after generation succeeds:
+`SIGKILL` and a NAS reboot cannot run shell traps. They can leave the global
+lock while an APK and `index.html` reflect different phases of one operation.
+The lock's `owner` file identifies `publish`, `remove`, or `regenerate`, the
+exact SemVer `NAME` where applicable, and the shell PID.
+
+If lock acquisition fails, first inspect the metadata and all NAS sessions and
+processes. Run this conservative recovery only after confirming that the
+recorded operation is not live. It validates the metadata and every matching
+publication/quarantine path across the content directory, reconciles only the
+identified operation, regenerates the index, and unlocks only after consistency
+is restored. Missing, corrupt, unexpected, or ambiguous state retains the lock:
 
 ```sh
 set -eu
 CONTENT=/share/Public/KelliKanvas
-NAME=KelliKanvas-1.2.3.apk
-FINAL="$CONTENT/$NAME"
-LOCK="$CONTENT/.$NAME.lock"
+LOCK="$CONTENT/.kellikanvas-operation.lock"
+OWNER="$LOCK/owner"
 PUBLISH_TEMP=
 PUBLISH_COUNT=0
 QUARANTINE_DIR=
 QUARANTINE_APK=
 QUARANTINE_COUNT=0
 QUARANTINE_EMPTY=0
+FINAL_PRESENT=0
 SEMVER_APK_PATTERN='^KelliKanvas-(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-(0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)(\.(0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?\.apk$'
 
 refuse_recovery() {
   echo "Recovery refused: $*" >&2
-  echo "Lock retained for manual investigation: $LOCK" >&2
+  echo "Global lock retained for manual investigation: $LOCK" >&2
   exit 1
 }
 
-printf '%s\n' "$NAME" | grep -Eq "$SEMVER_APK_PATTERN" ||
-  refuse_recovery "NAME is not strict KelliKanvas SemVer"
 test -d "$LOCK" && test ! -L "$LOCK" ||
-  refuse_recovery "exact lock is missing, not a directory, or a symlink"
-test -z "$(ls -A "$LOCK")" ||
-  refuse_recovery "exact lock directory contains unexpected entries"
+  refuse_recovery "global lock is missing, not a directory, or a symlink"
+test "$(ls -A "$LOCK")" = owner ||
+  refuse_recovery "lock must contain exactly one owner file"
+test -f "$OWNER" && test ! -L "$OWNER" ||
+  refuse_recovery "owner metadata is not a regular non-symlink file"
 
-if [ -e "$FINAL" ] || [ -L "$FINAL" ]; then
-  test -f "$FINAL" && test ! -L "$FINAL" ||
-    refuse_recovery "FINAL exists but is not a regular non-symlink APK"
-  FINAL_PRESENT=1
-else
-  FINAL_PRESENT=0
+LINE_COUNT="$(wc -l <"$OWNER" | tr -d ' ')"
+OPERATION_COUNT="$(grep -c '^operation=' "$OWNER" || true)"
+NAME_COUNT="$(grep -c '^name=' "$OWNER" || true)"
+PID_COUNT="$(grep -c '^pid=' "$OWNER" || true)"
+VALID_COUNT="$(grep -Ec '^(operation|name|pid)=' "$OWNER" || true)"
+test "$LINE_COUNT" = 3 &&
+  test "$OPERATION_COUNT" = 1 &&
+  test "$NAME_COUNT" = 1 &&
+  test "$PID_COUNT" = 1 &&
+  test "$VALID_COUNT" = 3 ||
+  refuse_recovery "owner metadata keys are missing, duplicated, or unexpected"
+
+OPERATION="$(sed -n 's/^operation=//p' "$OWNER")"
+NAME="$(sed -n 's/^name=//p' "$OWNER")"
+OWNER_PID="$(sed -n 's/^pid=//p' "$OWNER")"
+case "$OPERATION" in
+  publish|remove)
+    printf '%s\n' "$NAME" | grep -Eq "$SEMVER_APK_PATTERN" ||
+      refuse_recovery "owner NAME is not strict KelliKanvas SemVer"
+    ;;
+  regenerate)
+    test "$NAME" = - ||
+      refuse_recovery "regenerate metadata must use name=-"
+    ;;
+  *)
+    refuse_recovery "unknown owner operation"
+    ;;
+esac
+printf '%s\n' "$OWNER_PID" | grep -Eq '^[1-9][0-9]*$' ||
+  refuse_recovery "owner PID is invalid"
+
+if [ "$OPERATION" != regenerate ]; then
+  FINAL="$CONTENT/$NAME"
+  if [ -e "$FINAL" ] || [ -L "$FINAL" ]; then
+    test -f "$FINAL" && test ! -L "$FINAL" ||
+      refuse_recovery "FINAL has an unexpected type"
+    FINAL_PRESENT=1
+  fi
 fi
 
-for CANDIDATE in "$CONTENT/.$NAME.publish."*; do
+for CANDIDATE in "$CONTENT"/.KelliKanvas-*.publish.*; do
   if [ ! -e "$CANDIDATE" ] && [ ! -L "$CANDIDATE" ]; then
     continue
   fi
+  test "$OPERATION" = publish ||
+    refuse_recovery "publication state does not match owner operation"
+  case "$CANDIDATE" in
+    "$CONTENT/.$NAME.publish."*) ;;
+    *) refuse_recovery "publication state belongs to another NAME" ;;
+  esac
   PUBLISH_COUNT=$((PUBLISH_COUNT + 1))
   test "$PUBLISH_COUNT" -eq 1 ||
-    refuse_recovery "multiple matching publication temporaries"
+    refuse_recovery "multiple publication temporaries"
   test -f "$CANDIDATE" && test ! -L "$CANDIDATE" ||
     refuse_recovery "publication temporary has an unexpected type"
   PUBLISH_TEMP="$CANDIDATE"
 done
 
-for CANDIDATE in "$CONTENT/.$NAME.quarantine."*; do
+for CANDIDATE in "$CONTENT"/.KelliKanvas-*.quarantine.*; do
   if [ ! -e "$CANDIDATE" ] && [ ! -L "$CANDIDATE" ]; then
     continue
   fi
+  test "$OPERATION" = remove ||
+    refuse_recovery "quarantine state does not match owner operation"
+  case "$CANDIDATE" in
+    "$CONTENT/.$NAME.quarantine."*) ;;
+    *) refuse_recovery "quarantine state belongs to another NAME" ;;
+  esac
   QUARANTINE_COUNT=$((QUARANTINE_COUNT + 1))
   test "$QUARANTINE_COUNT" -eq 1 ||
-    refuse_recovery "multiple matching quarantine paths"
+    refuse_recovery "multiple quarantine paths"
   test -d "$CANDIDATE" && test ! -L "$CANDIDATE" ||
     refuse_recovery "quarantine path is not a regular directory"
   QUARANTINE_DIR="$CANDIDATE"
@@ -326,92 +502,133 @@ for CANDIDATE in "$CONTENT/.$NAME.quarantine."*; do
   fi
 done
 
-test "$PUBLISH_COUNT" -eq 0 || test "$QUARANTINE_COUNT" -eq 0 ||
-  refuse_recovery "publication temporary and quarantine both exist"
-test "$FINAL_PRESENT" -eq 0 || test "$QUARANTINE_COUNT" -eq 0 ||
-  test "$QUARANTINE_EMPTY" -eq 1 ||
-  refuse_recovery "FINAL and quarantine both exist"
-
-echo "Exact recovery state:"
-ls -lid "$LOCK"
-if [ "$FINAL_PRESENT" -eq 1 ]; then
-  ls -li "$FINAL"
+if [ "$OPERATION" = publish ]; then
+  test "$QUARANTINE_COUNT" -eq 0 ||
+    refuse_recovery "publish owner has quarantine state"
+elif [ "$OPERATION" = remove ]; then
+  test "$PUBLISH_COUNT" -eq 0 ||
+    refuse_recovery "remove owner has publication state"
+  test "$FINAL_PRESENT" -eq 0 || test "$QUARANTINE_COUNT" -eq 0 ||
+    test "$QUARANTINE_EMPTY" -eq 1 ||
+    refuse_recovery "FINAL and nonempty quarantine both exist"
 else
-  echo "FINAL is absent: $FINAL"
+  test "$PUBLISH_COUNT" -eq 0 && test "$QUARANTINE_COUNT" -eq 0 ||
+    refuse_recovery "regenerate owner has unexpected APK operation state"
 fi
-if [ "$PUBLISH_COUNT" -eq 1 ]; then
-  ls -li "$PUBLISH_TEMP"
+
+echo "Validated recovery owner:"
+cat "$OWNER"
+ls -lid "$LOCK"
+if [ "$OPERATION" != regenerate ]; then
   if [ "$FINAL_PRESENT" -eq 1 ]; then
-    TEMP_ID="$(stat -c '%d:%i' "$PUBLISH_TEMP")"
-    FINAL_ID="$(stat -c '%d:%i' "$FINAL")"
-    if [ "$TEMP_ID" = "$FINAL_ID" ]; then
-      echo "Publication temporary is another hard link to FINAL."
-    else
-      echo "Publication temporary is distinct from FINAL."
-    fi
+    ls -li "$FINAL"
+  else
+    echo "FINAL is absent: $FINAL"
   fi
 fi
+test "$PUBLISH_COUNT" -eq 0 || ls -li "$PUBLISH_TEMP"
 if [ "$QUARANTINE_COUNT" -eq 1 ]; then
   ls -lid "$QUARANTINE_DIR"
   if [ "$QUARANTINE_EMPTY" -eq 1 ]; then
-    echo "Quarantine directory is empty; FINAL state will be preserved."
+    echo "Quarantine is empty; current FINAL state will be preserved."
   else
     ls -li "$QUARANTINE_APK"
   fi
 fi
+if kill -0 "$OWNER_PID" 2>/dev/null; then
+  echo "WARNING: recorded PID $OWNER_PID still exists; verify it is unrelated." >&2
+fi
 ps
 
-printf 'After checking all sessions/processes, type the exact NAME to reconcile: '
-IFS= read -r CONFIRMED_NAME ||
+TOKEN="RECOVER $OPERATION:$NAME:$OWNER_PID"
+printf 'After proving no live operation owns this lock, type "%s": ' "$TOKEN"
+IFS= read -r CONFIRMED ||
   refuse_recovery "interactive confirmation was not read"
-test "$CONFIRMED_NAME" = "$NAME" ||
-  refuse_recovery "confirmation did not exactly match NAME"
+test "$CONFIRMED" = "$TOKEN" ||
+  refuse_recovery "confirmation did not exactly match owner metadata"
 
-if [ "$QUARANTINE_COUNT" -eq 1 ]; then
+if [ "$OPERATION" = publish ] && [ "$PUBLISH_COUNT" -eq 1 ]; then
+  rm "$PUBLISH_TEMP"
+fi
+if [ "$OPERATION" = remove ] && [ "$QUARANTINE_COUNT" -eq 1 ]; then
   if [ "$QUARANTINE_EMPTY" -eq 0 ]; then
     mv "$QUARANTINE_APK" "$FINAL"
-    FINAL_PRESENT=1
   fi
   rmdir "$QUARANTINE_DIR"
-fi
-
-if [ "$PUBLISH_COUNT" -eq 1 ]; then
-  rm "$PUBLISH_TEMP"
 fi
 
 CS="$(getcfg container-station Install_Path -f /etc/config/qpkg.conf)"
 test -x "$CS/bin/docker" ||
   refuse_recovery "Container Station Docker is unavailable"
 "$CS/bin/docker" run --rm \
-  -v /share/Public/KelliKanvas:/content \
+  -v "$CONTENT":/content \
   -v /share/Container/KelliKanvas/generate_apk_index.py:/app/generate.py:ro \
   python:3.13-alpine@sha256:399babc8b49529dabfd9c922f2b5eea81d611e4512e3ed250d75bd2e7683f4b0 \
   python /app/generate.py --directory /content ||
-  refuse_recovery "index regeneration failed after APK reconciliation"
+  refuse_recovery "index regeneration failed after state reconciliation"
 
+rm "$OWNER" ||
+  refuse_recovery "index is consistent but owner metadata removal failed"
 rmdir "$LOCK" ||
-  refuse_recovery "index is consistent but exact lock removal failed"
+  refuse_recovery "index is consistent but global lock removal failed"
 ```
 
-If the procedure refuses or any command fails, leave the exact lock in place and
-investigate manually. Do not remove matching files with a wildcard, recursively
-delete a lock/quarantine, or use this as a general cleanup utility.
+If the procedure refuses or any command fails, leave the global lock in place
+and investigate manually. Do not remove state with a wildcard, recursively
+delete the lock/quarantine, invent metadata, or use this as general cleanup.
 
 ## Regenerate the index
 
-Run the generator in the pinned, official, multi-architecture Python image. The
-content mount is read-write so the generator can replace `index.html`; the
-generator itself is mounted read-only:
+Run the generator in the pinned, official, multi-architecture Python image. A
+standalone regeneration acquires the same content-wide lock and refuses to run
+beside publication, removal, recovery, or another regeneration. The content
+mount is read-write so the generator can replace `index.html`; the generator
+itself is mounted read-only:
 
 ```sh
 set -eu
+CONTENT=/share/Public/KelliKanvas
+LOCK="$CONTENT/.kellikanvas-operation.lock"
+LOCK_HELD=0
 CS="$(getcfg container-station Install_Path -f /etc/config/qpkg.conf)"
 test -x "$CS/bin/docker"
+
+cleanup_regeneration() {
+  STATUS=$?
+  trap - 0 HUP INT TERM
+  set +e
+  if [ "$LOCK_HELD" -eq 1 ]; then
+    if rm -f "$LOCK/owner"; then
+      rmdir "$LOCK" || STATUS=1
+    else
+      STATUS=1
+    fi
+  fi
+  exit "$STATUS"
+}
+
+mkdir "$LOCK" || {
+  echo "Another APK/index operation holds the global lock: $LOCK" >&2
+  exit 1
+}
+LOCK_HELD=1
+trap cleanup_regeneration 0
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
+printf 'operation=regenerate\nname=-\npid=%s\n' "$$" >"$LOCK/owner"
+chmod 0644 "$LOCK/owner"
+
 "$CS/bin/docker" run --rm \
-  -v /share/Public/KelliKanvas:/content \
+  -v "$CONTENT":/content \
   -v /share/Container/KelliKanvas/generate_apk_index.py:/app/generate.py:ro \
   python:3.13-alpine@sha256:399babc8b49529dabfd9c922f2b5eea81d611e4512e3ed250d75bd2e7683f4b0 \
   python /app/generate.py --directory /content
+rm "$LOCK/owner"
+rmdir "$LOCK"
+LOCK_HELD=0
+trap - 0 HUP INT TERM
+exit 0
 ```
 
 The generator writes `index.html` through a same-directory temporary file,
@@ -628,8 +845,9 @@ exit 0
 
 Published URLs are immutable and remain stable when newer APKs are added.
 Publication refuses to overwrite an existing version. To remove one explicitly
-selected version, run the following on the NAS. It takes the same per-version
-lock used by publication, atomically moves the APK into a unique hidden
+selected version, run the following on the NAS. It takes the same content-wide
+lock used by publication and regeneration, records the exact operation owner,
+atomically moves the APK into a unique hidden
 quarantine directory, regenerates and verifies the page, and only then deletes
 the quarantined file. If generation or verification fails, the exit trap
 atomically restores the APK and regenerates the old index before returning a
@@ -642,7 +860,7 @@ CONTENT=/share/Public/KelliKanvas
 BASE=http://darklingnas.local:8088
 NAME=KelliKanvas-1.2.3.apk
 FINAL="$CONTENT/$NAME"
-LOCK="$CONTENT/.$NAME.lock"
+LOCK="$CONTENT/.kellikanvas-operation.lock"
 QUARANTINE_DIR=
 QUARANTINE=
 PAGE=
@@ -653,10 +871,14 @@ test -x "$CS/bin/docker"
 
 regenerate_index() {
   "$CS/bin/docker" run --rm \
-    -v /share/Public/KelliKanvas:/content \
+    -v "$CONTENT":/content \
     -v /share/Container/KelliKanvas/generate_apk_index.py:/app/generate.py:ro \
     python:3.13-alpine@sha256:399babc8b49529dabfd9c922f2b5eea81d611e4512e3ed250d75bd2e7683f4b0 \
     python /app/generate.py --directory /content
+}
+
+release_global_lock() {
+  rm -f "$LOCK/owner" && rmdir "$LOCK"
 }
 
 rollback_removal() {
@@ -704,12 +926,12 @@ rollback_removal() {
   fi
 
   if [ "$RECOVERY_FAILED" -eq 0 ]; then
-    rmdir "$LOCK" 2>/dev/null ||
-      recovery_failed "failed to release the exact version lock: $LOCK"
+    release_global_lock ||
+      recovery_failed "failed to release the global operation lock: $LOCK"
   fi
 
   if [ "$RECOVERY_FAILED" -ne 0 ]; then
-    echo "RECOVERY REQUIRED: lock retained; reconcile this exact NAME before another operation." >&2
+    echo "RECOVERY REQUIRED: global lock retained; run conservative stale recovery." >&2
   fi
   exit "$STATUS"
 }
@@ -718,18 +940,20 @@ printf '%s\n' "$NAME" | grep -Eq "$SEMVER_APK_PATTERN" || {
   echo "Refusing to remove an invalid or ambiguous filename" >&2
   exit 1
 }
-if [ ! -f "$FINAL" ] || [ -L "$FINAL" ]; then
-  echo "Selected version does not exist: $FINAL" >&2
-  exit 1
-fi
 if ! mkdir "$LOCK"; then
-  echo "Another operation holds the version lock: $LOCK" >&2
+  echo "Another APK/index operation holds the global lock: $LOCK" >&2
   exit 1
 fi
 trap rollback_removal 0
 trap 'exit 129' HUP
 trap 'exit 130' INT
 trap 'exit 143' TERM
+printf 'operation=remove\nname=%s\npid=%s\n' "$NAME" "$$" >"$LOCK/owner"
+chmod 0644 "$LOCK/owner"
+if [ ! -f "$FINAL" ] || [ -L "$FINAL" ]; then
+  echo "Selected version does not exist: $FINAL" >&2
+  exit 1
+fi
 
 QUARANTINE_DIR="$(mktemp -d "$CONTENT/.$NAME.quarantine.XXXXXX")"
 QUARANTINE="$QUARANTINE_DIR/$NAME"
@@ -755,7 +979,7 @@ rm -f "$PAGE"
 PAGE=
 rmdir "$QUARANTINE_DIR"
 QUARANTINE_DIR=
-rmdir "$LOCK"
+release_global_lock
 trap - 0 HUP INT TERM
 exit 0
 ```
@@ -772,6 +996,158 @@ test -x "$CS/bin/docker"
 "$CS/bin/docker" compose \
   -f /share/Container/KelliKanvas/compose.yaml down
 ```
+
+## Validate content-wide serialization
+
+Run this reproducible test from a Linux/WSL shell at the repository root, never
+against the NAS content directory. It uses a throwaway container directory and
+controlled pauses before generation. Each competing operation first attempts
+the same global `mkdir`; the test proves a publish/publish and publish/remove
+competitor cannot create, quarantine, or remove an APK while the first publisher
+holds the lock. Each competitor is then retried after release, and the final
+page is compared exactly with the real generator's discovered APK list:
+
+```sh
+set -eu
+docker run --rm -i \
+  -v "$PWD/tools/generate_apk_index.py:/app/generate.py:ro" \
+  python:3.13-alpine@sha256:399babc8b49529dabfd9c922f2b5eea81d611e4512e3ed250d75bd2e7683f4b0 \
+  python - /app/generate.py <<'PY'
+import importlib.util
+import os
+from pathlib import Path
+import re
+import subprocess
+import sys
+import tempfile
+import threading
+import uuid
+
+generator_path = Path(sys.argv[1])
+spec = importlib.util.spec_from_file_location("apk_generator", generator_path)
+assert spec is not None and spec.loader is not None
+generator = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = generator
+spec.loader.exec_module(generator)
+
+with tempfile.TemporaryDirectory() as directory:
+    content = Path(directory)
+    lock = content / ".kellikanvas-operation.lock"
+
+    def acquire(operation: str, name: str) -> None:
+        lock.mkdir()
+        (lock / "owner").write_text(
+            f"operation={operation}\nname={name}\npid={os.getpid()}\n",
+            encoding="ascii",
+        )
+
+    def release() -> None:
+        (lock / "owner").unlink()
+        lock.rmdir()
+
+    def generate() -> None:
+        subprocess.run(
+            [sys.executable, str(generator_path), "--directory", str(content)],
+            check=True,
+        )
+
+    def publish(
+        name: str,
+        entered: threading.Event | None = None,
+        proceed: threading.Event | None = None,
+    ) -> None:
+        acquire("publish", name)
+        temporary = content / f".{name}.publish.{uuid.uuid4().hex}"
+        try:
+            temporary.write_bytes(name.encode("ascii"))
+            os.chmod(temporary, 0o644)
+            os.link(temporary, content / name)
+            temporary.unlink()
+            if entered is not None and proceed is not None:
+                entered.set()
+                assert proceed.wait(10), "controlled publisher pause timed out"
+            generate()
+        finally:
+            if temporary.exists():
+                temporary.unlink()
+            release()
+
+    def blocked(operation: str, name: str) -> None:
+        try:
+            acquire(operation, name)
+        except FileExistsError:
+            return
+        release()
+        raise AssertionError(f"{operation} unexpectedly acquired the global lock")
+
+    def paused_publish(name: str) -> tuple[threading.Thread, threading.Event]:
+        entered = threading.Event()
+        proceed = threading.Event()
+        errors: list[BaseException] = []
+
+        def worker() -> None:
+            try:
+                publish(name, entered, proceed)
+            except BaseException as error:
+                errors.append(error)
+
+        thread = threading.Thread(target=worker)
+        thread.start()
+        assert entered.wait(10), "publisher did not reach controlled pause"
+        thread.errors = errors  # type: ignore[attr-defined]
+        return thread, proceed
+
+    def finish(thread: threading.Thread, proceed: threading.Event) -> None:
+        proceed.set()
+        thread.join(10)
+        assert not thread.is_alive(), "publisher did not finish"
+        errors = thread.errors  # type: ignore[attr-defined]
+        if errors:
+            raise errors[0]
+
+    first = "KelliKanvas-1.0.0.apk"
+    second = "KelliKanvas-2.0.0.apk"
+    third = "KelliKanvas-3.0.0.apk"
+
+    thread, proceed = paused_publish(first)
+    blocked("publish", second)
+    assert not (content / second).exists()
+    assert not list(content.glob(f".{second}.publish.*"))
+    finish(thread, proceed)
+    publish(second)
+
+    thread, proceed = paused_publish(third)
+    blocked("remove", second)
+    assert (content / second).is_file()
+    assert not list(content.glob(f".{second}.quarantine.*"))
+    finish(thread, proceed)
+
+    acquire("remove", second)
+    quarantine = content / f".{second}.quarantine.{uuid.uuid4().hex}"
+    try:
+        quarantine.mkdir()
+        os.replace(content / second, quarantine / second)
+        generate()
+        (quarantine / second).unlink()
+        quarantine.rmdir()
+    finally:
+        release()
+
+    discovered = [release.filename for release in generator.discover_apks(content)]
+    page = (content / "index.html").read_text(encoding="utf-8")
+    advertised = re.findall(r'class="download" href="([^"]+)"', page)
+    assert advertised == discovered, (advertised, discovered)
+    assert discovered == [third, first], discovered
+    assert not lock.exists()
+    assert not list(content.glob(".*.publish.*"))
+    assert not list(content.glob(".*.quarantine.*"))
+
+print("global serialization and exact final index: PASS")
+PY
+```
+
+The container's temporary directory is removed on success or failure, so the
+test leaves no fixture APKs, lock, quarantine, or generated page on the host.
 
 ## Troubleshooting
 

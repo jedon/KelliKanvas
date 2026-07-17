@@ -50,17 +50,28 @@ listing. Only files intentionally included by the publisher appear on the page.
 
 Published APKs use the filename `KelliKanvas-<semver>.apk`.
 
-1. Copy a completed APK to a temporary name in
-   `/share/Public/KelliKanvas`.
-2. Verify its SHA-256 digest after transfer.
-3. Atomically rename it to its versioned filename.
-4. Generate a temporary index from all valid versioned APK filenames.
-5. Atomically replace `index.html`.
+1. Acquire `/share/Public/KelliKanvas/.kellikanvas-operation.lock` and record
+   the operation, exact version name, and owner PID.
+2. Copy a completed APK to a unique same-directory temporary name and verify
+   its SHA-256 digest after transfer.
+3. Create the immutable versioned path with an atomic, no-clobber hard link,
+   then remove the temporary link.
+4. Generate and atomically replace `index.html` from all valid versioned APKs.
+5. Verify the page and direct APK URL while the lock remains held.
+6. Release the lock only after APK state and the index are consistent.
 
-An interrupted publication therefore leaves the previous page valid and does
-not advertise an incomplete APK. Existing versions remain available for
-rollback and manual installation. The later application-update manifest can
-share this directory without being exposed in the human-facing list.
+The content directory and generated index form one transaction domain. The same
+content-wide lock serializes publication, removal, rollback, standalone
+regeneration, and stale recovery across every version. A failed publication
+after hard-link creation removes the new final and regenerates the previous
+index before unlocking; failed recovery retains the lock. Removal similarly
+keeps the lock through quarantine, regeneration, verification, cleanup, and any
+rollback.
+
+Existing versions remain available for rollback and manual installation. The
+later application-update manifest can share this directory without being
+exposed in the human-facing list, but any operation that changes APK state or
+the generated index must obey the same global lock.
 
 ## Content Permissions
 
@@ -99,7 +110,16 @@ forwarded through the router or exposed to the public internet.
 - Invalid filenames: ignore them when generating the list.
 - Failed digest verification: keep the temporary file unlisted and fail
   publication.
-- Failed page generation: retain the previous `index.html`.
+- Failed page generation or verification after publication: remove the newly
+  linked APK, regenerate the previous page, and unlock only after recovery.
+- Failed removal: restore the quarantined APK, regenerate the old page, and
+  unlock only after recovery.
+- Interrupted operation: retain owner metadata in the global lock; stale
+  recovery validates that metadata and all expected temporary/quarantine state,
+  requires explicit confirmation that no owner is live, reconciles only the
+  identified operation, and unlocks only after successful regeneration.
+- Missing, corrupt, or ambiguous recovery metadata/state: retain the lock for
+  manual investigation.
 - Container restart or NAS reboot: Container Station restarts nginx
   automatically.
 - Hostname resolution failure on a client: access the same page by the NAS IP;
