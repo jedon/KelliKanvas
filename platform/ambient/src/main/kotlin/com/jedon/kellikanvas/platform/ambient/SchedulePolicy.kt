@@ -1,6 +1,7 @@
 package com.jedon.kellikanvas.platform.ambient
 
 import java.time.Clock
+import java.time.Duration
 import java.time.Instant
 import java.time.LocalTime
 import java.time.ZoneId
@@ -32,15 +33,40 @@ class SchedulePolicy(
         val now = clock.instant()
         val zone = zoneIdProvider()
         val localDate = now.atZone(zone).toLocalDate()
-        return (0L..2L)
-            .flatMap { dayOffset ->
-                val date = localDate.plusDays(dayOffset)
-                listOf(schedule.dayStarts, schedule.nightStarts)
-                    .map { boundary -> date.atTime(boundary).atZone(zone).toInstant() }
-            }
+        val horizon = now.plus(Duration.ofDays(3))
+        val candidates =
+            (0L..2L)
+                .flatMap { dayOffset ->
+                    val date = localDate.plusDays(dayOffset)
+                    listOf(schedule.dayStarts, schedule.nightStarts)
+                        .flatMap { boundary ->
+                            val localBoundary = date.atTime(boundary)
+                            zone.rules.getValidOffsets(localBoundary)
+                                .map(localBoundary::toInstant)
+                        }
+                }
+                .toMutableSet()
+        var transition = zone.rules.nextTransition(now)
+        while (transition != null && transition.instant <= horizon) {
+            candidates += transition.instant
+            transition = zone.rules.nextTransition(transition.instant)
+        }
+        return candidates
+            .asSequence()
             .filter { it > now }
-            .minOrNull()
+            .sorted()
+            .firstOrNull {
+                brightnessAt(it.minusNanos(1), zone) != brightnessAt(it, zone)
+            }
             ?: error("A future schedule boundary must exist")
+    }
+
+    private fun brightnessAt(
+        instant: Instant,
+        zone: ZoneId,
+    ): Float {
+        val localTime = instant.atZone(zone).toLocalTime()
+        return if (isDay(localTime)) schedule.dayBrightness else schedule.nightBrightness
     }
 
     private fun isDay(time: LocalTime): Boolean = if (schedule.dayStarts < schedule.nightStarts) {

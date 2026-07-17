@@ -94,6 +94,11 @@ class AndroidTimezoneChangeSource(
     context: Context,
 ) : TimezoneChangeSource {
     private val applicationContext = context.applicationContext
+    private val intentFilter =
+        IntentFilter().apply {
+            addAction(Intent.ACTION_TIME_CHANGED)
+            addAction(Intent.ACTION_TIMEZONE_CHANGED)
+        }
 
     override fun register(onChanged: () -> Unit): AmbientRegistration {
         val receiver =
@@ -102,20 +107,24 @@ class AndroidTimezoneChangeSource(
                     context: Context?,
                     intent: Intent?,
                 ) {
-                    if (intent?.action == Intent.ACTION_TIMEZONE_CHANGED) onChanged()
+                    when (intent?.action) {
+                        Intent.ACTION_TIME_CHANGED,
+                        Intent.ACTION_TIMEZONE_CHANGED,
+                        -> onChanged()
+                    }
                 }
             }
         if (Build.VERSION.SDK_INT >= 33) {
             applicationContext.registerReceiver(
                 receiver,
-                IntentFilter(Intent.ACTION_TIMEZONE_CHANGED),
+                intentFilter,
                 Context.RECEIVER_NOT_EXPORTED,
             )
         } else {
             @Suppress("DEPRECATION")
             applicationContext.registerReceiver(
                 receiver,
-                IntentFilter(Intent.ACTION_TIMEZONE_CHANGED),
+                intentFilter,
             )
         }
         var registered = true
@@ -139,9 +148,10 @@ interface AmbientLifecycle {
 /**
  * Android owner seam for ambient behavior.
  *
- * Task 18's slideshow route/session owns [start] and [stop]. Task 20's AppContainer constructs this
- * with the persisted config repository and slideshow playback host. The placeholder MainActivity
- * must not start ambient listeners before those genuinely functional dependencies exist.
+ * After Task 14 supplies the renderer, Task 18's slideshow route/session owns [start] and [stop].
+ * Task 20's AppContainer constructs this with the persisted config repository and slideshow
+ * playback host. The placeholder MainActivity must not start ambient listeners before those
+ * genuinely functional dependencies exist.
  */
 class AndroidAmbientLifecycle(
     context: Context,

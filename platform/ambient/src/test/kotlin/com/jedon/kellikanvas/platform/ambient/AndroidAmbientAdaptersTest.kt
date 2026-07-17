@@ -90,7 +90,7 @@ class AndroidAmbientAdaptersTest {
     }
 
     @Test
-    fun `timezone observer unregisters cleanly`() {
+    fun `wall time observer handles time and timezone changes then unregisters`() {
         val application = RuntimeEnvironment.getApplication()
         val source = AndroidTimezoneChangeSource(application)
         var changes = 0
@@ -100,10 +100,14 @@ class AndroidAmbientAdaptersTest {
         shadowOf(Looper.getMainLooper()).idle()
         assertThat(changes).isEqualTo(1)
 
+        application.sendBroadcast(Intent(Intent.ACTION_TIME_CHANGED))
+        shadowOf(Looper.getMainLooper()).idle()
+        assertThat(changes).isEqualTo(2)
+
         registration.unregister()
         application.sendBroadcast(Intent(Intent.ACTION_TIMEZONE_CHANGED))
         shadowOf(Looper.getMainLooper()).idle()
-        assertThat(changes).isEqualTo(1)
+        assertThat(changes).isEqualTo(2)
     }
 
     @Test

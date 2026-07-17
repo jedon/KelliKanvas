@@ -103,21 +103,34 @@ class AmbientLifecycleController(
         started = true
         generation++
         val activeGeneration = generation
-        configure(activeGeneration)
-        configRegistration =
-            configRepository.registerListener {
-                dispatcher.execute {
-                    if (!isActive(activeGeneration)) return@execute
-                    cancelRuntime()
-                    configure(activeGeneration)
-                }
+        val pendingConfigs = ArrayDeque<AmbientConfig>()
+        val subscriptionLock = Any()
+        var initializing = true
+        val subscription =
+            configRepository.subscribe { updatedConfig ->
+                val dispatchNow =
+                    synchronized(subscriptionLock) {
+                        if (initializing) pendingConfigs += updatedConfig
+                        !initializing
+                    }
+                if (dispatchNow) dispatchConfig(activeGeneration, updatedConfig)
             }
+        configRegistration = subscription.registration
+        configure(activeGeneration, subscription.snapshot)
+        synchronized(subscriptionLock) {
+            pendingConfigs.forEach { dispatchConfig(activeGeneration, it) }
+            pendingConfigs.clear()
+            initializing = false
+        }
     }
 
     @Synchronized
-    private fun configure(activeGeneration: Long) {
+    private fun configure(
+        activeGeneration: Long,
+        updatedConfig: AmbientConfig,
+    ) {
         val activeRuntimeGeneration = ++runtimeGeneration
-        config = configRepository.currentConfig()
+        config = updatedConfig
         luxPolicy = LuxPolicy(calibration = config.luxCalibration)
         schedulePolicy =
             SchedulePolicy(
@@ -131,6 +144,17 @@ class AmbientLifecycleController(
         registerBrightness(activeGeneration, activeRuntimeGeneration)
         registerPresence(activeGeneration, activeRuntimeGeneration)
         registerTimezoneChanges(activeGeneration, activeRuntimeGeneration)
+    }
+
+    private fun dispatchConfig(
+        activeGeneration: Long,
+        updatedConfig: AmbientConfig,
+    ) {
+        dispatcher.execute {
+            if (!isActive(activeGeneration)) return@execute
+            cancelRuntime()
+            configure(activeGeneration, updatedConfig)
+        }
     }
 
     @Synchronized
@@ -253,7 +277,6 @@ class AmbientLifecycleController(
                         gate,
                         activeGeneration,
                         activeRuntimeGeneration,
-                        elapsedNanos,
                     )
                 }
             }
@@ -269,11 +292,11 @@ class AmbientLifecycleController(
         gate: Gate,
         activeGeneration: Long,
         activeRuntimeGeneration: Long,
-        elapsedNanos: Long,
     ) {
         cancelPresenceTimeout()
         val deadline = gate.vacancyDeadlineNanos ?: return
-        val delayNanos = (deadline - elapsedNanos).coerceAtLeast(0L)
+        val schedulingNanos = elapsedTimeSource.nowNanos()
+        val delayNanos = (deadline - schedulingNanos).coerceAtLeast(0L)
         val timerToken = presenceTimeoutToken
         presenceTimeout =
             scheduler.schedule(java.time.Duration.ofNanos(delayNanos)) {
@@ -296,7 +319,6 @@ class AmbientLifecycleController(
                         gate,
                         activeGeneration,
                         activeRuntimeGeneration,
-                        firedAtNanos,
                     )
                 }
             }

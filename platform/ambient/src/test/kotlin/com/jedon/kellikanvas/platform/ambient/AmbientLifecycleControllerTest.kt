@@ -144,6 +144,35 @@ class AmbientLifecycleControllerTest {
     }
 
     @Test
+    fun `dispatcher backlog does not extend vacancy deadline`() {
+        val executor = QueueExecutor()
+        val source = FakeSensorSource(inventory)
+        val playback = RecordingPlaybackHost()
+        val elapsed = FakeElapsedTimeSource(0L)
+        val scheduler = FakeAmbientScheduler(elapsed)
+        val controller =
+            controller(
+                source = source,
+                config = sensorAndPresenceConfig(timeout = Duration.ofSeconds(30)),
+                elapsed = elapsed,
+                playback = playback,
+                scheduler = scheduler,
+                executor = executor,
+            )
+        controller.start()
+
+        source.emit(presence, 0f)
+        elapsed.now = Duration.ofSeconds(20).toNanos()
+        executor.runAll()
+        scheduler.advanceBy(Duration.ofSeconds(9))
+        assertThat(playback.pauseCount).isEqualTo(0)
+
+        scheduler.advanceBy(Duration.ofSeconds(1))
+        executor.runAll()
+        assertThat(playback.pauseCount).isEqualTo(1)
+    }
+
+    @Test
     fun `occupied event cancels pending vacancy timeout`() {
         val source = FakeSensorSource(inventory)
         val playback = RecordingPlaybackHost()
@@ -244,6 +273,27 @@ class AmbientLifecycleControllerTest {
         executor.runAll()
 
         assertThat(scheduler.pendingCount).isEqualTo(0)
+    }
+
+    @Test
+    fun `subscription cannot lose update between listener registration and snapshot`() {
+        val initial = AmbientConfig()
+        val updated =
+            AmbientConfig(
+                brightnessMode = BrightnessMode.SCHEDULE,
+                scheduleEnabled = true,
+            )
+        val repository = SnapshotRaceConfigRepository(initial, updated)
+        val sink = RecordingBrightnessSink()
+        val controller =
+            controller(
+                configRepository = repository,
+                sink = sink,
+            )
+
+        controller.start()
+
+        assertThat(sink.decisions.last()).isEqualTo(BrightnessDecision.Schedule(0.70f))
     }
 
     @Test
@@ -525,6 +575,30 @@ class AmbientLifecycleControllerTest {
         fun update(config: AmbientConfig) {
             this.config = config
             listeners.toList().forEach { it() }
+        }
+    }
+
+    private class SnapshotRaceConfigRepository(
+        initial: AmbientConfig,
+        private val updated: AmbientConfig,
+    ) : AmbientConfigRepository {
+        private var config = initial
+        private var racePending = true
+        private val listeners = mutableSetOf<() -> Unit>()
+
+        override fun currentConfig(): AmbientConfig {
+            val snapshot = config
+            if (racePending) {
+                racePending = false
+                config = updated
+                listeners.toList().forEach { it() }
+            }
+            return snapshot
+        }
+
+        override fun registerListener(onChanged: () -> Unit): AmbientRegistration {
+            listeners += onChanged
+            return AmbientRegistration { listeners -= onChanged }
         }
     }
 

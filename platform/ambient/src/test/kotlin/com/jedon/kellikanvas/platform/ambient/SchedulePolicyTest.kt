@@ -50,14 +50,16 @@ class SchedulePolicyTest {
     }
 
     @Test
-    fun `next boundary resolves spring DST gap in current zone`() {
+    fun `spring gap boundary fires when brightness first changes`() {
         val zone = ZoneId.of("America/New_York")
+        val schedule =
+            DayNightSchedule(
+                dayStarts = LocalTime.of(2, 30),
+                nightStarts = LocalTime.of(21, 0),
+            )
         val policy =
             SchedulePolicy(
-                schedule = DayNightSchedule(
-                    dayStarts = LocalTime.of(2, 30),
-                    nightStarts = LocalTime.of(21, 0),
-                ),
+                schedule = schedule,
                 clock = Clock.fixed(
                     Instant.parse("2026-03-08T06:00:00Z"),
                     ZoneId.of("UTC"),
@@ -66,18 +68,24 @@ class SchedulePolicyTest {
             )
 
         assertThat(policy.nextBoundaryInstant())
-            .isEqualTo(Instant.parse("2026-03-08T07:30:00Z"))
+            .isEqualTo(Instant.parse("2026-03-08T07:00:00Z"))
+        assertThat(policyAt("2026-03-08T06:59:59.999999999Z", schedule, zone).brightness())
+            .isEqualTo(0.15f)
+        assertThat(policyAt("2026-03-08T07:00:00Z", schedule, zone).brightness())
+            .isEqualTo(0.70f)
     }
 
     @Test
-    fun `next boundary does not repeat fall overlap transition`() {
+    fun `fall overlap transition and repeated boundary follow brightness changes`() {
         val zone = ZoneId.of("America/New_York")
+        val schedule =
+            DayNightSchedule(
+                dayStarts = LocalTime.of(1, 30),
+                nightStarts = LocalTime.of(21, 0),
+            )
         val policy =
             SchedulePolicy(
-                schedule = DayNightSchedule(
-                    dayStarts = LocalTime.of(1, 30),
-                    nightStarts = LocalTime.of(21, 0),
-                ),
+                schedule = schedule,
                 clock = Clock.fixed(
                     Instant.parse("2026-11-01T05:45:00Z"),
                     ZoneId.of("UTC"),
@@ -86,7 +94,25 @@ class SchedulePolicyTest {
             )
 
         assertThat(policy.nextBoundaryInstant())
-            .isEqualTo(Instant.parse("2026-11-02T02:00:00Z"))
+            .isEqualTo(Instant.parse("2026-11-01T06:00:00Z"))
+        assertThat(policyAt("2026-11-01T05:59:59.999999999Z", schedule, zone).brightness())
+            .isEqualTo(0.70f)
+        assertThat(policyAt("2026-11-01T06:00:00Z", schedule, zone).brightness())
+            .isEqualTo(0.15f)
+
+        val afterTransition =
+            SchedulePolicy(
+                schedule = schedule,
+                clock = Clock.fixed(
+                    Instant.parse("2026-11-01T06:15:00Z"),
+                    ZoneId.of("UTC"),
+                ),
+                zoneIdProvider = { zone },
+            )
+        assertThat(afterTransition.nextBoundaryInstant())
+            .isEqualTo(Instant.parse("2026-11-01T06:30:00Z"))
+        assertThat(policyAt("2026-11-01T06:30:00Z", schedule, zone).brightness())
+            .isEqualTo(0.70f)
     }
 
     @Test
@@ -107,12 +133,10 @@ class SchedulePolicyTest {
     private fun policyAt(
         instant: String,
         schedule: DayNightSchedule = DayNightSchedule(),
-    ): SchedulePolicy {
-        val zone = ZoneId.of("UTC")
-        return SchedulePolicy(
-            schedule = schedule,
-            clock = Clock.fixed(Instant.parse(instant), zone),
-            zoneIdProvider = { zone },
-        )
-    }
+        zone: ZoneId = ZoneId.of("UTC"),
+    ): SchedulePolicy = SchedulePolicy(
+        schedule = schedule,
+        clock = Clock.fixed(Instant.parse(instant), zone),
+        zoneIdProvider = { zone },
+    )
 }
