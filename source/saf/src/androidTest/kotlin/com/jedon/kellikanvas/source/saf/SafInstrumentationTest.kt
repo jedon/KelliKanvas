@@ -1,6 +1,10 @@
 package com.jedon.kellikanvas.source.saf
 
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.net.Uri
+import android.os.Bundle
+import android.os.Process
 import android.provider.DocumentsContract
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -25,31 +29,22 @@ class SafInstrumentationTest {
     private val authority = "${providerContext.packageName}.saf.documents"
     private val treeUri =
         DocumentsContract.buildTreeDocumentUri(authority, AndroidTestDocumentsProvider.ROOT_ID)
-    private val rootDocumentUri =
-        DocumentsContract.buildDocumentUriUsingTree(treeUri, AndroidTestDocumentsProvider.ROOT_ID)
-    private val grantFlags =
-        Intent.FLAG_GRANT_READ_URI_PERMISSION or
-            Intent.FLAG_GRANT_PREFIX_URI_PERMISSION
+    private val childrenUri =
+        DocumentsContract.buildChildDocumentsUriUsingTree(
+            treeUri,
+            AndroidTestDocumentsProvider.ROOT_ID,
+        )
+    private val grantBrokerUri = Uri.parse("content://${providerContext.packageName}.saf.grants")
 
     @Before
     fun setUp() {
         AndroidTestDocumentsProvider.mode = AndroidTestDocumentsProvider.Mode.ACTIVE
-        providerContext.grantUriPermission(targetPackageName, treeUri, grantFlags)
-        providerContext.grantUriPermission(targetPackageName, rootDocumentUri, grantFlags)
+        check(callGrantBroker(SafGrantBrokerProvider.METHOD_GRANT))
     }
 
     @After
     fun tearDown() {
-        providerContext.revokeUriPermission(
-            targetPackageName,
-            rootDocumentUri,
-            Intent.FLAG_GRANT_READ_URI_PERMISSION,
-        )
-        providerContext.revokeUriPermission(
-            targetPackageName,
-            treeUri,
-            Intent.FLAG_GRANT_READ_URI_PERMISSION,
-        )
+        check(callGrantBroker(SafGrantBrokerProvider.METHOD_REVOKE))
         AndroidTestDocumentsProvider.mode = AndroidTestDocumentsProvider.Mode.ACTIVE
     }
 
@@ -116,27 +111,21 @@ class SafInstrumentationTest {
     @Test
     fun targetResolverUsesExplicitTreeGrantAndProviderRejectsWrite() {
         val resolver = targetContext.contentResolver
-        val childrenUri =
-            DocumentsContract.buildChildDocumentsUriUsingTree(
-                treeUri,
-                AndroidTestDocumentsProvider.ROOT_ID,
-            )
         val documentUri =
             DocumentsContract.buildDocumentUriUsingTree(
                 treeUri,
                 AndroidTestDocumentsProvider.PHOTO_ID,
             )
 
-        resolver.query(
-            childrenUri,
-            arrayOf(DocumentsContract.Document.COLUMN_DOCUMENT_ID),
-            null,
-            null,
-            null,
-        ).use { cursor ->
-            assertThat(cursor).isNotNull()
-            assertThat(cursor?.moveToFirst()).isTrue()
+        assertTargetCanQueryChildren()
+        assertThat(callGrantBroker(SafGrantBrokerProvider.METHOD_REVOKE)).isTrue()
+        assertThat(targetReadPermission()).isEqualTo(PackageManager.PERMISSION_DENIED)
+        expectSyncFailure<SecurityException> {
+            queryTargetChildren()
         }
+        assertThat(callGrantBroker(SafGrantBrokerProvider.METHOD_GRANT)).isTrue()
+        assertTargetCanQueryChildren()
+
         resolver.openFileDescriptor(documentUri, "r").use {
             assertThat(it).isNotNull()
         }
@@ -152,6 +141,41 @@ class SafInstrumentationTest {
                     Intent.FLAG_GRANT_PREFIX_URI_PERMISSION,
             )
         assertThat(masked and Intent.FLAG_GRANT_WRITE_URI_PERMISSION).isEqualTo(0)
+    }
+
+    private fun assertTargetCanQueryChildren() {
+        assertThat(targetReadPermission()).isEqualTo(PackageManager.PERMISSION_GRANTED)
+        queryTargetChildren().use { cursor ->
+            assertThat(cursor).isNotNull()
+            assertThat(cursor?.moveToFirst()).isTrue()
+        }
+    }
+
+    private fun queryTargetChildren() = targetContext.contentResolver
+        .query(
+            childrenUri,
+            arrayOf(DocumentsContract.Document.COLUMN_DOCUMENT_ID),
+            null,
+            null,
+            null,
+        )
+
+    private fun targetReadPermission(): Int = targetContext
+        .checkUriPermission(
+            childrenUri,
+            Process.myPid(),
+            Process.myUid(),
+            Intent.FLAG_GRANT_READ_URI_PERMISSION,
+        )
+
+    private fun callGrantBroker(method: String): Boolean {
+        val extras =
+            Bundle().apply {
+                putParcelable(SafGrantBrokerProvider.EXTRA_TREE_URI, treeUri)
+            }
+        return targetContext.contentResolver
+            .call(grantBrokerUri, method, targetPackageName, extras)
+            ?.getBoolean(SafGrantBrokerProvider.EXTRA_SUCCESS) == true
     }
 
     private fun adapter(observer: SafReadObserver = CloseObserver()): SafSourceAdapter {

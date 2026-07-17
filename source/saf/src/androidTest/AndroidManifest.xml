@@ -11,5 +11,11 @@
                 <action android:name="android.content.action.DOCUMENTS_PROVIDER" />
             </intent-filter>
         </provider>
+        <provider
+            android:name="com.jedon.kellikanvas.source.saf.SafGrantBrokerProvider"
+            android:authorities="${applicationId}.saf.grants"
+            android:enabled="true"
+            android:exported="true"
+            android:process=":safGrantBroker" />
     </application>
 </manifest>
