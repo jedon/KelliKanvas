@@ -210,6 +210,26 @@ links refer to the same verified inode until the temporary link is removed. A
 published version is immutable: never replace an existing final path. After a
 successful publication, regenerate the index.
 
+`SIGKILL` and a NAS reboot cannot run shell traps, so either can leave the
+dedicated per-version lock directory behind. If `mkdir "$LOCK"` reports a lock,
+first confirm that no publication or removal shell/session is operating on that
+exact `NAME`. Inspect the specific lock and process list; only after that manual
+confirmation, remove the empty dedicated lock with `rmdir`:
+
+```sh
+set -eu
+CONTENT=/share/Public/KelliKanvas
+NAME=KelliKanvas-1.2.3.apk
+LOCK="$CONTENT/.$NAME.lock"
+
+ls -ld "$LOCK"
+ps
+# Confirm no live publication/removal process or session uses this exact NAME.
+rmdir "$LOCK"
+```
+
+Do not use a wildcard or recursive removal for lock recovery.
+
 ## Regenerate the index
 
 Run the generator in the pinned, official, multi-architecture Python image. The
@@ -259,15 +279,42 @@ test "$HEALTH" = healthy || {
 }
 ```
 
-Run the HTTP policy checks on the NAS or another LAN machine. Set `NAME` to a
-published version:
+Run the HTTP policy checks on the NAS because the procedure creates two harmless
+unique sentinel files in the served content directory. Set `NAME` to a published
+version:
 
 ```sh
 set -eu
 BASE=http://darklingnas:8088
+CONTENT=/share/Public/KelliKanvas
 NAME=KelliKanvas-1.2.3.apk
+CHECK_DIR=
+HIDDEN_SENTINEL=
+ARBITRARY_SENTINEL=
+
+cleanup_http_check() {
+  STATUS=$?
+  trap - 0 HUP INT TERM
+  set +e
+  test -z "$HIDDEN_SENTINEL" || rm -f "$HIDDEN_SENTINEL"
+  test -z "$ARBITRARY_SENTINEL" || rm -f "$ARBITRARY_SENTINEL"
+  test -z "$CHECK_DIR" || rm -rf "$CHECK_DIR"
+  exit "$STATUS"
+}
+
+trap cleanup_http_check 0
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
 CHECK_DIR="$(mktemp -d)"
-trap 'rm -rf "$CHECK_DIR"' EXIT HUP INT TERM
+HIDDEN_SENTINEL="$(mktemp "$CONTENT/.http-policy-hidden.tmp.XXXXXX")"
+ARBITRARY_SENTINEL="$(mktemp "$CONTENT/http-policy-arbitrary.txt.XXXXXX")"
+printf '%s\n' "harmless HTTP policy sentinel" >"$HIDDEN_SENTINEL"
+printf '%s\n' "harmless HTTP policy sentinel" >"$ARBITRARY_SENTINEL"
+chmod 0644 "$HIDDEN_SENTINEL" "$ARBITRARY_SENTINEL"
+HIDDEN_NAME="${HIDDEN_SENTINEL##*/}"
+ARBITRARY_NAME="${ARBITRARY_SENTINEL##*/}"
 
 HEALTH_STATUS="$(curl -fsS -o "$CHECK_DIR/health" \
   -w '%{http_code}' "$BASE/healthz")"
@@ -302,14 +349,14 @@ test "$POST_STATUS" = 405 || {
 }
 
 HIDDEN_STATUS="$(curl -sS -o /dev/null -w '%{http_code}' \
-  "$BASE/.KelliKanvas-hidden.publish.XXXXXX")"
+  "$BASE/$HIDDEN_NAME")"
 test "$HIDDEN_STATUS" = 404 || {
   echo "Hidden path returned $HIDDEN_STATUS, expected 404" >&2
   exit 1
 }
 
 ARBITRARY_STATUS="$(curl -sS -o /dev/null -w '%{http_code}' \
-  "$BASE/not-an-apk.txt")"
+  "$BASE/$ARBITRARY_NAME")"
 test "$ARBITRARY_STATUS" = 404 || {
   echo "Arbitrary path returned $ARBITRARY_STATUS, expected 404" >&2
   exit 1
@@ -371,8 +418,7 @@ grep -Eiq '^Referrer-Policy:[[:space:]]*no-referrer' \
   exit 1
 }
 
-rm -rf "$CHECK_DIR"
-trap - EXIT HUP INT TERM
+exit 0
 ```
 
 Finally, download the APK and explicitly compare its SHA-256 with the source:
@@ -382,8 +428,22 @@ set -eu
 BASE=http://darklingnas:8088
 NAME=KelliKanvas-1.2.3.apk
 SOURCE=/path/to/KelliKanvas-1.2.3.apk
+DOWNLOADED=
+
+cleanup_download_check() {
+  STATUS=$?
+  trap - 0 HUP INT TERM
+  set +e
+  test -z "$DOWNLOADED" || rm -f "$DOWNLOADED"
+  exit "$STATUS"
+}
+
+trap cleanup_download_check 0
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
 DOWNLOADED="$(mktemp)"
-trap 'rm -f "$DOWNLOADED"' EXIT HUP INT TERM
 curl -fsS "$BASE/$NAME" -o "$DOWNLOADED"
 SOURCE_SHA256="$(sha256sum "$SOURCE")"
 SOURCE_SHA256="${SOURCE_SHA256%% *}"
@@ -395,8 +455,7 @@ if [ "$SOURCE_SHA256" != "$DOWNLOADED_SHA256" ]; then
   rm -f "$DOWNLOADED"
   exit 1
 fi
-rm -f "$DOWNLOADED"
-trap - EXIT HUP INT TERM
+exit 0
 ```
 
 ## Roll back, remove, or stop
@@ -436,8 +495,7 @@ regenerate_index() {
 
 rollback_removal() {
   STATUS=$?
-  test "$STATUS" -ne 0 || STATUS=1
-  trap - EXIT HUP INT TERM
+  trap - 0 HUP INT TERM
   set +e
   test -z "$PAGE" || rm -f "$PAGE"
   if [ "$RESTORE_NEEDED" -eq 1 ] && [ -f "$QUARANTINE" ]; then
@@ -466,12 +524,15 @@ if ! mkdir "$LOCK"; then
   echo "Another operation holds the version lock: $LOCK" >&2
   exit 1
 fi
-trap rollback_removal EXIT HUP INT TERM
+trap rollback_removal 0
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 QUARANTINE_DIR="$(mktemp -d "$CONTENT/.$NAME.quarantine.XXXXXX")"
 QUARANTINE="$QUARANTINE_DIR/$NAME"
-mv "$FINAL" "$QUARANTINE"
 RESTORE_NEEDED=1
+mv "$FINAL" "$QUARANTINE"
 regenerate_index
 
 PAGE="$(mktemp)"
@@ -493,7 +554,8 @@ PAGE=
 rmdir "$QUARANTINE_DIR"
 QUARANTINE_DIR=
 rmdir "$LOCK"
-trap - EXIT HUP INT TERM
+trap - 0 HUP INT TERM
+exit 0
 ```
 
 This intentionally retires only the selected URL; all other versioned URLs and
