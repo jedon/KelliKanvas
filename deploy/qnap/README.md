@@ -229,6 +229,7 @@ TEMP=
 PAGE=
 FINAL_CREATED=0
 INDEX_CONSISTENT=0
+DUPLICATE_NOOP=0
 SEMVER_APK_PATTERN='^KelliKanvas-(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-(0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)(\.(0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?\.apk$'
 CS="$(getcfg container-station Install_Path -f /etc/config/qpkg.conf)"
 test -x "$CS/bin/docker"
@@ -252,6 +253,14 @@ cleanup_publication() {
   test "$STATUS" -ne 0 || STATUS=1
   RECOVERY_FAILED=0
   OWN_FINAL="$FINAL_CREATED"
+
+  if [ "$DUPLICATE_NOOP" -eq 1 ]; then
+    if ! release_global_lock; then
+      echo "RECOVERY REQUIRED: duplicate was unchanged but global lock release failed" >&2
+      echo "RECOVERY REQUIRED: global lock retained for stale recovery." >&2
+    fi
+    exit "$STATUS"
+  fi
 
   if [ -n "$PAGE" ] && ! rm -f "$PAGE"; then
     echo "RECOVERY REQUIRED: failed to remove verification temporary: $PAGE" >&2
@@ -324,7 +333,12 @@ trap 'exit 143' TERM
 printf 'operation=publish\nname=%s\npid=%s\n' "$NAME" "$$" >"$LOCK/owner"
 chmod 0644 "$LOCK/owner"
 if [ -e "$FINAL" ] || [ -L "$FINAL" ]; then
-  echo "Version already exists; immutable APK will not be overwritten: $FINAL" >&2
+  if [ -f "$FINAL" ] && [ ! -L "$FINAL" ]; then
+    DUPLICATE_NOOP=1
+    echo "Version already exists; immutable APK will not be overwritten: $FINAL" >&2
+  else
+    echo "RECOVERY REQUIRED: existing FINAL has an unexpected type: $FINAL" >&2
+  fi
   exit 1
 fi
 
@@ -376,6 +390,9 @@ published version is immutable: never replace an existing final path. If
 generation or verification fails after the link is created, rollback removes
 that newly created final and regenerates the previous index before unlocking.
 Any rollback failure retains the global lock for stale recovery.
+A duplicate immutable-version attempt is checked while the global lock is held,
+before TEMP creation. It exits nonzero without changing content and explicitly
+removes its owner metadata and lock; it does not require stale recovery.
 
 `SIGKILL` and a NAS reboot cannot run shell traps. They can leave the global
 lock while an APK and `index.html` reflect different phases of one operation.
@@ -505,6 +522,14 @@ done
 if [ "$OPERATION" = publish ]; then
   test "$QUARANTINE_COUNT" -eq 0 ||
     refuse_recovery "publish owner has quarantine state"
+  if [ "$FINAL_PRESENT" -eq 1 ] && [ "$PUBLISH_COUNT" -eq 1 ]; then
+    FINAL_ID="$(stat -c '%d:%i' "$FINAL")" ||
+      refuse_recovery "cannot read FINAL device and inode"
+    TEMP_ID="$(stat -c '%d:%i' "$PUBLISH_TEMP")" ||
+      refuse_recovery "cannot read publication TEMP device and inode"
+    test "$FINAL_ID" = "$TEMP_ID" ||
+      refuse_recovery "FINAL and publication TEMP are different inodes"
+  fi
 elif [ "$OPERATION" = remove ]; then
   test "$PUBLISH_COUNT" -eq 0 ||
     refuse_recovery "remove owner has publication state"
@@ -1005,7 +1030,9 @@ controlled pauses before generation. Each competing operation first attempts
 the same global `mkdir`; the test proves a publish/publish and publish/remove
 competitor cannot create, quarantine, or remove an APK while the first publisher
 holds the lock. Each competitor is then retried after release, and the final
-page is compared exactly with the real generator's discovered APK list:
+page is compared exactly with the real generator's discovered APK list. It also
+proves a duplicate version is a clean no-op, matching stale hard links reconcile,
+and different stale inodes remain locked without changing the page:
 
 ```sh
 set -eu
@@ -1051,12 +1078,24 @@ with tempfile.TemporaryDirectory() as directory:
             check=True,
         )
 
+    def require_same_inode(final: Path, temporary: Path) -> None:
+        final_stat = final.stat()
+        temporary_stat = temporary.stat()
+        if (final_stat.st_dev, final_stat.st_ino) != (
+            temporary_stat.st_dev,
+            temporary_stat.st_ino,
+        ):
+            raise RuntimeError("FINAL and publication TEMP are different inodes")
+
     def publish(
         name: str,
         entered: threading.Event | None = None,
         proceed: threading.Event | None = None,
     ) -> None:
         acquire("publish", name)
+        if (content / name).exists():
+            release()
+            raise FileExistsError(name)
         temporary = content / f".{name}.publish.{uuid.uuid4().hex}"
         try:
             temporary.write_bytes(name.encode("ascii"))
@@ -1116,6 +1155,19 @@ with tempfile.TemporaryDirectory() as directory:
     finish(thread, proceed)
     publish(second)
 
+    page_before_duplicate = (content / "index.html").read_bytes()
+    first_before_duplicate = (content / first).read_bytes()
+    try:
+        publish(first)
+    except FileExistsError:
+        pass
+    else:
+        raise AssertionError("duplicate immutable publication unexpectedly succeeded")
+    assert not lock.exists()
+    assert not list(content.glob(f".{first}.publish.*"))
+    assert (content / first).read_bytes() == first_before_duplicate
+    assert (content / "index.html").read_bytes() == page_before_duplicate
+
     thread, proceed = paused_publish(third)
     blocked("remove", second)
     assert (content / second).is_file()
@@ -1142,7 +1194,48 @@ with tempfile.TemporaryDirectory() as directory:
     assert not list(content.glob(".*.publish.*"))
     assert not list(content.glob(".*.quarantine.*"))
 
-print("global serialization and exact final index: PASS")
+    matching = "KelliKanvas-4.0.0.apk"
+    matching_final = content / matching
+    matching_temp = content / f".{matching}.publish.matching"
+    acquire("publish", matching)
+    matching_temp.write_bytes(b"matching")
+    os.link(matching_temp, matching_final)
+    require_same_inode(matching_final, matching_temp)
+    matching_temp.unlink()
+    generate()
+    release()
+    assert matching in (content / "index.html").read_text(encoding="utf-8")
+
+    acquire("remove", matching)
+    matching_final.unlink()
+    generate()
+    release()
+
+    mismatched = "KelliKanvas-5.0.0.apk"
+    mismatched_final = content / mismatched
+    mismatched_temp = content / f".{mismatched}.publish.mismatched"
+    page_before_mismatch = (content / "index.html").read_bytes()
+    acquire("publish", mismatched)
+    mismatched_final.write_bytes(b"final")
+    mismatched_temp.write_bytes(b"temporary")
+    try:
+        require_same_inode(mismatched_final, mismatched_temp)
+    except RuntimeError:
+        pass
+    else:
+        raise AssertionError("different stale publication inodes were accepted")
+    assert lock.exists()
+    assert mismatched_final.exists() and mismatched_temp.exists()
+    assert (content / "index.html").read_bytes() == page_before_mismatch
+    assert mismatched not in page_before_mismatch.decode("utf-8")
+
+    mismatched_temp.unlink()
+    mismatched_final.unlink()
+    release()
+    assert not lock.exists()
+    assert (content / "index.html").read_bytes() == page_before_mismatch
+
+print("global serialization, stale inode policy, and exact final index: PASS")
 PY
 ```
 
