@@ -1,4 +1,5 @@
 import os
+import stat
 import tempfile
 import unittest
 from datetime import datetime, timezone
@@ -143,6 +144,18 @@ class ApkIndexTest(unittest.TestCase):
             self.assertNotEqual(output.read_text(encoding="utf-8"), "old")
             self.assertEqual(list(root.glob(".index-*.tmp")), [])
 
+    @unittest.skipUnless(os.name == "posix", "POSIX mode semantics required")
+    def test_generated_index_has_mode_0644(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            output = root / "index.html"
+            output.write_text("old", encoding="utf-8")
+            output.chmod(0o644)
+
+            generate_index(root)
+
+            self.assertEqual(stat.S_IMODE(output.stat().st_mode), 0o644)
+
     def test_generation_requests_same_directory_temp_and_uses_replace(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -186,18 +199,41 @@ class ApkIndexTest(unittest.TestCase):
                 return_value=context_manager,
             ):
                 with patch(
-                    "tools.generate_apk_index.os.fsync",
-                    side_effect=lambda _fd: events.append("fsync"),
-                ) as fsync:
+                    "tools.generate_apk_index.os.chmod",
+                    side_effect=lambda _path, _mode: events.append("chmod"),
+                ) as chmod:
                     with patch(
-                        "tools.generate_apk_index.os.replace",
-                        side_effect=lambda _source, _output: events.append("replace"),
-                    ):
-                        generate_index(root, output)
+                        "tools.generate_apk_index.os.fsync",
+                        side_effect=lambda _fd: events.append("fsync"),
+                    ) as fsync:
+                        with patch(
+                            "tools.generate_apk_index.os.replace",
+                            side_effect=lambda _source, _output: events.append("replace"),
+                        ):
+                            generate_index(root, output)
 
             temporary.write.assert_called_once()
+            chmod.assert_called_once_with(Path(temporary.name), 0o644)
             fsync.assert_called_once_with(42)
-            self.assertEqual(events, ["flush", "fsync", "replace"])
+            self.assertEqual(events, ["flush", "fsync", "chmod", "replace"])
+
+    def test_generation_cleans_temp_when_chmod_raises(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            output = root / "index.html"
+            output.write_text("old", encoding="utf-8")
+
+            with patch(
+                "tools.generate_apk_index.os.chmod",
+                side_effect=OSError("chmod failed"),
+            ):
+                with patch("tools.generate_apk_index.os.replace") as replace:
+                    with self.assertRaisesRegex(OSError, "chmod failed"):
+                        generate_index(root, output)
+
+            replace.assert_not_called()
+            self.assertEqual(output.read_text(encoding="utf-8"), "old")
+            self.assertEqual(list(root.glob(".index-*.tmp")), [])
 
     def test_generation_cleans_temp_when_replace_raises(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

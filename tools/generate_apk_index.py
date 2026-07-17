@@ -284,6 +284,7 @@ def generate_index(directory: Path, output: Path | None = None) -> Path:
             temporary.write(page)
             temporary.flush()
             os.fsync(temporary.fileno())
+        os.chmod(temporary_path, 0o644)
         os.replace(temporary_path, output)
         return output
     finally:
