@@ -1,0 +1,335 @@
+name: Signed release APK
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_sequence:
+        description: Monotonic authenticated release sequence
+        required: true
+        type: number
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@c1e323688fd81a25caa38c78aa6df2d33d3e20d9 # v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a # v4
+
+      - name: Install Android SDK
+        run: |
+          "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" \
+            "platforms;android-37.0" "build-tools;36.0.0" "platform-tools"
+          echo "$ANDROID_SDK_ROOT/build-tools/36.0.0" >> "$GITHUB_PATH"
+
+      - name: Test and lint
+        run: |
+          python -m unittest tools.tests.test_build_update_bundle
+          python -m unittest tools.tests.test_qnap_deployment
+          ./gradlew --dependency-verification strict ktlintCheck lintDebug testDebugUnitTest \
+            :platform:update:assembleDebugAndroidTest --stacktrace
+
+  device-security:
+    needs: verify
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@c1e323688fd81a25caa38c78aa6df2d33d3e20d9 # v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a # v4
+
+      - name: Install API 34 emulator
+        run: |
+          set -euo pipefail
+          sudo chmod 666 /dev/kvm
+          "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" \
+            "platform-tools" "emulator" "platforms;android-34" \
+            "system-images;android-34;google_apis;x86_64"
+          printf 'no\n' | "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/avdmanager" \
+            create avd --force --name updater-api34 \
+            --package "system-images;android-34;google_apis;x86_64"
+
+      - name: Run updater security tests on API 34
+        run: |
+          set -euo pipefail
+          cleanup() { adb emu kill >/dev/null 2>&1 || true; }
+          trap cleanup EXIT
+          "$ANDROID_SDK_ROOT/emulator/emulator" -avd updater-api34 \
+            -no-window -no-audio -no-boot-anim -no-snapshot -gpu swiftshader_indirect &
+          adb wait-for-device
+          for attempt in $(seq 1 60); do
+            if [[ "$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" == "1" ]]; then
+              break
+            fi
+            sleep 5
+          done
+          [[ "$(adb shell getprop sys.boot_completed | tr -d '\r')" == "1" ]]
+          adb shell settings put global window_animation_scale 0
+          adb shell settings put global transition_animation_scale 0
+          adb shell settings put global animator_duration_scale 0
+          ./gradlew --dependency-verification strict \
+            :platform:update:connectedDebugAndroidTest --stacktrace
+
+  build-unsigned:
+    needs: device-security
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@c1e323688fd81a25caa38c78aa6df2d33d3e20d9 # v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a # v4
+
+      - name: Install Android SDK
+        run: |
+          "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" \
+            "platforms;android-37.0" "build-tools;36.0.0" "platform-tools"
+          echo "$ANDROID_SDK_ROOT/build-tools/36.0.0" >> "$GITHUB_PATH"
+
+      - name: Build unsigned release APK
+        env:
+          KELLIKANVAS_METADATA_PUBLIC_KEY_BASE64: ${{ vars.KELLIKANVAS_METADATA_PUBLIC_KEY_BASE64 }}
+        run: |
+          ./gradlew --dependency-verification strict :app:assembleRelease --stacktrace
+          python - <<'PY'
+          import pathlib
+          source = pathlib.Path(
+              "app/build/generated/source/buildConfig/release/com/jedon/kellikanvas/BuildConfig.java"
+          ).read_text()
+          prefix = "public static final String UPDATE_METADATA_PUBLIC_KEY_BASE64 = \""
+          matches = [line.strip() for line in source.splitlines() if line.strip().startswith(prefix)]
+          if len(matches) != 1 or not matches[0].endswith("\";"):
+              raise SystemExit("release BuildConfig metadata pin is missing or malformed")
+          value = matches[0][len(prefix):-2]
+          if not value:
+              raise SystemExit("release BuildConfig metadata pin is empty")
+          pathlib.Path("metadata-pins.txt").write_text(value)
+          PY
+
+      - name: Upload unsigned APK
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: kellikanvas-unsigned-apk
+          path: app/build/outputs/apk/release/app-release-unsigned.apk
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Upload compiled metadata pins
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: kellikanvas-metadata-pins
+          path: metadata-pins.txt
+          if-no-files-found: error
+          retention-days: 1
+
+  apk-sign:
+    needs: build-unsigned
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Download unsigned APK
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: kellikanvas-unsigned-apk
+          path: input
+
+      - name: Install APK signing tool
+        run: |
+          "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" "build-tools;36.0.0"
+          echo "$ANDROID_SDK_ROOT/build-tools/36.0.0" >> "$GITHUB_PATH"
+
+      - name: Sign APK in isolated process
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KELLIKANVAS_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KELLIKANVAS_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KELLIKANVAS_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KELLIKANVAS_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          key_file="$RUNNER_TEMP/kellikanvas.jks"
+          cleanup() { rm -f "$key_file"; }
+          trap cleanup EXIT
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$key_file"
+          chmod 600 "$key_file"
+          unset KEYSTORE_BASE64
+          apksigner sign \
+            --ks "$key_file" \
+            --ks-pass "env:KEYSTORE_PASSWORD" \
+            --ks-key-alias "$KEY_ALIAS" \
+            --key-pass "env:KEY_PASSWORD" \
+            --out kellikanvas-signed.apk \
+            input/app-release-unsigned.apk
+          apksigner verify --verbose --print-certs kellikanvas-signed.apk
+          cleanup
+          trap - EXIT
+
+      - name: Upload signed APK
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: kellikanvas-signed-apk
+          path: kellikanvas-signed.apk
+          if-no-files-found: error
+          retention-days: 1
+
+  prepare-update:
+    needs: apk-sign
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+
+      - name: Download signed APK
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: kellikanvas-signed-apk
+          path: input
+
+      - name: Install APK inspection tools
+        run: |
+          "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" "build-tools;36.0.0"
+          echo "$ANDROID_SDK_ROOT/build-tools/36.0.0" >> "$GITHUB_PATH"
+
+      - name: Prepare canonical unsigned metadata
+        run: |
+          python tools/build_update_bundle.py \
+            input/kellikanvas-signed.apk \
+            --apksigner "$ANDROID_SDK_ROOT/build-tools/36.0.0/apksigner" \
+            --apkanalyzer "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/apkanalyzer" \
+            --sequence "${{ inputs.release_sequence }}" \
+            --prepare-only
+          mkdir -p dist/release-tools
+          cp tools/verify_update_envelope.py dist/release-tools/
+
+      - name: Upload prepared update
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: kellikanvas-prepared-update
+          path: dist/
+          if-no-files-found: error
+          retention-days: 1
+
+  metadata-sign:
+    needs: prepare-update
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Download prepared update
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: kellikanvas-prepared-update
+          path: dist
+
+      - name: Download compiled metadata pins
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: kellikanvas-metadata-pins
+          path: build-config
+
+      - name: Sign canonical metadata only
+        env:
+          METADATA_PRIVATE_KEY_BASE64: ${{ secrets.KELLIKANVAS_METADATA_PRIVATE_KEY_BASE64 }}
+          METADATA_KEY_ID: ${{ vars.KELLIKANVAS_METADATA_KEY_ID }}
+        run: |
+          set -euo pipefail
+          metadata_key="$RUNNER_TEMP/metadata-key.pem"
+          signature="$RUNNER_TEMP/metadata-signature"
+          public_der="$RUNNER_TEMP/metadata-public.der"
+          public_pem="$RUNNER_TEMP/metadata-public.pem"
+          destroy_secret() {
+            local file="${1:-}"
+            if [[ -n "$file" && -f "$file" ]]; then
+              shred -u "$file" 2>/dev/null || rm -f "$file"
+            fi
+          }
+          cleanup() {
+            destroy_secret "${metadata_key:-}"
+            rm -f "$signature" "$public_der" "$public_pem" \
+              dist/manifest.payload.json
+            rm -rf dist/release-tools
+          }
+          trap cleanup EXIT
+          [[ "$METADATA_KEY_ID" =~ ^[A-Za-z0-9._-]{1,64}$ ]]
+          printf '%s' "$METADATA_PRIVATE_KEY_BASE64" | base64 --decode > "$metadata_key"
+          chmod 600 "$metadata_key"
+          unset METADATA_PRIVATE_KEY_BASE64
+          openssl dgst -sha256 -sign "$metadata_key" \
+            -out "$signature" dist/manifest.payload.json
+          destroy_secret "$metadata_key"
+          metadata_key=""
+          python - "$signature" "$METADATA_KEY_ID" <<'PY'
+          import base64, json, pathlib, sys
+          signature = pathlib.Path(sys.argv[1]).read_bytes()
+          payload_path = pathlib.Path("dist/manifest.payload.json")
+          envelope = {
+              "envelopeSchema": 1,
+              "keyId": sys.argv[2],
+              "payload": base64.b64encode(payload_path.read_bytes()).decode("ascii"),
+              "signature": base64.b64encode(signature).decode("ascii"),
+          }
+          pathlib.Path("dist/update-envelope.json").write_bytes(
+              (json.dumps(envelope, sort_keys=True, separators=(",", ":")) + "\n").encode()
+          )
+          PY
+          python - "$METADATA_KEY_ID" build-config/metadata-pins.txt "$public_der" <<'PY'
+          import base64, pathlib, sys
+          key_id, pins_path, output_path = sys.argv[1:]
+          entries = pathlib.Path(pins_path).read_text().split(",")
+          pairs = [entry.split("=", 1) for entry in entries]
+          if any(len(pair) != 2 for pair in pairs) or len({pair[0] for pair in pairs}) != len(pairs):
+              raise SystemExit("invalid compiled metadata pin set")
+          pins = dict(pairs)
+          if key_id not in pins:
+              raise SystemExit("metadata key ID is not pinned by the release app")
+          pathlib.Path(output_path).write_bytes(base64.b64decode(pins[key_id], validate=True))
+          PY
+          openssl pkey -pubin -inform DER -in "$public_der" -out "$public_pem"
+          python dist/release-tools/verify_update_envelope.py \
+            --envelope dist/update-envelope.json \
+            --public-key "$public_pem" \
+            --key-id "$METADATA_KEY_ID" >/dev/null
+          cleanup
+          trap - EXIT
+
+      - name: Upload signed private bundle
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: kellikanvas-private-update
+          path: dist/
+          if-no-files-found: error
+          retention-days: 14
