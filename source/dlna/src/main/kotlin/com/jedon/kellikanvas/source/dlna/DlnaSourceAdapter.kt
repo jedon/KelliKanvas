@@ -16,8 +16,12 @@ import com.jedon.kellikanvas.source.PhotoByteStream
 import com.jedon.kellikanvas.source.SourceAdapter
 import kotlinx.coroutines.CancellationException
 import okhttp3.OkHttpClient
+import okio.Buffer
+import java.io.IOException
 import java.net.SocketTimeoutException
 import java.net.URI
+import java.util.LinkedHashMap
+import java.util.UUID
 
 data class DlnaProfile(
     val id: SourceProfileId,
@@ -54,6 +58,12 @@ class DlnaSourceAdapter(
     private val selector: DlnaResourceSelector =
         DlnaResourceSelector(setOf("image/jpeg", "image/png", "image/webp", "image/gif", "image/heic"), 3840, 2160),
 ) : SourceAdapter() {
+    private val cursorStates =
+        object : LinkedHashMap<String, CursorState>(16, 0.75f, true) {
+            override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, CursorState>?): Boolean = size >
+                MAX_ACTIVE_CURSORS
+        }
+
     override val profileId: SourceProfileId = profile.id
     override val kind: SourceKind = SourceKind.DLNA
     override val capabilities =
@@ -81,15 +91,28 @@ class DlnaSourceAdapter(
         limit: Int,
     ): Page<SourceEntry> = normalize("list") {
         val objectId = decodeStableId(folder.objectId)
-        val start = cursor?.value?.toIntOrNull()
-            ?: if (cursor == null) 0 else throw DlnaProtocolException("Invalid DLNA page cursor")
-        require(start >= 0) { "Page cursor must be nonnegative" }
+        val cursorState = consumeCursor(cursor)
+        val start = cursorState.startingIndex
         val page = backend.browse(objectId, start, limit)
+        val nextIndex = page.validateForRequest(start, limit)
+        val pageIds = page.objects.map(DlnaObject::stableId)
+        if (pageIds.any(cursorState.seenObjectIds::contains)) {
+            throw DlnaProtocolException("ContentDirectory repeated an object across pages")
+        }
+        val seenObjectIds = cursorState.seenObjectIds + pageIds
+        if (seenObjectIds.size > MAX_TRACKED_PAGING_OBJECTS) {
+            throw DlnaProtocolException("ContentDirectory paging identity limit exceeded")
+        }
         val entries = page.objects.mapNotNull(::toEntry)
-        val nextIndex = start + page.numberReturned
+        val hasNext =
+            if (page.totalMatches == 0) {
+                page.numberReturned == limit
+            } else {
+                nextIndex < page.totalMatches
+            }
         Page(
             items = entries,
-            nextCursor = if (nextIndex < page.totalMatches) PageCursor(nextIndex.toString()) else null,
+            nextCursor = if (hasNext) registerCursor(nextIndex, seenObjectIds) else null,
         )
     }
 
@@ -100,7 +123,10 @@ class DlnaSourceAdapter(
     }
 
     override suspend fun openStream(asset: AssetRef): PhotoByteStream = normalize("open") {
-        backend.open(decodeStableId(asset.objectId))
+        NormalizingDlnaPhotoByteStream(
+            backend.open(decodeStableId(asset.objectId)),
+            profileId,
+        )
     }
 
     private fun toEntry(item: DlnaObject): SourceEntry? {
@@ -128,6 +154,24 @@ class DlnaSourceAdapter(
         return id.value.substring(prefix.length)
     }
 
+    private fun consumeCursor(cursor: PageCursor?): CursorState {
+        if (cursor == null) return CursorState(0, emptySet())
+        return synchronized(cursorStates) {
+            cursorStates.remove(cursor.value)
+        } ?: throw DlnaProtocolException("Invalid or repeated DLNA page cursor")
+    }
+
+    private fun registerCursor(
+        startingIndex: Int,
+        seenObjectIds: Set<String>,
+    ): PageCursor {
+        val token = UUID.randomUUID().toString()
+        synchronized(cursorStates) {
+            cursorStates[token] = CursorState(startingIndex, seenObjectIds)
+        }
+        return PageCursor(token)
+    }
+
     private suspend fun <T> normalize(
         operation: String,
         block: suspend () -> T,
@@ -147,9 +191,14 @@ class DlnaSourceAdapter(
         throw SourceFailure.ProtocolFailure(profileId, operation, "DLNA protocol response invalid")
     } catch (_: DlnaSecurityException) {
         throw SourceFailure.ProtocolFailure(profileId, operation, "DLNA endpoint policy rejected request")
+    } catch (_: IOException) {
+        throw SourceFailure.SourceUnavailable(profileId, operation, "DLNA network unavailable")
     }
 
     companion object {
+        private const val MAX_ACTIVE_CURSORS = 128
+        private const val MAX_TRACKED_PAGING_OBJECTS = 100_000
+
         fun network(
             profile: DlnaProfile,
             httpClient: OkHttpClient,
@@ -178,6 +227,61 @@ class DlnaSourceAdapter(
             )
         }
     }
+
+    private data class CursorState(
+        val startingIndex: Int,
+        val seenObjectIds: Set<String>,
+    )
+}
+
+private class NormalizingDlnaPhotoByteStream(
+    private val delegate: PhotoByteStream,
+    private val profileId: SourceProfileId,
+) : PhotoByteStream(delegate.contentLength) {
+    override suspend fun readAtMostTo(
+        sink: Buffer,
+        byteCount: Long,
+    ): Long = try {
+        delegate.read(sink, byteCount)
+    } catch (failure: CancellationException) {
+        throw failure
+    } catch (failure: SourceFailure) {
+        throw failure
+    } catch (_: IOException) {
+        throw SourceFailure.SourceUnavailable(profileId, "read", "DLNA network unavailable")
+    }
+
+    override fun close() = delegate.close()
+}
+
+internal fun DlnaBrowsePage.validateForRequest(
+    startingIndex: Int,
+    requestedCount: Int,
+): Int {
+    if (numberReturned < 0 || totalMatches < 0) {
+        throw DlnaProtocolException("Negative ContentDirectory paging count")
+    }
+    if (numberReturned > requestedCount || numberReturned != objects.size) {
+        throw DlnaProtocolException("Inconsistent ContentDirectory returned count")
+    }
+    if (objects.distinctBy(DlnaObject::stableId).size != objects.size) {
+        throw DlnaProtocolException("Duplicate ContentDirectory objects")
+    }
+    val nextIndex =
+        try {
+            Math.addExact(startingIndex, numberReturned)
+        } catch (_: ArithmeticException) {
+            throw DlnaProtocolException("ContentDirectory cursor overflow")
+        }
+    if (totalMatches > 0) {
+        if (nextIndex > totalMatches || startingIndex > totalMatches) {
+            throw DlnaProtocolException("Inconsistent ContentDirectory total count")
+        }
+        if (numberReturned == 0 && startingIndex < totalMatches) {
+            throw DlnaProtocolException("ContentDirectory paging made no progress")
+        }
+    }
+    return nextIndex
 }
 
 class NetworkDlnaBackend(

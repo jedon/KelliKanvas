@@ -90,6 +90,43 @@ class SsdpDiscovererTest {
         assertThat(lock.releases).isEqualTo(1)
     }
 
+    @Test
+    fun `hostile datagrams are skipped and unique devices are capped`() = runTest {
+        val hostile =
+            response(
+                "X: ${"x".repeat(4097)}",
+                "LOCATION: http://192.168.1.8/root.xml",
+                "USN: uuid:hostile",
+                "ST: urn:schemas-upnp-org:device:MediaServer:1",
+            )
+        val valid =
+            (0 until 100).map { index ->
+                response(
+                    "LOCATION: http://192.168.1.${index + 1}/root.xml",
+                    "USN: uuid:server-$index",
+                    "ST: urn:schemas-upnp-org:device:MediaServer:1",
+                )
+            }
+        val lock = FakeLock()
+
+        val devices = SsdpDiscoverer({ FakeTransport(listOf(hostile) + valid) }, lock).discover()
+
+        assertThat(devices).hasSize(64)
+        assertThat(devices.map(SsdpDevice::udn)).doesNotContain("uuid:hostile")
+        assertThat(lock.releases).isEqualTo(1)
+    }
+
+    @Test
+    fun `multicast lock releases when transport close throws`() = runTest {
+        val lock = FakeLock()
+        val transport = FakeTransport(emptyList(), closeFailure = IllegalStateException("close"))
+
+        val failure = runCatching { SsdpDiscoverer({ transport }, lock).discover() }.exceptionOrNull()
+
+        assertThat(failure).isInstanceOf(IllegalStateException::class.java)
+        assertThat(lock.releases).isEqualTo(1)
+    }
+
     private fun response(vararg headers: String): ByteArray = (
         "HTTP/1.1 200 OK\r\n" + headers.joinToString("\r\n") + "\r\n\r\n"
         ).encodeToByteArray()
@@ -109,6 +146,7 @@ class SsdpDiscovererTest {
     private class FakeTransport(
         private val packets: List<ByteArray>,
         private val stall: Boolean = false,
+        private val closeFailure: Throwable? = null,
     ) : SsdpTransport {
         val started = CompletableDeferred<Unit>()
         var request = ""
@@ -132,6 +170,7 @@ class SsdpDiscovererTest {
 
         override fun close() {
             closed = true
+            closeFailure?.let { throw it }
         }
     }
 }

@@ -1,15 +1,17 @@
 package com.jedon.kellikanvas.source.dlna
 
 import android.net.wifi.WifiManager
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.currentCoroutineContext
-import kotlinx.coroutines.isActive
-import kotlinx.coroutines.withContext
+import kotlinx.coroutines.suspendCancellableCoroutine
 import java.net.DatagramPacket
 import java.net.DatagramSocket
 import java.net.InetAddress
+import java.net.SocketException
 import java.net.SocketTimeoutException
 import java.net.URI
+import java.util.concurrent.atomic.AtomicReference
+import kotlin.concurrent.thread
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 
 internal const val SSDP_MAX_DATAGRAM_BYTES = 64 * 1024
 internal const val SSDP_DISCOVERY_WINDOW_MILLIS = 3_000L
@@ -85,51 +87,59 @@ interface SsdpTransport : AutoCloseable {
 }
 
 class UdpSsdpTransport : SsdpTransport {
-    @Volatile
-    private var socket: DatagramSocket? = null
+    private val socket = AtomicReference<DatagramSocket?>()
 
     override suspend fun search(
         request: ByteArray,
         maxDatagramBytes: Int,
         windowMillis: Long,
         receive: (ByteArray, Int) -> Unit,
-    ) = withContext(Dispatchers.IO) {
+    ) = suspendCancellableCoroutine { continuation ->
         val activeSocket = DatagramSocket()
-        socket = activeSocket
-        val cancellation = currentCoroutineContext()[kotlinx.coroutines.Job]
-            ?.invokeOnCompletion { if (it != null) activeSocket.close() }
-        try {
-            activeSocket.send(
-                DatagramPacket(
-                    request,
-                    request.size,
-                    InetAddress.getByName("239.255.255.250"),
-                    1900,
-                ),
-            )
-            val deadline = System.nanoTime() + windowMillis * 1_000_000
-            val buffer = ByteArray(maxDatagramBytes)
-            while (currentCoroutineContext().isActive) {
-                val remainingMillis = (deadline - System.nanoTime()) / 1_000_000
-                if (remainingMillis <= 0) break
-                activeSocket.soTimeout = remainingMillis.coerceAtMost(250).toInt().coerceAtLeast(1)
-                try {
-                    val packet = DatagramPacket(buffer, buffer.size)
-                    activeSocket.receive(packet)
-                    receive(packet.data.copyOf(packet.length), packet.length)
-                } catch (_: SocketTimeoutException) {
-                    // Recheck cancellation and the fixed discovery deadline.
+        socket.set(activeSocket)
+        continuation.invokeOnCancellation {
+            socket.getAndSet(null)?.close()
+        }
+        thread(name = "KelliKanvas-SSDP", isDaemon = true) {
+            try {
+                activeSocket.send(
+                    DatagramPacket(
+                        request,
+                        request.size,
+                        InetAddress.getByName("239.255.255.250"),
+                        1900,
+                    ),
+                )
+                val deadline = System.nanoTime() + windowMillis * 1_000_000
+                val buffer = ByteArray(maxDatagramBytes)
+                while (continuation.isActive) {
+                    val remainingMillis = (deadline - System.nanoTime()) / 1_000_000
+                    if (remainingMillis <= 0) break
+                    activeSocket.soTimeout = remainingMillis.coerceAtMost(Int.MAX_VALUE.toLong()).toInt().coerceAtLeast(1)
+                    try {
+                        val packet = DatagramPacket(buffer, buffer.size)
+                        activeSocket.receive(packet)
+                        receive(packet.data.copyOf(packet.length), packet.length)
+                    } catch (_: SocketTimeoutException) {
+                        break
+                    }
                 }
+                continuation.resume(Unit)
+            } catch (failure: SocketException) {
+                if (continuation.isActive) {
+                    continuation.resumeWithException(failure)
+                }
+            } catch (failure: Throwable) {
+                continuation.resumeWithException(failure)
+            } finally {
+                activeSocket.close()
+                socket.compareAndSet(activeSocket, null)
             }
-        } finally {
-            cancellation?.dispose()
-            activeSocket.close()
-            socket = null
         }
     }
 
     override fun close() {
-        socket?.close()
+        socket.getAndSet(null)?.close()
     }
 }
 
@@ -148,16 +158,27 @@ class SsdpDiscoverer(
                 maxDatagramBytes = SSDP_MAX_DATAGRAM_BYTES,
                 windowMillis = SSDP_DISCOVERY_WINDOW_MILLIS,
             ) { bytes, length ->
-                parser.parse(bytes, length)?.let { devices.putIfAbsent(it.udn, it) }
+                if (devices.size < MAX_DISCOVERED_DEVICES) {
+                    try {
+                        parser.parse(bytes, length)?.let { devices.putIfAbsent(it.udn, it) }
+                    } catch (_: SsdpProtocolException) {
+                        // One hostile response must not abort the bounded discovery window.
+                    }
+                }
             }
             devices.values.toList()
         } finally {
-            transport.close()
-            multicastLock.release()
+            try {
+                transport.close()
+            } finally {
+                multicastLock.release()
+            }
         }
     }
 
     private companion object {
+        const val MAX_DISCOVERED_DEVICES = 64
+
         val SEARCH_REQUEST =
             """
             M-SEARCH * HTTP/1.1

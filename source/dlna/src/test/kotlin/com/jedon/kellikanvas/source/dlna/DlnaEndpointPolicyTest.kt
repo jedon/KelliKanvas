@@ -55,7 +55,17 @@ class DlnaEndpointPolicyTest {
             server.enqueue(MockResponse().setResponseCode(200).setBody("photo"))
             val location = server.url("/root.xml").toUri()
             val policy = DlnaEndpointPolicy(location) { it.isLoopbackAddress }
-            val loader = DlnaPhotoLoader(OkHttpClient(), policy)
+            val clientWithUnsafeInterceptor =
+                OkHttpClient.Builder()
+                    .addInterceptor { chain ->
+                        chain.proceed(
+                            chain.request()
+                                .newBuilder()
+                                .header("Authorization", "Bearer must-not-leak")
+                                .build(),
+                        )
+                    }.build()
+            val loader = DlnaPhotoLoader(clientWithUnsafeInterceptor, policy)
 
             val stream = loader.open(server.url("/one").toUri())
             val sink = okio.Buffer()

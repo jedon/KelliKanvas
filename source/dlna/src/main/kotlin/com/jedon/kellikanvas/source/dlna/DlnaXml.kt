@@ -1,9 +1,5 @@
 package com.jedon.kellikanvas.source.dlna
 
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.currentCoroutineContext
-import kotlinx.coroutines.ensureActive
-import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -13,6 +9,7 @@ import okio.BufferedSource
 import org.xmlpull.v1.XmlPullParser
 import org.xmlpull.v1.XmlPullParserFactory
 import java.io.ByteArrayInputStream
+import java.net.Proxy
 import java.net.URI
 
 internal const val DESCRIPTION_MAX_BYTES = 256 * 1024
@@ -61,47 +58,80 @@ class DeviceDescriptionParser {
         descriptionUrl: String,
     ): DlnaDeviceDescription {
         val parser = secureParser(bytes, DESCRIPTION_MAX_BYTES)
-        var friendlyName: String? = null
-        var udn: String? = null
-        var deviceType: String? = null
-        var serviceType: String? = null
-        var controlUrl: String? = null
-        val services = mutableListOf<Pair<String, String>>()
+        var urlBase: String? = null
+        val deviceStack = mutableListOf<MutableDevice>()
+        val candidates = mutableListOf<MutableDevice>()
         walk(parser) { event, xml ->
-            if (event == XmlPullParser.END_TAG && xml.name == "service") {
-                if (serviceType != null && controlUrl != null) services += serviceType!! to controlUrl!!
-                serviceType = null
-                controlUrl = null
-            } else if (event == XmlPullParser.START_TAG) {
+            if (event == XmlPullParser.START_TAG) {
                 when (xml.name) {
-                    "friendlyName" -> friendlyName = boundedNextText(xml)
-                    "UDN" -> udn = boundedNextText(xml)
-                    "deviceType" -> deviceType = boundedNextText(xml)
-                    "serviceType" -> serviceType = boundedNextText(xml)
-                    "controlURL" -> controlUrl = boundedNextText(xml)
+                    "URLBase" -> if (deviceStack.isEmpty()) urlBase = boundedNextText(xml)
+                    "device" -> deviceStack += MutableDevice(nestingLevel = deviceStack.size)
+                    "service" -> deviceStack.lastOrNull()?.currentService = MutableService()
+                    "friendlyName" -> deviceStack.lastOrNull()?.friendlyName = boundedNextText(xml)
+                    "UDN" -> deviceStack.lastOrNull()?.udn = boundedNextText(xml)
+                    "deviceType" -> deviceStack.lastOrNull()?.deviceType = boundedNextText(xml)
+                    "serviceType" -> deviceStack.lastOrNull()?.currentService?.type = boundedNextText(xml)
+                    "controlURL" -> deviceStack.lastOrNull()?.currentService?.controlUrl = boundedNextText(xml)
+                }
+            } else if (event == XmlPullParser.END_TAG) {
+                when (xml.name) {
+                    "service" -> {
+                        deviceStack.lastOrNull()?.let { device ->
+                            device.currentService?.let(device.services::add)
+                            device.currentService = null
+                        }
+                    }
+                    "device" -> if (deviceStack.isNotEmpty()) candidates += deviceStack.removeAt(deviceStack.lastIndex)
                 }
             }
         }
-        if (deviceType?.contains("MediaServer:1", ignoreCase = true) != true) {
-            throw DlnaProtocolException("Description is not a MediaServer")
-        }
+        val device =
+            candidates
+                .filter {
+                    MEDIA_SERVER_VERSION.find(it.deviceType.orEmpty())?.groupValues?.get(1)?.toIntOrNull()?.let { version ->
+                        version >= 1
+                    } == true
+                }.minByOrNull(MutableDevice::nestingLevel)
+                ?: throw DlnaProtocolException("Description is not a MediaServer")
         val selected =
-            services
-                .mapNotNull { (type, url) ->
-                    Regex("""ContentDirectory:(1|2)$""").find(type)?.groupValues?.get(1)?.toInt()?.let {
-                        Triple(it, type, url)
+            device.services
+                .mapNotNull { service ->
+                    CONTENT_DIRECTORY_VERSION.find(service.type.orEmpty())?.groupValues?.get(1)?.toIntOrNull()?.let { version ->
+                        if (version in 1..2 && !service.controlUrl.isNullOrBlank()) {
+                            version to service.controlUrl!!
+                        } else {
+                            null
+                        }
                     }
-                }.maxByOrNull { it.first }
+                }.maxByOrNull(Pair<Int, String>::first)
                 ?: throw DlnaProtocolException("ContentDirectory service missing")
-        val base = runCatching { URI(descriptionUrl) }.getOrElse {
-            throw DlnaProtocolException("Invalid description URL", it)
-        }
+        val descriptionBase = validatedHttpUri(descriptionUrl, "description URL")
+        val base = urlBase?.let { validatedHttpUri(it, "URLBase") } ?: descriptionBase
         return DlnaDeviceDescription(
-            udn = udn?.takeIf(String::isNotBlank) ?: throw DlnaProtocolException("UDN missing"),
-            friendlyName = friendlyName?.takeIf(String::isNotBlank) ?: "Media server",
-            controlUrl = base.resolve(selected.third),
+            udn = device.udn?.takeIf(String::isNotBlank) ?: throw DlnaProtocolException("UDN missing"),
+            friendlyName = device.friendlyName?.takeIf(String::isNotBlank) ?: "Media server",
+            controlUrl = validatedHttpUri(base.resolve(selected.second).toString(), "control URL"),
             version = selected.first,
         )
+    }
+
+    private data class MutableDevice(
+        val nestingLevel: Int,
+        var friendlyName: String? = null,
+        var udn: String? = null,
+        var deviceType: String? = null,
+        val services: MutableList<MutableService> = mutableListOf(),
+        var currentService: MutableService? = null,
+    )
+
+    private data class MutableService(
+        var type: String? = null,
+        var controlUrl: String? = null,
+    )
+
+    private companion object {
+        val MEDIA_SERVER_VERSION = Regex("""(?i)MediaServer:(\d+)$""")
+        val CONTENT_DIRECTORY_VERSION = Regex("""(?i)ContentDirectory:(\d+)$""")
     }
 }
 
@@ -131,7 +161,7 @@ class DidlLiteParser {
                         val mime = protocolInfo?.split(';')?.firstOrNull()?.split(':')?.getOrNull(2)
                         val resolution = optionalAttribute(xml, "resolution")?.split('x')
                         val byteLength = optionalAttribute(xml, "size")?.toLongOrNull()
-                        val uri = boundedNextText(xml)
+                        val uri = boundedNextText(xml).trim()
                         current!!.resources +=
                             DlnaResource(
                                 uri = uri,
@@ -179,6 +209,9 @@ class DlnaResourceSelector(
     fun select(resources: List<DlnaResource>): DlnaResource? = resources
         .asSequence()
         .filter { it.mimeType?.lowercase() in supportedMimeTypes.map(String::lowercase) }
+        .filter { it.width == null || it.width > 0 }
+        .filter { it.height == null || it.height > 0 }
+        .filter { it.byteLength == null || it.byteLength >= 0 }
         .filter { runCatching { URI(it.uri).scheme?.lowercase() in setOf("http", "https") }.getOrDefault(false) }
         .minWithOrNull(
             compareBy<DlnaResource>(
@@ -207,8 +240,10 @@ class ContentDirectoryClient(
         httpClient.newBuilder()
             .followRedirects(false)
             .followSslRedirects(false)
+            .proxy(Proxy.NO_PROXY)
             .authenticator(okhttp3.Authenticator.NONE)
             .proxyAuthenticator(okhttp3.Authenticator.NONE)
+            .addNetworkInterceptor(NO_CREDENTIALS_INTERCEPTOR)
             .apply {
                 endpointPolicy?.let { dns(it::pinnedAddresses) }
             }.build()
@@ -252,37 +287,28 @@ class ContentDirectoryClient(
                 .header("SOAPAction", "\"$serviceType#Browse\"")
                 .post(envelope.toRequestBody("text/xml; charset=utf-8".toMediaType()))
                 .build()
-        return withContext(Dispatchers.IO) {
-            val call = httpClient.newCall(request)
-            val context = currentCoroutineContext()
-            val cancellation = context[kotlinx.coroutines.Job]?.invokeOnCompletion { if (it != null) call.cancel() }
-            try {
-                call.execute().use { response ->
-                    val bytes = readBounded(response.body.source(), SOAP_DIDL_MAX_BYTES)
-                    if (bytes.size > SOAP_DIDL_MAX_BYTES) throw DlnaProtocolException("SOAP body too large")
-                    if (!response.isSuccessful) {
-                        if (response.code in setOf(301, 302, 303, 307, 308)) {
-                            throw DlnaProtocolException("ContentDirectory redirect rejected")
-                        }
-                        val safeBody = bytes.decodeToString()
-                        if (safeBody.contains("<errorCode>701</errorCode>") ||
-                            safeBody.contains("<errorCode>714</errorCode>")
-                        ) {
-                            throw DlnaObjectMissingException()
-                        }
-                        throw DlnaProtocolException("ContentDirectory HTTP ${response.code}")
-                    }
-                    val soap = parseSoapBrowse(bytes)
-                    DlnaBrowsePage(
-                        objects = DidlLiteParser().parse(soap.result.encodeToByteArray(), serverUdn),
-                        numberReturned = soap.numberReturned,
-                        totalMatches = soap.totalMatches,
-                    )
+        val call = httpClient.newCall(request)
+        return call.awaitResponse().use { response ->
+            val bytes = call.readBoundedCancellable(response.body.source(), SOAP_DIDL_MAX_BYTES, "SOAP")
+            if (bytes.size > SOAP_DIDL_MAX_BYTES) throw DlnaProtocolException("SOAP body too large")
+            if (!response.isSuccessful) {
+                if (response.code in setOf(301, 302, 303, 307, 308)) {
+                    throw DlnaProtocolException("ContentDirectory redirect rejected")
                 }
-            } finally {
-                cancellation?.dispose()
-                context.ensureActive()
+                if (parseUpnpErrorCode(bytes) in setOf(701, 714)) {
+                    throw DlnaObjectMissingException()
+                }
+                throw DlnaProtocolException("ContentDirectory HTTP ${response.code}")
             }
+            val soap = parseSoapBrowse(bytes)
+            val page =
+                DlnaBrowsePage(
+                    objects = DidlLiteParser().parse(soap.result.encodeToByteArray(), serverUdn),
+                    numberReturned = soap.numberReturned,
+                    totalMatches = soap.totalMatches,
+                )
+            page.validateForRequest(startingIndex, if (browseFlag == "BrowseMetadata") 1 else requestedCount)
+            page
         }
     }
 
@@ -305,6 +331,31 @@ class ContentDirectoryClient(
             returned ?: throw DlnaProtocolException("SOAP NumberReturned missing"),
             total ?: throw DlnaProtocolException("SOAP TotalMatches missing"),
         )
+    }
+
+    private fun parseUpnpErrorCode(bytes: ByteArray): Int? {
+        val parser = secureParser(bytes, SOAP_DIDL_MAX_BYTES)
+        var errorCode: Int? = null
+        var faultDepth: Int? = null
+        var upnpErrorDepth: Int? = null
+        walk(parser) { event, xml ->
+            when (event) {
+                XmlPullParser.START_TAG ->
+                    when (xml.name) {
+                        "Fault" -> faultDepth = xml.depth
+                        "UPnPError" -> if (faultDepth != null) upnpErrorDepth = xml.depth
+                        "errorCode" -> if (upnpErrorDepth != null) {
+                            errorCode = boundedNextText(xml).trim().toIntOrNull()
+                        }
+                    }
+                XmlPullParser.END_TAG ->
+                    when (xml.name) {
+                        "UPnPError" -> upnpErrorDepth = null
+                        "Fault" -> faultDepth = null
+                    }
+            }
+        }
+        return errorCode
     }
 
     private data class SoapBrowse(val result: String, val numberReturned: Int, val totalMatches: Int)
@@ -383,14 +434,32 @@ private fun xmlEscape(value: String): String = value
     .replace("<", "&lt;")
     .replace(">", "&gt;")
 
-private fun readBounded(
+private fun validatedHttpUri(
+    value: String,
+    label: String,
+): URI {
+    val uri = runCatching { URI(value) }.getOrElse {
+        throw DlnaProtocolException("Invalid $label", it)
+    }
+    if (!uri.isAbsolute ||
+        uri.scheme?.lowercase() !in setOf("http", "https") ||
+        uri.host.isNullOrBlank() ||
+        uri.userInfo != null
+    ) {
+        throw DlnaProtocolException("Invalid $label")
+    }
+    return uri
+}
+
+internal fun readBounded(
     source: BufferedSource,
     maxBytes: Int,
+    label: String,
 ): ByteArray {
     val buffer = Buffer()
     while (buffer.size <= maxBytes) {
         val read = source.read(buffer, minOf(8_192L, maxBytes + 1L - buffer.size))
         if (read == -1L) return buffer.readByteArray()
     }
-    throw DlnaProtocolException("SOAP body too large")
+    throw DlnaProtocolException("$label body too large")
 }

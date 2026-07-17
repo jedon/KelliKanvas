@@ -1,0 +1,14 @@
+<?xml version="1.0"?>
+<root xmlns="urn:schemas-upnp-org:device-1-0">
+  <device>
+    <deviceType>urn:schemas-upnp-org:device:MediaServer:4</deviceType>
+    <friendlyName>Twonky Server</friendlyName>
+    <UDN>uuid:twonky-captured</UDN>
+    <serviceList>
+      <service>
+        <serviceType>urn:schemas-upnp-org:service:ContentDirectory:1</serviceType>
+        <controlURL>/rpc/ContentDir</controlURL>
+      </service>
+    </serviceList>
+  </device>
+</root>

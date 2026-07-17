@@ -1,19 +1,27 @@
 package com.jedon.kellikanvas.source.dlna
 
 import com.jedon.kellikanvas.source.PhotoByteStream
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
-import kotlinx.coroutines.withContext
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
 import okhttp3.Call
+import okhttp3.Callback
+import okhttp3.Interceptor
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
 import okio.Buffer
+import java.io.IOException
 import java.net.Inet4Address
 import java.net.Inet6Address
 import java.net.InetAddress
+import java.net.Proxy
 import java.net.URI
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 
 class DlnaSecurityException(message: String) : SecurityException(message)
 
@@ -102,11 +110,13 @@ class DlnaPhotoLoader(
             .followRedirects(false)
             .followSslRedirects(false)
             .dns(endpointPolicy::pinnedAddresses)
+            .proxy(Proxy.NO_PROXY)
             .authenticator(okhttp3.Authenticator.NONE)
             .proxyAuthenticator(okhttp3.Authenticator.NONE)
+            .addNetworkInterceptor(NO_CREDENTIALS_INTERCEPTOR)
             .build()
 
-    suspend fun open(uri: URI): DlnaPhotoByteStream = withContext(Dispatchers.IO) {
+    suspend fun open(uri: URI): DlnaPhotoByteStream {
         endpointPolicy.validateInitial(uri)
         var current = uri
         var redirects = 0
@@ -119,7 +129,7 @@ class DlnaPhotoLoader(
                     .get()
                     .build()
             val call = client.newCall(request)
-            val response = executeCancellable(call)
+            val response = call.awaitResponse()
             if (response.code in REDIRECT_CODES) {
                 val location = response.header("Location")
                     ?: run {
@@ -139,19 +149,14 @@ class DlnaPhotoLoader(
                 throw DlnaProtocolException("Photo HTTP $code")
             }
             val body = response.body
-            return@withContext DlnaPhotoByteStream(call, response, body.contentLength().takeIf { it >= 0 })
-        }
-        error("Unreachable")
-    }
-
-    private suspend fun executeCancellable(call: Call): Response {
-        val context = currentCoroutineContext()
-        val cancellation = context[kotlinx.coroutines.Job]?.invokeOnCompletion { if (it != null) call.cancel() }
-        return try {
-            call.execute()
-        } finally {
-            cancellation?.dispose()
-            context.ensureActive()
+            val stream = DlnaPhotoByteStream(call, response, body.contentLength().takeIf { it >= 0 })
+            try {
+                currentCoroutineContext().ensureActive()
+                return stream
+            } catch (failure: Throwable) {
+                stream.close()
+                throw failure
+            }
         }
     }
 
@@ -173,16 +178,23 @@ class DlnaPhotoByteStream internal constructor(
     override suspend fun readAtMostTo(
         sink: Buffer,
         byteCount: Long,
-    ): Long = withContext(Dispatchers.IO) {
-        check(!closed) { "Stream is closed" }
-        val context = currentCoroutineContext()
-        val cancellation = context[kotlinx.coroutines.Job]?.invokeOnCompletion { if (it != null) call.cancel() }
-        try {
-            source.read(sink, byteCount)
-        } finally {
-            cancellation?.dispose()
-            context.ensureActive()
-        }
+    ): Long {
+        val result =
+            suspendCancellableCoroutine { continuation ->
+                check(!closed) { "Stream is closed" }
+                continuation.invokeOnCancellation { call.cancel() }
+                CoroutineScope(Dispatchers.IO).launch {
+                    val temporary = Buffer()
+                    try {
+                        val read = source.read(temporary, byteCount)
+                        continuation.resume(ByteRead(read, temporary.readByteArray())) { _, _, _ -> }
+                    } catch (failure: Throwable) {
+                        continuation.resumeWithException(failure)
+                    }
+                }
+            }
+        if (result.count > 0) sink.write(result.bytes)
+        return result.count
     }
 
     override fun close() {
@@ -192,7 +204,62 @@ class DlnaPhotoByteStream internal constructor(
             response.close()
         }
     }
+
+    private data class ByteRead(
+        val count: Long,
+        val bytes: ByteArray,
+    )
 }
+
+internal suspend fun Call.awaitResponse(): Response = suspendCancellableCoroutine { continuation ->
+    continuation.invokeOnCancellation {
+        cancel()
+    }
+    enqueue(
+        object : Callback {
+            override fun onFailure(
+                call: Call,
+                e: IOException,
+            ) {
+                continuation.resumeWithException(e)
+            }
+
+            override fun onResponse(
+                call: Call,
+                response: Response,
+            ) {
+                continuation.resume(response) { _, lateResponse, _ -> lateResponse.close() }
+            }
+        },
+    )
+}
+
+internal suspend fun Call.readBoundedCancellable(
+    source: okio.BufferedSource,
+    maxBytes: Int,
+    label: String,
+): ByteArray = suspendCancellableCoroutine { continuation ->
+    continuation.invokeOnCancellation { cancel() }
+    CoroutineScope(Dispatchers.IO).launch {
+        try {
+            val bytes = readBounded(source, maxBytes, label)
+            continuation.resume(bytes) { _, _, _ -> }
+        } catch (failure: Throwable) {
+            continuation.resumeWithException(failure)
+        }
+    }
+}
+
+internal val NO_CREDENTIALS_INTERCEPTOR =
+    Interceptor { chain ->
+        chain.proceed(
+            chain.request()
+                .newBuilder()
+                .removeHeader("Authorization")
+                .removeHeader("Proxy-Authorization")
+                .build(),
+        )
+    }
 
 private fun isPrivateOrLinkLocal(address: InetAddress): Boolean {
     if (address.isAnyLocalAddress || address.isMulticastAddress || address.isLoopbackAddress) return false

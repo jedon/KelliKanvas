@@ -151,6 +151,74 @@ class DlnaXmlTest {
         }
     }
 
+    @Test
+    fun `namespaced whitespace QNAP fault maps structurally`() = runTest {
+        MockWebServer().use { server ->
+            server.enqueue(
+                MockResponse()
+                    .setResponseCode(500)
+                    .setBody(
+                        """
+                        <s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/">
+                          <s:Body><s:Fault><detail>
+                            <q:UPnPError xmlns:q="urn:schemas-upnp-org:control-1-0">
+                              <q:errorCode>
+                                714
+                              </q:errorCode>
+                            </q:UPnPError>
+                          </detail></s:Fault></s:Body>
+                        </s:Envelope>
+                        """.trimIndent(),
+                    ),
+            )
+            val client = ContentDirectoryClient(OkHttpClient(), server.url("/control").toUri(), "uuid:qnap", 1)
+
+            val failure = runCatching { client.browseMetadata("stale-id") }.exceptionOrNull()
+
+            assertThat(failure).isInstanceOf(DlnaObjectMissingException::class.java)
+        }
+    }
+
+    @Test
+    fun `negative resource dimensions and lengths are filtered`() {
+        val objects =
+            DidlLiteParser().parse(
+                """
+                <DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/">
+                  <item id="bad">
+                    <res protocolInfo="http-get:*:image/jpeg:*" resolution="-1x2160" size="-3">http://192.168.1.8/bad.jpg</res>
+                  </item>
+                </DIDL-Lite>
+                """.trimIndent().encodeToByteArray(),
+                "uuid:qnap",
+            )
+
+        val selected = DlnaResourceSelector(setOf("image/jpeg"), 3840, 2160).select(objects.single().resources)
+
+        assertThat(selected).isNull()
+    }
+
+    @Test
+    fun `malformed UPnP fault is not mistaken for missing object`() = runTest {
+        MockWebServer().use { server ->
+            server.enqueue(
+                MockResponse()
+                    .setResponseCode(500)
+                    .setBody(
+                        """<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/">""" +
+                            """<s:Body><s:Fault><detail><UPnPError>""" +
+                            """<errorCode>701oops</errorCode></UPnPError></detail></s:Fault></s:Body></s:Envelope>""",
+                    ),
+            )
+            val client = ContentDirectoryClient(OkHttpClient(), server.url("/control").toUri(), "uuid:qnap", 1)
+
+            val failure = runCatching { client.browseMetadata("stale-id") }.exceptionOrNull()
+
+            assertThat(failure).isInstanceOf(DlnaProtocolException::class.java)
+            assertThat(failure).isNotInstanceOf(DlnaObjectMissingException::class.java)
+        }
+    }
+
     private fun escape(value: String): String = value
         .replace("&", "&amp;")
         .replace("<", "&lt;")
