@@ -359,7 +359,7 @@ Create `deploy/qnap/compose.yaml`:
 ```yaml
 services:
   apk-host:
-    image: nginx:1.28.0-alpine
+    image: nginx:1.30.3-alpine@sha256:0d3b80406a13a767339fbe2f41406d6c7da727ab89cf8fae399e81f780f814d1
     container_name: kellikanvas-apk-host
     user: "101:101"
     ports:
@@ -408,6 +408,8 @@ http {
         listen 8080;
         server_name _;
         root /usr/share/nginx/html;
+        server_tokens off;
+        disable_symlinks on;
 
         add_header X-Content-Type-Options nosniff always;
         add_header Referrer-Policy no-referrer always;
@@ -464,7 +466,7 @@ Run:
 docker compose -f deploy/qnap/compose.yaml config
 docker run --rm `
   -v "${PWD}/deploy/qnap/nginx.conf:/etc/nginx/nginx.conf:ro" `
-  nginx:1.28.0-alpine nginx -t
+  nginx:1.30.3-alpine@sha256:0d3b80406a13a767339fbe2f41406d6c7da727ab89cf8fae399e81f780f814d1 nginx -t
 ```
 
 Expected: Compose prints one `apk-host` service and nginx reports
