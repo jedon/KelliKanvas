@@ -11,6 +11,10 @@ android {
         versionCode = 1
         versionName = "0.1.0"
     }
+
+    testOptions {
+        unitTests.isIncludeAndroidResources = true
+    }
 }
 
 dependencies {
@@ -43,4 +47,5 @@ dependencies {
 
     debugImplementation(libs.compose.ui.tooling)
     testImplementation(project(":core:testing"))
+    testImplementation(libs.robolectric)
 }
