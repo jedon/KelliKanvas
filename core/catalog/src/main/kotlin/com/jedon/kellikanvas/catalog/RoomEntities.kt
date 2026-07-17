@@ -210,6 +210,29 @@ internal data class SlideshowSessionEntity(
     @ColumnInfo(name = "current_ordinal") val currentOrdinal: Int,
     @ColumnInfo(name = "current_profile_id") val currentProfileId: String,
     @ColumnInfo(name = "current_object_id") val currentObjectId: String,
-    @ColumnInfo(name = "last_profile_id") val lastProfileId: String?,
-    @ColumnInfo(name = "last_object_id") val lastObjectId: String?,
+)
+
+@Entity(
+    tableName = "slideshow_session_last_presented",
+    primaryKeys = ["collection_id"],
+    indices = [Index(value = ["profile_id", "object_id"])],
+    foreignKeys = [
+        ForeignKey(
+            entity = SlideshowSessionEntity::class,
+            parentColumns = ["collection_id"],
+            childColumns = ["collection_id"],
+            onDelete = ForeignKey.CASCADE,
+        ),
+        ForeignKey(
+            entity = CatalogAssetEntity::class,
+            parentColumns = ["profile_id", "object_id"],
+            childColumns = ["profile_id", "object_id"],
+            onDelete = ForeignKey.RESTRICT,
+        ),
+    ],
+)
+internal data class SlideshowSessionLastPresentedEntity(
+    @ColumnInfo(name = "collection_id") val collectionId: String,
+    @ColumnInfo(name = "profile_id") val profileId: String,
+    @ColumnInfo(name = "object_id") val objectId: String,
 )

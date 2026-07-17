@@ -81,22 +81,22 @@ private fun Preferences.toState(): AppPreferencesState {
         appPreferences =
         AppPreferences(
             landscapeLayout =
-            enumValueOrDefault(
+            PreferenceEnumCodes.layoutMode.decode(
                 this[PreferenceKeys.landscapeLayout],
                 defaults.landscapeLayout,
             ),
             singlePortraitLayout =
-            enumValueOrDefault(
+            PreferenceEnumCodes.layoutMode.decode(
                 this[PreferenceKeys.singlePortraitLayout],
                 defaults.singlePortraitLayout,
             ),
             singlePortraitFit =
-            enumValueOrDefault(
+            PreferenceEnumCodes.portraitFit.decode(
                 this[PreferenceKeys.singlePortraitFit],
                 defaults.singlePortraitFit,
             ),
             portraitPairingMode =
-            enumValueOrDefault(
+            PreferenceEnumCodes.portraitPairingMode.decode(
                 this[PreferenceKeys.portraitPairingMode],
                 defaults.portraitPairingMode,
             ),
@@ -111,7 +111,7 @@ private fun Preferences.toState(): AppPreferencesState {
                 defaults.pairGutterDp,
             ) { it >= 0 },
             blurStrength =
-            enumValueOrDefault(
+            PreferenceEnumCodes.blurStrength.decode(
                 this[PreferenceKeys.blurStrength],
                 defaults.blurStrength,
             ),
@@ -122,20 +122,20 @@ private fun Preferences.toState(): AppPreferencesState {
             ) { it in 0.0..1.0 },
             slideDurationMillis = slideDurationMillis,
             transitionType =
-            enumValueOrDefault(
+            PreferenceEnumCodes.transitionType.decode(
                 this[PreferenceKeys.transitionType],
                 defaults.transitionType,
             ),
             transitionDurationMillis = transitionDurationMillis,
             playbackOrder =
-            enumValueOrDefault(
+            PreferenceEnumCodes.playbackOrder.decode(
                 this[PreferenceKeys.playbackOrder],
                 defaults.playbackOrder,
             ),
             loopEnabled = this[PreferenceKeys.loopEnabled] ?: defaults.loopEnabled,
             resumeEnabled = this[PreferenceKeys.resumeEnabled] ?: defaults.resumeEnabled,
             newPhotosPolicy =
-            enumValueOrDefault(
+            PreferenceEnumCodes.newPhotosPolicy.decode(
                 this[PreferenceKeys.newPhotosPolicy],
                 defaults.newPhotosPolicy,
             ),
@@ -153,7 +153,7 @@ private fun Preferences.toState(): AppPreferencesState {
             presenceEnabled =
             this[PreferenceKeys.presenceEnabled] ?: defaults.presenceEnabled,
             brightnessMode =
-            enumValueOrDefault(
+            PreferenceEnumCodes.brightnessMode.decode(
                 this[PreferenceKeys.brightnessMode],
                 defaults.brightnessMode,
             ),
@@ -166,35 +166,40 @@ private fun Preferences.toState(): AppPreferencesState {
 
 private fun MutablePreferences.write(state: AppPreferencesState) {
     val values = state.appPreferences
-    this[PreferenceKeys.landscapeLayout] = values.landscapeLayout.name
-    this[PreferenceKeys.singlePortraitLayout] = values.singlePortraitLayout.name
-    this[PreferenceKeys.singlePortraitFit] = values.singlePortraitFit.name
-    this[PreferenceKeys.portraitPairingMode] = values.portraitPairingMode.name
+    clear()
+    this[PreferenceKeys.landscapeLayout] =
+        PreferenceEnumCodes.layoutMode.encode(values.landscapeLayout)
+    this[PreferenceKeys.singlePortraitLayout] =
+        PreferenceEnumCodes.layoutMode.encode(values.singlePortraitLayout)
+    this[PreferenceKeys.singlePortraitFit] =
+        PreferenceEnumCodes.portraitFit.encode(values.singlePortraitFit)
+    this[PreferenceKeys.portraitPairingMode] =
+        PreferenceEnumCodes.portraitPairingMode.encode(values.portraitPairingMode)
     this[PreferenceKeys.portraitLookAhead] = values.portraitLookAhead
     this[PreferenceKeys.pairGutterDp] = values.pairGutterDp
-    this[PreferenceKeys.blurStrength] = values.blurStrength.name
+    this[PreferenceKeys.blurStrength] =
+        PreferenceEnumCodes.blurStrength.encode(values.blurStrength)
     this[PreferenceKeys.blurDimAmount] = values.blurDimAmount
     this[PreferenceKeys.slideDurationMillis] = values.slideDurationMillis
-    this[PreferenceKeys.transitionType] = values.transitionType.name
+    this[PreferenceKeys.transitionType] =
+        PreferenceEnumCodes.transitionType.encode(values.transitionType)
     this[PreferenceKeys.transitionDurationMillis] = values.transitionDurationMillis
-    this[PreferenceKeys.playbackOrder] = values.playbackOrder.name
+    this[PreferenceKeys.playbackOrder] =
+        PreferenceEnumCodes.playbackOrder.encode(values.playbackOrder)
     this[PreferenceKeys.loopEnabled] = values.loopEnabled
     this[PreferenceKeys.resumeEnabled] = values.resumeEnabled
-    this[PreferenceKeys.newPhotosPolicy] = values.newPhotosPolicy.name
+    this[PreferenceKeys.newPhotosPolicy] =
+        PreferenceEnumCodes.newPhotosPolicy.encode(values.newPhotosPolicy)
     this[PreferenceKeys.metadataOverlayEnabled] = values.metadataOverlayEnabled
     this[PreferenceKeys.clockOverlayEnabled] = values.clockOverlayEnabled
     this[PreferenceKeys.captureDateOverlayEnabled] = values.captureDateOverlayEnabled
     this[PreferenceKeys.filenameOverlayEnabled] = values.filenameOverlayEnabled
     this[PreferenceKeys.presenceEnabled] = values.presenceEnabled
-    this[PreferenceKeys.brightnessMode] = values.brightnessMode.name
+    this[PreferenceKeys.brightnessMode] =
+        PreferenceEnumCodes.brightnessMode.encode(values.brightnessMode)
     this[PreferenceKeys.reducedMotion] = state.reducedMotion
     this[PreferenceKeys.lastHomeControl] = state.lastHomeControl.stableRoute
 }
-
-private inline fun <reified T : Enum<T>> enumValueOrDefault(
-    value: String?,
-    default: T,
-): T = enumValues<T>().firstOrNull { it.name == value } ?: default
 
 private inline fun <T> validOrDefault(
     value: T?,

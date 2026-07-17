@@ -96,6 +96,35 @@ class SlideshowStateTest {
         }
     }
 
+    @Test
+    fun `last presented asset is structurally all or null`() {
+        val sqlite = database.openHelper.readableDatabase
+        val sessionColumns =
+            sqlite.query("PRAGMA table_info(`slideshow_sessions`)").use { cursor ->
+                buildSet {
+                    val nameIndex = cursor.getColumnIndexOrThrow("name")
+                    while (cursor.moveToNext()) {
+                        add(cursor.getString(nameIndex))
+                    }
+                }
+            }
+        val lastPresentedColumns =
+            sqlite.query("PRAGMA table_info(`slideshow_session_last_presented`)").use { cursor ->
+                buildMap {
+                    val nameIndex = cursor.getColumnIndexOrThrow("name")
+                    val notNullIndex = cursor.getColumnIndexOrThrow("notnull")
+                    while (cursor.moveToNext()) {
+                        put(cursor.getString(nameIndex), cursor.getInt(notNullIndex))
+                    }
+                }
+            }
+
+        assertThat(sessionColumns).doesNotContain("last_profile_id")
+        assertThat(sessionColumns).doesNotContain("last_object_id")
+        assertThat(lastPresentedColumns["profile_id"]).isEqualTo(1)
+        assertThat(lastPresentedColumns["object_id"]).isEqualTo(1)
+    }
+
     private fun assetKey(objectId: String) = AssetKey(SourceProfileId("source-1"), ProviderObjectId(objectId))
 
     private suspend fun prepareSourceAndCollection() {

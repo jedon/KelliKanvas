@@ -120,6 +120,23 @@ class CycleSnapshotTransactionTest {
     }
 
     @Test
+    fun `snapshot rolls back when last presented asset does not exist`() = runTest {
+        val invalid =
+            snapshot().copy(
+                session =
+                snapshot().session.copy(
+                    lastPresentedAssetKey = key("missing-photo"),
+                ),
+            )
+
+        val failure = runCatching { database.cycleSnapshots.persist(invalid) }.exceptionOrNull()
+
+        assertThat(failure).isInstanceOf(SQLiteConstraintException::class.java)
+        assertThat(database.playlistCycles.get("cycle-1")).isNull()
+        assertThat(database.slideshowSessions.get("living-room")).isNull()
+    }
+
+    @Test
     fun `established cycle header cannot be mutated`() = runTest {
         val original = snapshot()
         database.cycleSnapshots.persist(original)

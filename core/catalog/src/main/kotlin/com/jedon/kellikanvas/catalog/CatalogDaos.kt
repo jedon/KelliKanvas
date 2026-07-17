@@ -37,18 +37,13 @@ class SelectedRootDao internal constructor(
         }
     }
 
-    suspend fun list(collectionId: String): List<SelectedRoot> {
-        val filters =
-            roomDao.listFilters(collectionId).groupBy {
-                RootKey(it.collectionId, it.profileId, it.objectId)
-            }
-        return roomDao.list(collectionId).map { entity ->
-            entity.toDomain(
-                filters[RootKey(entity.collectionId, entity.profileId, entity.objectId)]
-                    .orEmpty()
-                    .mapTo(linkedSetOf(), SelectedRootFilterEntity::filterValue),
-            )
-        }
+    suspend fun list(collectionId: String): List<SelectedRoot> = roomDao.listAggregates(collectionId).map { aggregate ->
+        aggregate.root.toDomain(
+            aggregate.filters.mapTo(
+                linkedSetOf(),
+                SelectedRootFilterEntity::filterValue,
+            ),
+        )
     }
 }
 
@@ -93,9 +88,9 @@ class ConsumedPortraitPartnerDao internal constructor(
 class SlideshowSessionDao internal constructor(
     private val roomDao: RoomSlideshowSessionDao,
 ) {
-    suspend fun upsert(session: SlideshowSession) = roomDao.upsert(session.toEntity())
+    suspend fun upsert(session: SlideshowSession) = roomDao.persist(session.toEntity(), session.toLastPresentedEntity())
 
-    suspend fun get(collectionId: String): SlideshowSession? = roomDao.get(collectionId)?.toDomain()
+    suspend fun get(collectionId: String): SlideshowSession? = roomDao.getAggregate(collectionId)?.toDomain()
 
     suspend fun delete(collectionId: String) = roomDao.delete(collectionId)
 }
@@ -112,16 +107,13 @@ class CycleSnapshotDao internal constructor(
             database.roomConsumedPortraitPartners().insertAll(
                 snapshot.consumedPartners.map(ConsumedPortraitPartner::toEntity),
             )
-            database.roomSlideshowSessions().upsert(snapshot.session.toEntity())
+            database.roomSlideshowSessions().persist(
+                snapshot.session.toEntity(),
+                snapshot.session.toLastPresentedEntity(),
+            )
         }
     }
 }
-
-private data class RootKey(
-    val collectionId: String,
-    val profileId: String,
-    val objectId: String,
-)
 
 private fun SourceProfile.toEntity() = SourceProfileEntity(
     profileId = id.value,
@@ -280,25 +272,30 @@ private fun SlideshowSession.toEntity() = SlideshowSessionEntity(
     currentOrdinal = currentOrdinal,
     currentProfileId = currentAssetKey.profileId.value,
     currentObjectId = currentAssetKey.objectId.value,
-    lastProfileId = lastPresentedAssetKey?.profileId?.value,
-    lastObjectId = lastPresentedAssetKey?.objectId?.value,
 )
 
-private fun SlideshowSessionEntity.toDomain(): SlideshowSession {
-    check((lastProfileId == null) == (lastObjectId == null)) {
-        "Last-presented asset key must be fully present or absent"
-    }
-    return SlideshowSession(
+private fun SlideshowSession.toLastPresentedEntity(): SlideshowSessionLastPresentedEntity? = lastPresentedAssetKey?.let { last ->
+    SlideshowSessionLastPresentedEntity(
         collectionId = collectionId,
-        cycleId = cycleId,
-        currentOrdinal = currentOrdinal,
-        currentAssetKey = assetKey(currentProfileId, currentObjectId),
-        lastPresentedAssetKey =
-        lastProfileId?.let { profileId ->
-            assetKey(profileId, requireNotNull(lastObjectId))
-        },
+        profileId = last.profileId.value,
+        objectId = last.objectId.value,
     )
 }
+
+private fun SlideshowSessionAggregate.toDomain() = SlideshowSession(
+    collectionId = session.collectionId,
+    cycleId = session.cycleId,
+    currentOrdinal = session.currentOrdinal,
+    currentAssetKey =
+    assetKey(
+        session.currentProfileId,
+        session.currentObjectId,
+    ),
+    lastPresentedAssetKey =
+    lastPresented?.let {
+        assetKey(it.profileId, it.objectId)
+    },
+)
 
 private fun assetKey(
     profileId: String,

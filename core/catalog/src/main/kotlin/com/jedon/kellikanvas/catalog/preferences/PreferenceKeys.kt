@@ -1,5 +1,6 @@
 package com.jedon.kellikanvas.catalog.preferences
 
+import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.doublePreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
@@ -31,32 +32,33 @@ object PreferenceKeys {
     val reducedMotion = booleanPreferencesKey("reduced_motion_v1")
     val lastHomeControl = stringPreferencesKey("last_home_control_v1")
 
-    val names: Set<String> =
+    val keys: Set<Preferences.Key<*>> =
         setOf(
-            landscapeLayout.name,
-            singlePortraitLayout.name,
-            singlePortraitFit.name,
-            portraitPairingMode.name,
-            portraitLookAhead.name,
-            pairGutterDp.name,
-            blurStrength.name,
-            blurDimAmount.name,
-            slideDurationMillis.name,
-            transitionType.name,
-            transitionDurationMillis.name,
-            playbackOrder.name,
-            loopEnabled.name,
-            resumeEnabled.name,
-            newPhotosPolicy.name,
-            metadataOverlayEnabled.name,
-            clockOverlayEnabled.name,
-            captureDateOverlayEnabled.name,
-            filenameOverlayEnabled.name,
-            presenceEnabled.name,
-            brightnessMode.name,
-            reducedMotion.name,
-            lastHomeControl.name,
+            landscapeLayout,
+            singlePortraitLayout,
+            singlePortraitFit,
+            portraitPairingMode,
+            portraitLookAhead,
+            pairGutterDp,
+            blurStrength,
+            blurDimAmount,
+            slideDurationMillis,
+            transitionType,
+            transitionDurationMillis,
+            playbackOrder,
+            loopEnabled,
+            resumeEnabled,
+            newPhotosPolicy,
+            metadataOverlayEnabled,
+            clockOverlayEnabled,
+            captureDateOverlayEnabled,
+            filenameOverlayEnabled,
+            presenceEnabled,
+            brightnessMode,
+            reducedMotion,
+            lastHomeControl,
         )
+    val names: Set<String> = keys.mapTo(linkedSetOf()) { it.name }
 
     init {
         val forbiddenTerms = listOf("password", "token", "secret", "credential")

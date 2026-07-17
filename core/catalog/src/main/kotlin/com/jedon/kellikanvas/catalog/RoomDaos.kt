@@ -4,6 +4,7 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Transaction
 import androidx.room.Upsert
 
 @Dao
@@ -56,7 +57,39 @@ internal interface RoomSelectedRootDao {
             "ORDER BY profile_id, object_id, filter_value",
     )
     suspend fun listFilters(collectionId: String): List<SelectedRootFilterEntity>
+
+    @Transaction
+    suspend fun listAggregates(collectionId: String): List<SelectedRootAggregate> {
+        val filters =
+            listFilters(collectionId).groupBy {
+                SelectedRootKey(it.collectionId, it.profileId, it.objectId)
+            }
+        return list(collectionId).map { root ->
+            SelectedRootAggregate(
+                root = root,
+                filters =
+                filters[
+                    SelectedRootKey(
+                        root.collectionId,
+                        root.profileId,
+                        root.objectId,
+                    ),
+                ].orEmpty(),
+            )
+        }
+    }
 }
+
+internal data class SelectedRootKey(
+    val collectionId: String,
+    val profileId: String,
+    val objectId: String,
+)
+
+internal data class SelectedRootAggregate(
+    val root: SelectedRootEntity,
+    val filters: List<SelectedRootFilterEntity>,
+)
 
 @Dao
 internal interface RoomCatalogAssetDao {
@@ -127,9 +160,43 @@ internal interface RoomSlideshowSessionDao {
     @Upsert
     suspend fun upsert(entity: SlideshowSessionEntity)
 
+    @Query(
+        "DELETE FROM slideshow_session_last_presented WHERE collection_id = :collectionId",
+    )
+    suspend fun deleteLastPresented(collectionId: String)
+
+    @Insert
+    suspend fun insertLastPresented(entity: SlideshowSessionLastPresentedEntity)
+
     @Query("SELECT * FROM slideshow_sessions WHERE collection_id = :collectionId")
     suspend fun get(collectionId: String): SlideshowSessionEntity?
+
+    @Query(
+        "SELECT * FROM slideshow_session_last_presented WHERE collection_id = :collectionId",
+    )
+    suspend fun getLastPresented(collectionId: String): SlideshowSessionLastPresentedEntity?
+
+    @Transaction
+    suspend fun persist(
+        entity: SlideshowSessionEntity,
+        lastPresented: SlideshowSessionLastPresentedEntity?,
+    ) {
+        upsert(entity)
+        deleteLastPresented(entity.collectionId)
+        lastPresented?.let { insertLastPresented(it) }
+    }
+
+    @Transaction
+    suspend fun getAggregate(collectionId: String): SlideshowSessionAggregate? {
+        val session = get(collectionId) ?: return null
+        return SlideshowSessionAggregate(session, getLastPresented(collectionId))
+    }
 
     @Query("DELETE FROM slideshow_sessions WHERE collection_id = :collectionId")
     suspend fun delete(collectionId: String)
 }
+
+internal data class SlideshowSessionAggregate(
+    val session: SlideshowSessionEntity,
+    val lastPresented: SlideshowSessionLastPresentedEntity?,
+)

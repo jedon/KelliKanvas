@@ -16,6 +16,7 @@ import androidx.room.RoomDatabase
         PlaylistCycleItemEntity::class,
         ConsumedPortraitPartnerEntity::class,
         SlideshowSessionEntity::class,
+        SlideshowSessionLastPresentedEntity::class,
     ],
     version = 1,
     exportSchema = true,

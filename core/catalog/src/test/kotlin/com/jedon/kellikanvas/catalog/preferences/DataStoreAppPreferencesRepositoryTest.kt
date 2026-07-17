@@ -7,6 +7,8 @@ import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.mutablePreferencesOf
+import androidx.datastore.preferences.core.stringPreferencesKey
 import com.google.common.truth.Truth.assertThat
 import com.jedon.kellikanvas.model.AppPreferences
 import com.jedon.kellikanvas.model.BlurStrength
@@ -156,6 +158,84 @@ class DataStoreAppPreferencesRepositoryTest {
             },
         ).isTrue()
         fixture.close()
+    }
+
+    @Test
+    fun `enum preferences use explicit stable codes independent of enum names`() = runTest {
+        val fixture = fixture()
+        fixture.repository.update {
+            it.copy(
+                appPreferences =
+                it.appPreferences.copy(
+                    landscapeLayout = LayoutMode.SOLID_BACKGROUND,
+                    singlePortraitLayout = LayoutMode.FULL_PHOTO,
+                    singlePortraitFit = PortraitFit.FILL_SCREEN,
+                    portraitPairingMode = PortraitPairingMode.ALWAYS,
+                    blurStrength = BlurStrength.HIGH,
+                    transitionType = TransitionType.SLIDE_LEFT,
+                    playbackOrder = PlaybackOrder.MODIFIED_DATE_DESC,
+                    newPhotosPolicy = NewPhotosPolicy.NEXT_CYCLE,
+                    brightnessMode = BrightnessMode.AMBIENT_SENSOR,
+                ),
+            )
+        }
+
+        val stored = fixture.dataStore.data.first()
+        assertThat(stored[PreferenceKeys.landscapeLayout])
+            .isEqualTo("layout.solid_background.v1")
+        assertThat(stored[PreferenceKeys.singlePortraitLayout])
+            .isEqualTo("layout.full_photo.v1")
+        assertThat(stored[PreferenceKeys.singlePortraitFit])
+            .isEqualTo("portrait_fit.fill_screen.v1")
+        assertThat(stored[PreferenceKeys.portraitPairingMode])
+            .isEqualTo("portrait_pairing.always.v1")
+        assertThat(stored[PreferenceKeys.blurStrength]).isEqualTo("blur.high.v1")
+        assertThat(stored[PreferenceKeys.transitionType]).isEqualTo("transition.slide_left.v1")
+        assertThat(stored[PreferenceKeys.playbackOrder])
+            .isEqualTo("playback.modified_date_desc.v1")
+        assertThat(stored[PreferenceKeys.newPhotosPolicy])
+            .isEqualTo("new_photos.next_cycle.v1")
+        assertThat(stored[PreferenceKeys.brightnessMode])
+            .isEqualTo("brightness.ambient_sensor.v1")
+        fixture.close()
+    }
+
+    @Test
+    fun `stable enum codes survive source rename and unknown codes fall back independently`() = runTest {
+        val fixture = fixture()
+        fixture.dataStore.edit {
+            it[PreferenceKeys.landscapeLayout] = "layout.full_photo.v1"
+            it[PreferenceKeys.transitionType] = "transition.future_v9"
+            it[PreferenceKeys.playbackOrder] = "playback.name.v1"
+            it[PreferenceKeys.clockOverlayEnabled] = true
+        }
+
+        val restored = fixture.repository.preferences.first().appPreferences
+
+        assertThat(restored.landscapeLayout).isEqualTo(LayoutMode.FULL_PHOTO)
+        assertThat(restored.transitionType).isEqualTo(AppPreferences().transitionType)
+        assertThat(restored.playbackOrder).isEqualTo(PlaybackOrder.NAME)
+        assertThat(restored.clockOverlayEnabled).isTrue()
+        fixture.close()
+    }
+
+    @Test
+    fun `write removes unknown and credential-like keys and persists exact allowlist`() = runTest {
+        val dataStore = DelayedSnapshotDataStore()
+        val repository = DataStoreAppPreferencesRepository(dataStore)
+        val credentialLikeKey = stringPreferencesKey("legacy_password_token")
+        dataStore.updateData {
+            mutablePreferencesOf(
+                credentialLikeKey to "must-be-removed",
+                stringPreferencesKey("future_unknown_key") to "unknown",
+            )
+        }
+
+        repository.update { it.copy(reducedMotion = true) }
+
+        val stored = dataStore.data.first()
+        assertThat(stored.asMap().keys.map { it.name }.toSet()).isEqualTo(PreferenceKeys.names)
+        assertThat(stored[credentialLikeKey]).isNull()
     }
 
     @Test

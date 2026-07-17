@@ -6,6 +6,8 @@ import com.jedon.kellikanvas.model.AssetKey
 import com.jedon.kellikanvas.model.ProviderObjectId
 import com.jedon.kellikanvas.model.SourceKind
 import com.jedon.kellikanvas.model.SourceProfileId
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Before
@@ -66,6 +68,47 @@ class CatalogIntegrityTest {
 
         assertThat(database.collections.get(collection.id)).isEqualTo(collection)
         assertThat(database.selectedRoots.list(collection.id)).containsExactly(root)
+    }
+
+    @Test
+    fun `concurrent selected root replacement never exposes torn filters`() = runTest {
+        val source = source("source-1")
+        val collection = CatalogCollection("living-room", "Living Room")
+        val first =
+            SelectedRoot(
+                collection.id,
+                source.id,
+                ProviderObjectId("family"),
+                "First",
+                includeDescendants = true,
+                fileTypeFilters = setOf("image/jpeg"),
+            )
+        val second =
+            SelectedRoot(
+                collection.id,
+                source.id,
+                ProviderObjectId("family"),
+                "Second",
+                includeDescendants = false,
+                fileTypeFilters = setOf("image/png"),
+            )
+        database.sourceProfiles.upsert(source)
+        database.collections.upsert(collection)
+        database.selectedRoots.replace(first)
+
+        listOf(
+            async {
+                repeat(500) { index ->
+                    database.selectedRoots.replace(if (index % 2 == 0) second else first)
+                }
+            },
+            async {
+                repeat(500) {
+                    val restored = database.selectedRoots.list(collection.id).single()
+                    assertThat(restored == first || restored == second).isTrue()
+                }
+            },
+        ).awaitAll()
     }
 
     @Test

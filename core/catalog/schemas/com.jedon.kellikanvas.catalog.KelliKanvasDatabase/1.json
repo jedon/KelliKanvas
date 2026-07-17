@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "database": {
     "version": 1,
-    "identityHash": "e7865f8e50c4c706c1d7f0fb2b7b08af",
+    "identityHash": "4a6e547c97cdbe7848df15eb5dcf3ae7",
     "entities": [
       {
         "tableName": "source_profiles",
@@ -519,7 +519,7 @@
       },
       {
         "tableName": "slideshow_sessions",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`collection_id` TEXT NOT NULL, `cycle_id` TEXT NOT NULL, `current_ordinal` INTEGER NOT NULL, `current_profile_id` TEXT NOT NULL, `current_object_id` TEXT NOT NULL, `last_profile_id` TEXT, `last_object_id` TEXT, PRIMARY KEY(`collection_id`), FOREIGN KEY(`collection_id`, `cycle_id`) REFERENCES `playlist_cycles`(`collection_id`, `cycle_id`) ON UPDATE NO ACTION ON DELETE RESTRICT , FOREIGN KEY(`cycle_id`, `current_ordinal`, `current_profile_id`, `current_object_id`) REFERENCES `playlist_cycle_items`(`cycle_id`, `ordinal`, `profile_id`, `object_id`) ON UPDATE NO ACTION ON DELETE RESTRICT )",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`collection_id` TEXT NOT NULL, `cycle_id` TEXT NOT NULL, `current_ordinal` INTEGER NOT NULL, `current_profile_id` TEXT NOT NULL, `current_object_id` TEXT NOT NULL, PRIMARY KEY(`collection_id`), FOREIGN KEY(`collection_id`, `cycle_id`) REFERENCES `playlist_cycles`(`collection_id`, `cycle_id`) ON UPDATE NO ACTION ON DELETE RESTRICT , FOREIGN KEY(`cycle_id`, `current_ordinal`, `current_profile_id`, `current_object_id`) REFERENCES `playlist_cycle_items`(`cycle_id`, `ordinal`, `profile_id`, `object_id`) ON UPDATE NO ACTION ON DELETE RESTRICT )",
         "fields": [
           {
             "fieldPath": "collectionId",
@@ -550,16 +550,6 @@
             "columnName": "current_object_id",
             "affinity": "TEXT",
             "notNull": true
-          },
-          {
-            "fieldPath": "lastProfileId",
-            "columnName": "last_profile_id",
-            "affinity": "TEXT"
-          },
-          {
-            "fieldPath": "lastObjectId",
-            "columnName": "last_object_id",
-            "affinity": "TEXT"
           }
         ],
         "primaryKey": {
@@ -624,11 +614,79 @@
             ]
           }
         ]
+      },
+      {
+        "tableName": "slideshow_session_last_presented",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`collection_id` TEXT NOT NULL, `profile_id` TEXT NOT NULL, `object_id` TEXT NOT NULL, PRIMARY KEY(`collection_id`), FOREIGN KEY(`collection_id`) REFERENCES `slideshow_sessions`(`collection_id`) ON UPDATE NO ACTION ON DELETE CASCADE , FOREIGN KEY(`profile_id`, `object_id`) REFERENCES `catalog_assets`(`profile_id`, `object_id`) ON UPDATE NO ACTION ON DELETE RESTRICT )",
+        "fields": [
+          {
+            "fieldPath": "collectionId",
+            "columnName": "collection_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "profileId",
+            "columnName": "profile_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "objectId",
+            "columnName": "object_id",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "collection_id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_slideshow_session_last_presented_profile_id_object_id",
+            "unique": false,
+            "columnNames": [
+              "profile_id",
+              "object_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_slideshow_session_last_presented_profile_id_object_id` ON `${TABLE_NAME}` (`profile_id`, `object_id`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "slideshow_sessions",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "collection_id"
+            ],
+            "referencedColumns": [
+              "collection_id"
+            ]
+          },
+          {
+            "table": "catalog_assets",
+            "onDelete": "RESTRICT",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "profile_id",
+              "object_id"
+            ],
+            "referencedColumns": [
+              "profile_id",
+              "object_id"
+            ]
+          }
+        ]
       }
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'e7865f8e50c4c706c1d7f0fb2b7b08af')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '4a6e547c97cdbe7848df15eb5dcf3ae7')"
     ]
   }
 }
