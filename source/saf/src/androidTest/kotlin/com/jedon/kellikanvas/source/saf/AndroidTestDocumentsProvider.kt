@@ -8,7 +8,6 @@ import android.provider.DocumentsContract
 import android.provider.DocumentsProvider
 import java.io.File
 import java.io.FileNotFoundException
-import java.io.IOException
 
 class AndroidTestDocumentsProvider : DocumentsProvider() {
     enum class Mode {
@@ -100,7 +99,7 @@ class AndroidTestDocumentsProvider : DocumentsProvider() {
         when (mode) {
             Mode.ACTIVE -> Unit
             Mode.REVOKED -> throw SecurityException("Instrumentation grant revoked")
-            Mode.REMOVED -> throw IOException("Instrumentation media removed")
+            Mode.REMOVED -> throw FileNotFoundException("Instrumentation media removed")
         }
     }
 

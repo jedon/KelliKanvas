@@ -18,18 +18,38 @@ import java.util.concurrent.atomic.AtomicInteger
 
 @RunWith(AndroidJUnit4::class)
 class SafInstrumentationTest {
-    private val context = InstrumentationRegistry.getInstrumentation().context
-    private val authority = "${context.packageName}.saf.documents"
+    private val instrumentation = InstrumentationRegistry.getInstrumentation()
+    private val providerContext = instrumentation.context
+    private val targetContext = instrumentation.targetContext
+    private val targetPackageName = targetContext.packageName
+    private val authority = "${providerContext.packageName}.saf.documents"
     private val treeUri =
         DocumentsContract.buildTreeDocumentUri(authority, AndroidTestDocumentsProvider.ROOT_ID)
+    private val rootDocumentUri =
+        DocumentsContract.buildDocumentUriUsingTree(treeUri, AndroidTestDocumentsProvider.ROOT_ID)
+    private val grantFlags =
+        Intent.FLAG_GRANT_READ_URI_PERMISSION or
+            Intent.FLAG_GRANT_PREFIX_URI_PERMISSION
 
     @Before
     fun setUp() {
         AndroidTestDocumentsProvider.mode = AndroidTestDocumentsProvider.Mode.ACTIVE
+        providerContext.grantUriPermission(targetPackageName, treeUri, grantFlags)
+        providerContext.grantUriPermission(targetPackageName, rootDocumentUri, grantFlags)
     }
 
     @After
     fun tearDown() {
+        providerContext.revokeUriPermission(
+            targetPackageName,
+            rootDocumentUri,
+            Intent.FLAG_GRANT_READ_URI_PERMISSION,
+        )
+        providerContext.revokeUriPermission(
+            targetPackageName,
+            treeUri,
+            Intent.FLAG_GRANT_READ_URI_PERMISSION,
+        )
         AndroidTestDocumentsProvider.mode = AndroidTestDocumentsProvider.Mode.ACTIVE
     }
 
@@ -49,8 +69,9 @@ class SafInstrumentationTest {
     }
 
     @Test
-    fun revokedAndRemovedProviderStatesMapToSourceFailures() = runTest {
+    fun revokedAndRemovedStatesRecoverWithSameProfile() = runTest {
         val adapter = adapter()
+        val profileId = adapter.profileId
         AndroidTestDocumentsProvider.mode = AndroidTestDocumentsProvider.Mode.REVOKED
         expectFailure<SourceFailure.PermissionRevoked> {
             adapter.listChildren(adapter.root, null)
@@ -60,6 +81,12 @@ class SafInstrumentationTest {
         expectFailure<SourceFailure.SourceUnavailable> {
             adapter.listChildren(adapter.root, null)
         }
+
+        AndroidTestDocumentsProvider.mode = AndroidTestDocumentsProvider.Mode.ACTIVE
+        val recovered = adapter.listChildren(adapter.root, null)
+
+        assertThat(adapter.profileId).isEqualTo(profileId)
+        assertThat(recovered.items.map(SourceEntry::name)).containsExactly("Landscape", "Portrait").inOrder()
     }
 
     @Test
@@ -87,14 +114,29 @@ class SafInstrumentationTest {
     }
 
     @Test
-    fun registeredProviderAllowsReadAndRejectsWrite() {
-        val resolver = context.contentResolver
+    fun targetResolverUsesExplicitTreeGrantAndProviderRejectsWrite() {
+        val resolver = targetContext.contentResolver
+        val childrenUri =
+            DocumentsContract.buildChildDocumentsUriUsingTree(
+                treeUri,
+                AndroidTestDocumentsProvider.ROOT_ID,
+            )
         val documentUri =
             DocumentsContract.buildDocumentUriUsingTree(
                 treeUri,
                 AndroidTestDocumentsProvider.PHOTO_ID,
             )
 
+        resolver.query(
+            childrenUri,
+            arrayOf(DocumentsContract.Document.COLUMN_DOCUMENT_ID),
+            null,
+            null,
+            null,
+        ).use { cursor ->
+            assertThat(cursor).isNotNull()
+            assertThat(cursor?.moveToFirst()).isTrue()
+        }
         resolver.openFileDescriptor(documentUri, "r").use {
             assertThat(it).isNotNull()
         }
@@ -124,7 +166,7 @@ class SafInstrumentationTest {
             )
         return SafSourceAdapter(
             profile,
-            ContentResolverSafDocuments(context.contentResolver, readObserver = observer),
+            ContentResolverSafDocuments(targetContext.contentResolver, readObserver = observer),
         )
     }
 

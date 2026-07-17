@@ -10,7 +10,6 @@ import android.provider.DocumentsProvider
 import kotlinx.coroutines.CompletableDeferred
 import java.io.File
 import java.io.FileNotFoundException
-import java.io.IOException
 import java.util.Collections
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.atomic.AtomicInteger
@@ -160,7 +159,7 @@ class TestDocumentsProvider : DocumentsProvider() {
         when (mode) {
             Mode.ACTIVE -> Unit
             Mode.REVOKED -> throw SecurityException("Fixture grant revoked")
-            Mode.REMOVED -> throw IOException("Fixture media removed")
+            Mode.REMOVED -> throw FileNotFoundException("Fixture media removed")
         }
     }
 

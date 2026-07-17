@@ -1,5 +1,6 @@
 package com.jedon.kellikanvas.source.saf
 
+import android.Manifest
 import android.provider.DocumentsContract
 import com.google.common.truth.Truth.assertThat
 import kotlinx.coroutines.test.runTest
@@ -11,6 +12,30 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [28])
 class SafDocumentsRobolectricTest {
+    @Test
+    fun `provider attaches with secure metadata and serves resolver query`() {
+        val fixture = registerSafProvider()
+        val info = fixture.providerInfo
+        val rootDocumentUri =
+            DocumentsContract.buildDocumentUriUsingTree(
+                fixture.treeUri,
+                TestDocumentsProvider.ROOT_ID,
+            )
+
+        assertThat(info.authority).isEqualTo(fixture.treeUri.authority)
+        assertThat(info.exported).isTrue()
+        assertThat(info.grantUriPermissions).isTrue()
+        assertThat(info.readPermission).isEqualTo(Manifest.permission.MANAGE_DOCUMENTS)
+        assertThat(info.writePermission).isEqualTo(Manifest.permission.MANAGE_DOCUMENTS)
+        assertThat(fixture.provider.context).isNotNull()
+        fixture.resolver.query(rootDocumentUri, arrayOf(DocumentsContract.Document.COLUMN_DOCUMENT_ID), null, null, null)
+            .use { cursor ->
+                assertThat(cursor).isNotNull()
+                assertThat(cursor?.moveToFirst()).isTrue()
+                assertThat(cursor?.getString(0)).isEqualTo(TestDocumentsProvider.ROOT_ID)
+            }
+    }
+
     @Test
     fun `resolver reads canonical IDs and bounded document columns`() = runTest {
         val fixture = registerSafProvider()
