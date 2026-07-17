@@ -6,7 +6,7 @@
 
 **Architecture:** Compose for TV provides setup, browsing, settings, diagnostics, and overlays. Protocol-specific adapters implement one source contract, a metadata-only Room catalog builds immutable playlist cycles, and a bounded image pipeline renders through a native-resolution `SurfaceView`. Ambient and update behavior use pure policies behind Android adapters so unsupported hardware and private distribution degrade safely.
 
-**Tech Stack:** Kotlin 2.4.10, Android Gradle Plugin 9.3.0, Gradle 9.5.0, JDK 17, compile/target SDK 37, min SDK 28, Compose BOM 2026.06.01, Compose for TV 1.1.0, coroutines, Room 2.8.4, DataStore 1.2.1, OkHttp 5, SMBJ 0.14.0, AndroidX ExifInterface, Android Keystore, JUnit, Robolectric, Compose UI tests, MockWebServer, Testcontainers/Samba, GitHub Actions, nginx on QNAP.
+**Tech Stack:** Android Gradle Plugin 9.3.0 with built-in Kotlin/KGP 2.2.10 for Android modules, Kotlin 2.4.10 only for compiling the isolated build-logic build, Gradle 9.5.0, JDK 17, compile/target SDK 37, min SDK 28, Compose compiler plugin 2.2.10, Compose BOM 2026.06.01, Compose for TV 1.1.0, coroutines, Room 2.8.4, DataStore 1.2.1, OkHttp 5, SMBJ 0.14.0, AndroidX ExifInterface, Android Keystore, JUnit, Robolectric, Compose UI tests, MockWebServer, Testcontainers/Samba, GitHub Actions, nginx on QNAP.
 
 ---
 
@@ -95,7 +95,6 @@ Create `gradle/libs.versions.toml` with at least:
 ```toml
 [versions]
 agp = "9.3.0"
-kotlin = "2.4.10"
 ksp = "2.3.10"
 compose-bom = "2026.06.01"
 tv-material = "1.1.0"
@@ -116,7 +115,7 @@ robolectric = "4.16.1"
 turbine = "1.2.1"
 ```
 
-Use AGP built-in Kotlin for Android modules; do not apply `org.jetbrains.kotlin.android` or kapt. Apply KSP for Room and the Compose compiler plugin matching Kotlin 2.4.10.
+Use AGP 9.3 built-in Kotlin/KGP 2.2.10 for Android modules; do not apply `org.jetbrains.kotlin.android`, override KGP, or use kapt. Apply KSP for Room and the Compose compiler plugin 2.2.10 matching built-in Kotlin. Kotlin 2.4.10 is isolated to compiling the build-logic build on Gradle 9.5.0.
 
 - [ ] **Step 4: Add root configuration**
 
@@ -195,7 +194,7 @@ class ConventionPluginTest {
 - [ ] **Step 2: Verify RED**
 
 ```powershell
-.\gradlew.bat -p build-logic test
+.\gradlew.bat :build-logic:test
 ```
 
 Expected: failure because convention plugins do not exist.
@@ -229,7 +228,7 @@ MainActivity uses `MAIN` and `LEANBACK_LAUNCHER`. Do not add boot, broad-storage
 CI uses JDK 17 and runs:
 
 ```bash
-./gradlew ktlintCheck lintDebug testDebugUnitTest assembleDebug --stacktrace
+./gradlew ktlintCheck lintDebug testDebugUnitTest assembleDebug assembleDebugAndroidTest --stacktrace
 ```
 
 Upload the debug APK and reports. Pin third-party actions to immutable commit SHAs before merging.
@@ -237,7 +236,7 @@ Upload the debug APK and reports. Pin third-party actions to immutable commit SH
 - [ ] **Step 7: Verify GREEN**
 
 ```powershell
-.\gradlew.bat -p build-logic test
+.\gradlew.bat :build-logic:test
 .\gradlew.bat projects
 .\gradlew.bat assembleDebug
 ```

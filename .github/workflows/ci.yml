@@ -40,7 +40,7 @@ jobs:
           test -f "$ANDROID_SDK_ROOT/build-tools/36.0.0/aapt2"
 
       - name: Test convention plugins
-        run: ./gradlew -p build-logic test --stacktrace
+        run: ./gradlew :build-logic:test --stacktrace
 
       - name: Check and assemble
         run: ./gradlew ktlintCheck lintDebug testDebugUnitTest assembleDebug assembleDebugAndroidTest --stacktrace
