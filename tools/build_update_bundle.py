@@ -37,6 +37,19 @@ def _run(command):
         raise BundleError(f"tool failed: {command[0]}") from error
 
 
+def _sign_metadata(data, private_key, openssl="openssl"):
+    try:
+        return subprocess.run(
+            [openssl, "dgst", "-sha256", "-sign", str(private_key)],
+            input=data,
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        ).stdout
+    except (OSError, subprocess.CalledProcessError) as error:
+        raise BundleError("metadata signing failed") from error
+
+
 def inspect_apk(apk, apksigner="apksigner", apkanalyzer="apkanalyzer"):
     signer_output = _run([apksigner, "verify", "--print-certs", str(apk)])
     marker = "certificate SHA-256 digest:"
@@ -68,9 +81,22 @@ def _atomic_write(path, data):
     os.replace(temporary, path)
 
 
-def build_bundle(apk, dist, origin=ORIGIN, apksigner="apksigner", apkanalyzer="apkanalyzer"):
+def build_bundle(
+    apk,
+    dist,
+    origin=ORIGIN,
+    apksigner="apksigner",
+    apkanalyzer="apkanalyzer",
+    metadata_private_key=None,
+    sequence=None,
+    openssl="openssl",
+):
     apk = Path(apk)
     dist = Path(dist)
+    if metadata_private_key is None:
+        raise BundleError("offline metadata private key is required")
+    if sequence is None or sequence <= 0:
+        raise BundleError("positive authenticated release sequence is required")
     parsed = urlparse(origin)
     if (parsed.scheme, parsed.hostname, parsed.port, parsed.path, parsed.query, parsed.fragment) != (
         "http",
@@ -98,6 +124,7 @@ def build_bundle(apk, dist, origin=ORIGIN, apksigner="apksigner", apkanalyzer="a
         "checksumUrl": f"{origin}/{checksum_name}",
         "packageName": PACKAGE_NAME,
         "schema": 1,
+        "sequence": sequence,
         "sha256": digest,
         "signerSha256": metadata.signer_sha256,
         "sizeBytes": size,
@@ -113,7 +140,13 @@ def build_bundle(apk, dist, origin=ORIGIN, apksigner="apksigner", apkanalyzer="a
         raise BundleError("copied APK hash mismatch")
     os.replace(temporary_apk, dist / apk_name)
     _atomic_write(dist / checksum_name, f"{digest}  {apk_name}\n".encode("ascii"))
-    manifest_bytes = (json.dumps(manifest, sort_keys=True, separators=(",", ":")) + "\n").encode("utf-8")
+    manifest_bytes = (
+        json.dumps(manifest, sort_keys=True, separators=(",", ":"), ensure_ascii=True) + "\n"
+    ).encode("utf-8")
+    signature = _sign_metadata(manifest_bytes, metadata_private_key, openssl)
+    if not signature or len(signature) > 1024:
+        raise BundleError("metadata signature is outside limits")
+    _atomic_write(dist / "manifest.json.sig", signature)
     _atomic_write(dist / "manifest.json", manifest_bytes)
     return manifest
 
@@ -125,9 +158,19 @@ def main():
     parser.add_argument("--origin", default=ORIGIN)
     parser.add_argument("--apksigner", default="apksigner")
     parser.add_argument("--apkanalyzer", default="apkanalyzer")
+    parser.add_argument("--metadata-private-key", type=Path, required=True)
+    parser.add_argument("--sequence", type=int, required=True)
+    parser.add_argument("--openssl", default="openssl")
     arguments = parser.parse_args()
     build_bundle(
-        arguments.apk, arguments.dist, arguments.origin, arguments.apksigner, arguments.apkanalyzer
+        arguments.apk,
+        arguments.dist,
+        arguments.origin,
+        arguments.apksigner,
+        arguments.apkanalyzer,
+        arguments.metadata_private_key,
+        arguments.sequence,
+        arguments.openssl,
     )
 
 
