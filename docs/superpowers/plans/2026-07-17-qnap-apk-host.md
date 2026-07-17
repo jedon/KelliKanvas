@@ -4,7 +4,7 @@
 
 **Goal:** Deploy a LAN-only nginx site on DarklingNAS that lists every published KelliKanvas APK version and lets a phone user copy a direct APK URL into Send to TV Quick.
 
-**Architecture:** A tested Python generator scans a QNAP content directory and atomically writes a self-contained mobile index page. Container Station runs a locked-down nginx container on port 8088 with the content directory mounted read-only. APK publication copies and verifies the versioned file first, then runs the generator so incomplete files are never advertised.
+**Architecture:** A tested Python generator scans a least-privilege QNAP content directory and atomically writes a self-contained mobile index page. Container Station runs a locked-down nginx container on the NAS household LAN address at port 8088, excluding Tailscale, with the content directory mounted read-only. One content-wide directory lock serializes every APK/index mutation. Publication verifies a unique temporary copy, creates the immutable final with an atomic no-clobber hard link, generates and verifies the index while locked, and rolls both APK and index back before unlocking on failure.
 
 **Tech Stack:** Python 3 standard library and `unittest`, nginx Alpine, Docker Compose through QNAP Container Station, PowerShell/Posh-SSH for deployment, HTTP smoke tests.
 
@@ -180,6 +180,7 @@ def _release(path: Path) -> ApkRelease | None:
             int(patch),
             prerelease is None,
             _prerelease_key(prerelease),
+            stat.st_mtime_ns,
             path.name,
         ),
     )
@@ -359,21 +360,29 @@ Create `deploy/qnap/compose.yaml`:
 ```yaml
 services:
   apk-host:
-    image: nginx:1.28.0-alpine
+    image: nginx:1.30.4-alpine@sha256:59d10bca5c674965ef4ff884715000dd60ef5567c36663523f108eec8e4105d4
     container_name: kellikanvas-apk-host
     user: "101:101"
     ports:
-      - "8088:8080"
+      - "192.168.68.81:8088:8080"
     volumes:
       - /share/Public/KelliKanvas:/usr/share/nginx/html:ro
       - ./nginx.conf:/etc/nginx/nginx.conf:ro
     read_only: true
+    cpus: 0.5
+    mem_limit: 64m
+    pids_limit: 64
     tmpfs:
       - /tmp:size=16m,mode=1777
     cap_drop:
       - ALL
     security_opt:
       - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/healthz"]
@@ -397,7 +406,8 @@ events {
 http {
     include /etc/nginx/mime.types;
     default_type application/octet-stream;
-    access_log /dev/stdout;
+    log_format privacy '$time_iso8601 method=$request_method status=$status bytes=$body_bytes_sent';
+    access_log /dev/stdout privacy;
     client_body_temp_path /tmp/client_body;
     proxy_temp_path /tmp/proxy;
     fastcgi_temp_path /tmp/fastcgi;
@@ -408,6 +418,8 @@ http {
         listen 8080;
         server_name _;
         root /usr/share/nginx/html;
+        server_tokens off;
+        disable_symlinks on;
 
         add_header X-Content-Type-Options nosniff always;
         add_header Referrer-Policy no-referrer always;
@@ -464,7 +476,7 @@ Run:
 docker compose -f deploy/qnap/compose.yaml config
 docker run --rm `
   -v "${PWD}/deploy/qnap/nginx.conf:/etc/nginx/nginx.conf:ro" `
-  nginx:1.28.0-alpine nginx -t
+  nginx:1.30.4-alpine@sha256:59d10bca5c674965ef4ff884715000dd60ef5567c36663523f108eec8e4105d4 nginx -t
 ```
 
 Expected: Compose prints one `apk-host` service and nginx reports
@@ -488,76 +500,30 @@ git commit -m "feat: add QNAP nginx APK host"
 
 - [ ] **Step 1: Write the operator guide**
 
-Create `deploy/qnap/README.md`:
+Create `deploy/qnap/README.md` as the canonical executable operator guide. Its
+mutation commands must all use
+`/share/Public/KelliKanvas/.kellikanvas-operation.lock`:
 
-````markdown
-# QNAP APK host
-
-Container Station serves `/share/Public/KelliKanvas` through nginx at
-`http://darklingnas:8088`.
-
-## Deploy
-
-Copy this directory to `/share/Container/KelliKanvas`, create
-`/share/Public/KelliKanvas`, generate the initial index, then run:
-
-```sh
-CS="$(getcfg container-station Install_Path -f /etc/config/qpkg.conf)"
-"$CS/bin/docker" compose -f /share/Container/KelliKanvas/compose.yaml up -d
-```
-
-## Publish an APK
-
-Use a stable semantic version filename:
-
-```text
-KelliKanvas-1.0.0.apk
-```
-
-Copy to a temporary filename, verify SHA-256, and rename it atomically:
-
-```sh
-CONTENT=/share/Public/KelliKanvas
-cp /path/to/KelliKanvas-1.0.0.apk "$CONTENT/.KelliKanvas-1.0.0.apk.tmp"
-sha256sum /path/to/KelliKanvas-1.0.0.apk "$CONTENT/.KelliKanvas-1.0.0.apk.tmp"
-mv "$CONTENT/.KelliKanvas-1.0.0.apk.tmp" "$CONTENT/KelliKanvas-1.0.0.apk"
-```
-
-Regenerate the index using an ephemeral Python container:
-
-```sh
-CS="$(getcfg container-station Install_Path -f /etc/config/qpkg.conf)"
-"$CS/bin/docker" run --rm \
-  -v /share/Public/KelliKanvas:/content \
-  -v /share/Container/KelliKanvas/generate_apk_index.py:/app/generate.py:ro \
-  python:3.13-alpine \
-  python /app/generate.py --directory /content
-```
-
-The generator writes `index.html` atomically. nginx mounts the content read-only.
-
-## Verify
-
-```sh
-curl -fsS http://127.0.0.1:8088/healthz
-curl -fsS http://127.0.0.1:8088/
-curl -I http://127.0.0.1:8088/KelliKanvas-1.0.0.apk
-curl -o /dev/null -sS -w '%{http_code}\n' -X POST http://127.0.0.1:8088/
-```
-
-The health endpoint and page return 200, a published APK supports HEAD, and POST
-returns 405. Do not forward port 8088 through the router.
-
-## Roll back or remove a version
-
-Existing version URLs remain unchanged. To remove one, delete its versioned APK
-and rerun the generator. To stop the site:
-
-```sh
-CS="$(getcfg container-station Install_Path -f /etc/config/qpkg.conf)"
-"$CS/bin/docker" compose -f /share/Container/KelliKanvas/compose.yaml down
-```
-````
+- Acquire the content-wide lock before creating publication, quarantine, or
+  index state, then write `operation`, exact `name` (or `-`), and `pid` to its
+  owner metadata.
+- Publish only strict SemVer names by copying to a unique same-directory
+  temporary, comparing SHA-256 values, and using atomic no-clobber `ln` for the
+  immutable final path.
+- Hold the lock through generation and verification. If a new final cannot be
+  made consistent with the index, remove it, regenerate the previous index, and
+  retain the lock if recovery fails.
+- Hold the same lock throughout removal quarantine, generation, verification,
+  cleanup, and rollback. Standalone and initial regeneration also acquire it.
+- Recover stale locks only after validating owner metadata and all expected
+  temporary/quarantine state across the directory, proving no owner is live,
+  and explicitly confirming the exact recorded operation. Missing, corrupt, or
+  ambiguous state remains locked.
+- Preserve nonzero HUP/INT/TERM exits, immutable URLs, actual restrictive-path
+  HTTP sentinels, pinned image digests, and LAN-only exposure.
+- Include a throwaway, reproducible concurrency test with controlled pauses for
+  publish/publish and publish/remove, followed by an exact comparison between
+  generated links and discovered APK files.
 
 - [ ] **Step 2: Check documentation commands and repository whitespace**
 
@@ -591,6 +557,12 @@ Load `QNAP_NAS_HOST`, `QNAP_NAS_USERNAME`, and `QNAP_NAS_PASSWORD` from `.env`
 without printing them. Use Posh-SSH to create the two directories and SFTP the
 three files. Set configuration and generator files to mode 0644.
 
+Before upload, inspect `/share/Public/KelliKanvas` with numeric `getfacl`, verify
+the SSH publisher owns it, remove extended/default ACLs from that dedicated
+child only, and set mode `0755`. Do not alter `/share/Public`. Verify the final
+ACL is exactly owner `rwx`, group `r-x`, and other `r-x`, with no named, mask,
+or default entries.
+
 Expected remote layout:
 
 ```text
@@ -602,16 +574,10 @@ Expected remote layout:
 
 - [ ] **Step 2: Generate the empty version page**
 
-Run over SSH:
-
-```sh
-CS="$(getcfg container-station Install_Path -f /etc/config/qpkg.conf)"
-"$CS/bin/docker" run --rm \
-  -v /share/Public/KelliKanvas:/content \
-  -v /share/Container/KelliKanvas/generate_apk_index.py:/app/generate.py:ro \
-  python:3.13-alpine \
-  python /app/generate.py --directory /content
-```
+Run the README's exact standalone-regeneration procedure over SSH. It must
+acquire the global operation lock, record `operation=regenerate`, `name=-`, and
+the PID, invoke the pinned Python image, and release only after successful
+atomic generation.
 
 Expected: `/share/Public/KelliKanvas/index.html` exists and contains
 `No APK versions have been published yet.`
@@ -630,18 +596,20 @@ CS="$(getcfg container-station Install_Path -f /etc/config/qpkg.conf)"
   --format '{{.State.Health.Status}}' kellikanvas-apk-host
 ```
 
-Expected: Compose validation succeeds, the image is pulled if absent, and health
-becomes `healthy`.
+Expected: Compose validation succeeds, the image is pulled if absent, the
+container has 0.5 CPU, 64 MiB memory, and 64 PID limits, and health becomes
+`healthy`. The host listener is `192.168.68.81:8088`, not `0.0.0.0` or the
+Tailscale address.
 
 - [ ] **Step 4: Verify HTTP policy from the workstation**
 
 Run:
 
 ```powershell
-$page = Invoke-WebRequest http://darklingnas:8088/ -UseBasicParsing
-$health = Invoke-WebRequest http://darklingnas:8088/healthz -UseBasicParsing
+$page = Invoke-WebRequest http://darklingnas.local:8088/ -UseBasicParsing
+$health = Invoke-WebRequest http://darklingnas.local:8088/healthz -UseBasicParsing
 $postStatus = try {
-    Invoke-WebRequest http://darklingnas:8088/ -Method Post -UseBasicParsing
+    Invoke-WebRequest http://darklingnas.local:8088/ -Method Post -UseBasicParsing
     200
 } catch {
     [int]$_.Exception.Response.StatusCode
@@ -664,10 +632,11 @@ True
 
 - [ ] **Step 5: Test a fixture APK and remove it**
 
-Create a harmless fixture named `KelliKanvas-0.0.0-test.1.apk`, regenerate the
-page, and verify it appears with a copy button and a reachable direct URL. Delete
-the fixture, regenerate the page, and verify the empty state returns. This file
-is not an installable APK and must not remain on the NAS.
+Using the README's globally locked publication procedure, publish a harmless
+fixture named `KelliKanvas-0.0.0-test.1.apk` and verify it appears with a copy
+button and a reachable direct URL. Use the globally locked quarantine/removal
+procedure to retire it and verify the empty state returns. This file is not an
+installable APK and must not remain on the NAS.
 
 - [ ] **Step 6: Verify restart behavior and final state**
 
