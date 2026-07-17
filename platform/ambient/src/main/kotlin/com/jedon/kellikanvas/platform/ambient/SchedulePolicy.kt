@@ -2,7 +2,7 @@ package com.jedon.kellikanvas.platform.ambient
 
 import java.time.Clock
 import java.time.LocalTime
-import java.time.ZonedDateTime
+import java.time.ZoneId
 
 data class DayNightSchedule(
     val dayStarts: LocalTime = LocalTime.of(7, 0),
@@ -19,14 +19,11 @@ data class DayNightSchedule(
 
 class SchedulePolicy(
     private val schedule: DayNightSchedule = DayNightSchedule(),
-    private val clock: Clock,
+    private val clock: Clock = Clock.systemUTC(),
+    private val zoneIdProvider: () -> ZoneId = { ZoneId.systemDefault() },
 ) {
-    constructor(
-        schedule: DayNightSchedule = DayNightSchedule(),
-    ) : this(schedule, Clock.systemDefaultZone())
-
     fun brightness(): Float {
-        val localTime = ZonedDateTime.now(clock).toLocalTime()
+        val localTime = clock.instant().atZone(zoneIdProvider()).toLocalTime()
         return if (isDay(localTime)) schedule.dayBrightness else schedule.nightBrightness
     }
 

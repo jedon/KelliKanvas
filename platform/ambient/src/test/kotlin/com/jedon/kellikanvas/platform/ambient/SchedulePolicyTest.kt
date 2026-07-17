@@ -32,8 +32,18 @@ class SchedulePolicyTest {
     @Test
     fun `uses clocks current zone across DST and zone changes`() {
         val instant = Instant.parse("2026-03-08T11:30:00Z")
-        val losAngeles = SchedulePolicy(clock = Clock.fixed(instant, ZoneId.of("America/Los_Angeles")))
-        val newYork = SchedulePolicy(clock = Clock.fixed(instant, ZoneId.of("America/New_York")))
+        val losAngelesZone = ZoneId.of("America/Los_Angeles")
+        val newYorkZone = ZoneId.of("America/New_York")
+        val losAngeles =
+            SchedulePolicy(
+                clock = Clock.fixed(instant, ZoneId.of("UTC")),
+                zoneIdProvider = { losAngelesZone },
+            )
+        val newYork =
+            SchedulePolicy(
+                clock = Clock.fixed(instant, ZoneId.of("UTC")),
+                zoneIdProvider = { newYorkZone },
+            )
 
         assertThat(losAngeles.brightness()).isEqualTo(0.15f)
         assertThat(newYork.brightness()).isEqualTo(0.70f)
@@ -57,8 +67,12 @@ class SchedulePolicyTest {
     private fun policyAt(
         instant: String,
         schedule: DayNightSchedule = DayNightSchedule(),
-    ) = SchedulePolicy(
-        schedule = schedule,
-        clock = Clock.fixed(Instant.parse(instant), ZoneId.of("UTC")),
-    )
+    ): SchedulePolicy {
+        val zone = ZoneId.of("UTC")
+        return SchedulePolicy(
+            schedule = schedule,
+            clock = Clock.fixed(Instant.parse(instant), zone),
+            zoneIdProvider = { zone },
+        )
+    }
 }

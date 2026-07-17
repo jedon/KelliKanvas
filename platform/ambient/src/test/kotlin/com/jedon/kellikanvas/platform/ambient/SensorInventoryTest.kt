@@ -53,7 +53,8 @@ class SensorInventoryTest {
                 ),
             )
 
-        assertThat(inventory.presenceCandidates).hasSize(4)
+        assertThat(inventory.presenceCandidates).hasSize(3)
+        assertThat(inventory.unsupportedPresenceSensors).hasSize(1)
         assertThat(inventory.capabilities.presence).isEqualTo(CapabilityStatus.CANDIDATE_UNVERIFIED)
     }
 

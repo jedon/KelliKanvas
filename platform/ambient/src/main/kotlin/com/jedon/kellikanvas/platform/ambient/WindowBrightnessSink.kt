@@ -5,8 +5,8 @@ import android.view.WindowManager
 
 class WindowBrightnessSink(
     private val window: Window,
-) {
-    fun apply(decision: BrightnessDecision) {
+) : BrightnessSink {
+    override fun apply(decision: BrightnessDecision) {
         val brightness =
             when (decision) {
                 is BrightnessDecision.Sensor -> decision.brightness

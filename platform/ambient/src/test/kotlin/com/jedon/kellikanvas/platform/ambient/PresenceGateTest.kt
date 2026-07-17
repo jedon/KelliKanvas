@@ -3,7 +3,6 @@ package com.jedon.kellikanvas.platform.ambient
 import com.google.common.truth.Truth.assertThat
 import org.junit.Test
 import java.time.Duration
-import java.time.Instant
 
 class PresenceGateTest {
     private val sensor =
@@ -21,12 +20,14 @@ class PresenceGateTest {
             isWakeUp = false,
             stringType = "test.presence",
         )
-    private val now = Instant.parse("2026-07-17T12:00:00Z")
+    private val inventory = Inventory(listOf(sensor))
+    private val now = 10_000_000_000L
 
     @Test
     fun `guided vacant and occupied samples produce bound qualification`() {
         val qualification =
             Qualification.qualify(
+                inventory = inventory,
                 sensor = sensor,
                 buildFingerprint = "firmware-a",
                 vacant = PresenceProfile(listOf(0f, 0f, 1f)),
@@ -42,6 +43,7 @@ class PresenceGateTest {
     fun `overlapping guided samples do not qualify`() {
         assertThat(
             Qualification.qualify(
+                inventory,
                 sensor,
                 "firmware-a",
                 PresenceProfile(listOf(1f, 2f, 3f)),
@@ -73,10 +75,10 @@ class PresenceGateTest {
 
         assertThat(gate.onPresence(false, PlaybackState.PLAYING, now)).isEqualTo(AmbientAction.NONE)
         assertThat(
-            gate.onPresence(false, PlaybackState.PLAYING, now.plusSeconds(119)),
+            gate.onPresence(false, PlaybackState.PLAYING, now + Duration.ofSeconds(119).toNanos()),
         ).isEqualTo(AmbientAction.NONE)
         assertThat(
-            gate.onPresence(false, PlaybackState.PLAYING, now.plusSeconds(120)),
+            gate.onPresence(false, PlaybackState.PLAYING, now + Duration.ofSeconds(120).toNanos()),
         ).isEqualTo(AmbientAction.PAUSE)
     }
 
@@ -86,10 +88,18 @@ class PresenceGateTest {
         assertThat(gate.onPresence(false, PlaybackState.PLAYING, now)).isEqualTo(AmbientAction.PAUSE)
 
         assertThat(
-            gate.onPresence(true, PlaybackState.PAUSED_BY_PRESENCE, now.plusSeconds(1)),
+            gate.onPresence(
+                true,
+                PlaybackState.PAUSED_BY_PRESENCE,
+                now + Duration.ofSeconds(1).toNanos(),
+            ),
         ).isEqualTo(AmbientAction.RESUME)
         assertThat(
-            gate.onPresence(true, PlaybackState.PAUSED_MANUALLY, now.plusSeconds(2)),
+            gate.onPresence(
+                true,
+                PlaybackState.PAUSED_MANUALLY,
+                now + Duration.ofSeconds(2).toNanos(),
+            ),
         ).isEqualTo(AmbientAction.NONE)
     }
 
@@ -99,7 +109,11 @@ class PresenceGateTest {
         gate.onPresence(false, PlaybackState.PLAYING, now)
 
         assertThat(
-            gate.onPresence(true, PlaybackState.PAUSED_BY_PRESENCE, now.plusSeconds(1)),
+            gate.onPresence(
+                true,
+                PlaybackState.PAUSED_BY_PRESENCE,
+                now + Duration.ofSeconds(1).toNanos(),
+            ),
         ).isEqualTo(AmbientAction.NONE)
     }
 
@@ -111,6 +125,7 @@ class PresenceGateTest {
     }
 
     private fun qualification() = Qualification.qualify(
+        inventory,
         sensor,
         "firmware-a",
         PresenceProfile(listOf(0f, 0f, 1f)),

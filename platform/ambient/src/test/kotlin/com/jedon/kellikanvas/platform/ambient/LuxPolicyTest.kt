@@ -4,11 +4,10 @@ import com.google.common.truth.Truth.assertThat
 import org.junit.Assert.assertThrows
 import org.junit.Test
 import java.time.Duration
-import java.time.Instant
 import kotlin.math.sqrt
 
 class LuxPolicyTest {
-    private val start = Instant.parse("2026-07-17T12:00:00Z")
+    private val start = 10_000_000_000L
 
     @Test
     fun `rejects non finite and negative readings`() {
@@ -24,10 +23,10 @@ class LuxPolicyTest {
         val policy = LuxPolicy(minimumEmitInterval = Duration.ZERO, minimumBrightnessDelta = 0f)
         policy.onLux(100f, start)
 
-        policy.onLux(400f, start.plusSeconds(5))
+        policy.onLux(400f, start + Duration.ofSeconds(5).toNanos())
 
         assertThat(policy.filteredLux).isWithin(0.01f).of(250f)
-        policy.onLux(400f, start.plusSeconds(10))
+        policy.onLux(400f, start + Duration.ofSeconds(10).toNanos())
         assertThat(policy.filteredLux).isWithin(0.01f).of(325f)
     }
 
@@ -52,8 +51,8 @@ class LuxPolicyTest {
         val policy = LuxPolicy()
         assertThat(policy.onLux(5f, start)).isEqualTo(0.08f)
 
-        assertThat(policy.onLux(500f, start.plusSeconds(1))).isNull()
-        assertThat(policy.onLux(500f, start.plusSeconds(2))).isNotNull()
+        assertThat(policy.onLux(500f, start + Duration.ofSeconds(1).toNanos())).isNull()
+        assertThat(policy.onLux(500f, start + Duration.ofSeconds(2).toNanos())).isNotNull()
     }
 
     @Test
@@ -61,7 +60,7 @@ class LuxPolicyTest {
         val policy = LuxPolicy()
         assertThat(policy.onLux(100f, start)).isNotNull()
 
-        assertThat(policy.onLux(101f, start.plusSeconds(2))).isNull()
+        assertThat(policy.onLux(101f, start + Duration.ofSeconds(2).toNanos())).isNull()
     }
 
     @Test

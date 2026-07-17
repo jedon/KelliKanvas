@@ -1,7 +1,6 @@
 package com.jedon.kellikanvas.platform.ambient
 
 import java.time.Duration
-import java.time.Instant
 
 data class PresenceProfile(
     val samples: List<Float>,
@@ -32,12 +31,14 @@ data class Qualification(
 
     companion object {
         fun qualify(
+            inventory: Inventory,
             sensor: SensorDescriptor,
             buildFingerprint: String,
             vacant: PresenceProfile,
             occupied: PresenceProfile,
         ): Qualification? {
             require(buildFingerprint.isNotBlank())
+            if (!inventory.containsPresenceCandidate(sensor)) return null
             val occupiedAbove = vacant.maximum < occupied.minimum
             val occupiedBelow = occupied.maximum < vacant.minimum
             if (!occupiedAbove && !occupiedBelow) return null
@@ -76,7 +77,7 @@ class Gate private constructor(
         require(!vacancyTimeout.isNegative)
     }
 
-    private var vacantSince: Instant? = null
+    private var vacantSinceNanos: Long? = null
     private var pauseIssued = false
 
     companion object {
@@ -96,33 +97,36 @@ class Gate private constructor(
     fun onSensorValue(
         value: Float,
         playbackState: PlaybackState,
-        at: Instant,
-    ): AmbientAction = onPresence(qualification.isOccupied(value), playbackState, at)
+        elapsedRealtimeNanos: Long,
+    ): AmbientAction = onPresence(qualification.isOccupied(value), playbackState, elapsedRealtimeNanos)
 
     fun onPresence(
         occupied: Boolean,
         playbackState: PlaybackState,
-        at: Instant,
+        elapsedRealtimeNanos: Long,
     ): AmbientAction {
+        require(elapsedRealtimeNanos >= 0L)
         if (occupied) {
-            vacantSince = null
+            vacantSinceNanos = null
             val shouldResume =
                 pauseIssued &&
                     resumeOnReturn &&
                     playbackState == PlaybackState.PAUSED_BY_PRESENCE
-            pauseIssued = false
+            if (playbackState != PlaybackState.PLAYING) pauseIssued = false
             return if (shouldResume) AmbientAction.RESUME else AmbientAction.NONE
         }
 
+        if (pauseIssued) return AmbientAction.NONE
         if (playbackState != PlaybackState.PLAYING) {
-            vacantSince = null
+            vacantSinceNanos = null
             return AmbientAction.NONE
         }
-        val started = vacantSince ?: at.also { vacantSince = it }
-        if (Duration.between(started, at) < vacancyTimeout) return AmbientAction.NONE
+        val started = vacantSinceNanos ?: elapsedRealtimeNanos.also { vacantSinceNanos = it }
+        val elapsed = (elapsedRealtimeNanos - started).coerceAtLeast(0L)
+        if (elapsed < vacancyTimeout.toNanos()) return AmbientAction.NONE
 
         pauseIssued = true
-        vacantSince = null
+        vacantSinceNanos = null
         return AmbientAction.PAUSE
     }
 }

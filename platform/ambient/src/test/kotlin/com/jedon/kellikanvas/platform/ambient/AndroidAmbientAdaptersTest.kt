@@ -1,6 +1,9 @@
 package com.jedon.kellikanvas.platform.ambient
 
+import android.Manifest
 import android.app.Activity
+import android.content.Intent
+import android.os.Looper
 import android.view.WindowManager
 import com.google.common.truth.Truth.assertThat
 import org.junit.Test
@@ -8,6 +11,7 @@ import org.junit.runner.RunWith
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
+import org.robolectric.Shadows.shadowOf
 
 @RunWith(RobolectricTestRunner::class)
 class AndroidAmbientAdaptersTest {
@@ -71,5 +75,40 @@ class AndroidAmbientAdaptersTest {
         assertThat(diagnostics.dream.declared).isTrue()
         assertThat(diagnostics.dream.settingAvailable).isTrue()
         assertThat(diagnostics.dream.deviceStatus).isEqualTo(CapabilityStatus.CANDIDATE_UNVERIFIED)
+    }
+
+    @Test
+    fun `Android permission checker uses public runtime permission state`() {
+        val application = RuntimeEnvironment.getApplication()
+        shadowOf(application).grantPermissions(Manifest.permission.INTERNET)
+        val checker = AndroidPermissionChecker(application)
+
+        assertThat(checker.hasPermission(Manifest.permission.INTERNET)).isTrue()
+        assertThat(checker.hasPermission("com.jedon.kellikanvas.permission.MISSING")).isFalse()
+    }
+
+    @Test
+    fun `timezone observer unregisters cleanly`() {
+        val application = RuntimeEnvironment.getApplication()
+        val source = AndroidTimezoneChangeSource(application)
+        var changes = 0
+        val registration = source.register { changes++ }
+
+        application.sendBroadcast(Intent(Intent.ACTION_TIMEZONE_CHANGED))
+        shadowOf(Looper.getMainLooper()).idle()
+        assertThat(changes).isEqualTo(1)
+
+        registration.unregister()
+        application.sendBroadcast(Intent(Intent.ACTION_TIMEZONE_CHANGED))
+        shadowOf(Looper.getMainLooper()).idle()
+        assertThat(changes).isEqualTo(1)
+    }
+
+    @Test
+    fun `Android elapsed time source is monotonic`() {
+        val first = AndroidElapsedTimeSource.nowNanos()
+        val second = AndroidElapsedTimeSource.nowNanos()
+
+        assertThat(second).isAtLeast(first)
     }
 }

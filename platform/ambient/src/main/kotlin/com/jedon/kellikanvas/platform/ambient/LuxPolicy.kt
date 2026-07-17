@@ -1,7 +1,6 @@
 package com.jedon.kellikanvas.platform.ambient
 
 import java.time.Duration
-import java.time.Instant
 import kotlin.math.ln
 import kotlin.math.pow
 
@@ -41,38 +40,41 @@ class LuxPolicy(
     var filteredLux: Float? = null
         private set
 
-    private var lastSampleAt: Instant? = null
-    private var lastEmittedAt: Instant? = null
+    private var lastSampleAtNanos: Long? = null
+    private var lastEmittedAtNanos: Long? = null
     private var lastEmittedBrightness: Float? = null
 
     fun onLux(
         lux: Float,
-        at: Instant,
+        elapsedRealtimeNanos: Long,
         mode: BrightnessMode = BrightnessMode.SENSOR,
     ): Float? {
-        if (!lux.isFinite() || lux < 0f || mode == BrightnessMode.FOLLOW_TV) return null
-        val previousAt = lastSampleAt
-        if (previousAt != null && at.isBefore(previousAt)) return null
+        if (!lux.isFinite() || lux < 0f || mode != BrightnessMode.SENSOR) return null
+        require(elapsedRealtimeNanos >= 0L)
+        val previousAtNanos = lastSampleAtNanos
+        if (previousAtNanos != null && elapsedRealtimeNanos < previousAtNanos) return null
 
         filteredLux =
             filteredLux?.let { previous ->
-                val elapsedNanos = Duration.between(previousAt, at).toNanos().toDouble()
+                val elapsedNanos = (elapsedRealtimeNanos - previousAtNanos!!).toDouble()
                 val halfLifeNanos = halfLife.toNanos().toDouble()
                 val alpha = 1.0 - 0.5.pow(elapsedNanos / halfLifeNanos)
                 (previous + alpha * (lux - previous)).toFloat()
             } ?: lux
-        lastSampleAt = at
+        lastSampleAtNanos = elapsedRealtimeNanos
 
         val brightness = mapLux(filteredLux!!)
         val elapsedEnough =
-            lastEmittedAt?.let { !Duration.between(it, at).minus(minimumEmitInterval).isNegative }
+            lastEmittedAtNanos?.let {
+                elapsedRealtimeNanos - it >= minimumEmitInterval.toNanos()
+            }
                 ?: true
         val changedEnough =
             lastEmittedBrightness?.let { kotlin.math.abs(brightness - it) >= minimumBrightnessDelta }
                 ?: true
         if (!elapsedEnough || !changedEnough) return null
 
-        lastEmittedAt = at
+        lastEmittedAtNanos = elapsedRealtimeNanos
         lastEmittedBrightness = brightness
         return brightness
     }

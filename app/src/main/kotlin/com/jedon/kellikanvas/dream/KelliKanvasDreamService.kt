@@ -2,6 +2,7 @@
 
 package com.jedon.kellikanvas.dream
 
+import android.app.Application
 import android.service.dreams.DreamService
 import android.view.ViewGroup
 import android.view.Window
@@ -22,6 +23,15 @@ interface DreamSlideshowHost {
         override fun detach() = Unit
     }
 }
+
+interface DreamSlideshowHostProvider {
+    fun dreamSlideshowHost(): DreamSlideshowHost?
+}
+
+internal fun resolveDreamSlideshowHost(application: Application): DreamSlideshowHost = (
+    application as? DreamSlideshowHostProvider
+    )?.dreamSlideshowHost()
+    ?: DreamSlideshowHost.Unavailable
 
 class DreamSession(
     private val host: DreamSlideshowHost,
@@ -48,10 +58,36 @@ class DreamSession(
     }
 }
 
-open class KelliKanvasDreamService : DreamService() {
-    private var session: DreamSession? = null
+class DreamLifecycle(
+    host: DreamSlideshowHost,
+    private val containerProvider: () -> ViewGroup?,
+    private val finish: () -> Unit,
+) {
+    private val session = DreamSession(host)
+    private var dreaming = false
 
-    protected open fun createSlideshowHost(): DreamSlideshowHost = DreamSlideshowHost.Unavailable
+    fun onDreamingStarted() {
+        if (dreaming) return
+        dreaming = true
+        val container = containerProvider()
+        if (container == null) {
+            finish()
+            return
+        }
+        session.start(container, finish)
+    }
+
+    fun onDreamingStopped() {
+        if (!dreaming) return
+        dreaming = false
+        session.stop()
+    }
+}
+
+open class KelliKanvasDreamService : DreamService() {
+    private var lifecycle: DreamLifecycle? = null
+
+    protected open fun createSlideshowHost(): DreamSlideshowHost = resolveDreamSlideshowHost(application)
 
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
@@ -59,21 +95,27 @@ open class KelliKanvasDreamService : DreamService() {
         isFullscreen = true
         isScreenBright = false
         configureDreamWindow(window)
+    }
 
-        val root = window?.decorView as? ViewGroup
-        if (root == null) {
-            finish()
-            return
-        }
-        session =
-            DreamSession(createSlideshowHost()).also {
-                it.start(root, ::finish)
-            }
+    override fun onDreamingStarted() {
+        super.onDreamingStarted()
+        lifecycle =
+            DreamLifecycle(
+                host = createSlideshowHost(),
+                containerProvider = { window?.decorView as? ViewGroup },
+                finish = ::finish,
+            ).also(DreamLifecycle::onDreamingStarted)
+    }
+
+    override fun onDreamingStopped() {
+        lifecycle?.onDreamingStopped()
+        lifecycle = null
+        super.onDreamingStopped()
     }
 
     override fun onDetachedFromWindow() {
-        session?.stop()
-        session = null
+        lifecycle?.onDreamingStopped()
+        lifecycle = null
         super.onDetachedFromWindow()
     }
 }

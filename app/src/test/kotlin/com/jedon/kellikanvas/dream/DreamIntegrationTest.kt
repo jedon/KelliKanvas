@@ -2,6 +2,7 @@
 
 package com.jedon.kellikanvas.dream
 
+import android.app.Application
 import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -83,6 +84,51 @@ class DreamIntegrationTest {
     }
 
     @Test
+    fun `production host resolver uses host installed by application graph`() {
+        val host = RecordingDreamHost(hasCollection = true)
+        val application = HostApplication(host)
+
+        assertThat(resolveDreamSlideshowHost(application)).isSameInstanceAs(host)
+    }
+
+    @Test
+    fun `dream lifecycle starts installed host only while dreaming`() {
+        val host = RecordingDreamHost(hasCollection = true)
+        val root = FrameLayout(RuntimeEnvironment.getApplication())
+        var finished = false
+        val lifecycle =
+            DreamLifecycle(
+                host = host,
+                containerProvider = { root },
+                finish = { finished = true },
+            )
+
+        assertThat(host.attachCount).isEqualTo(0)
+        lifecycle.onDreamingStarted()
+        assertThat(host.attachCount).isEqualTo(1)
+        assertThat(finished).isFalse()
+
+        lifecycle.onDreamingStopped()
+        assertThat(host.detachCount).isEqualTo(1)
+    }
+
+    @Test
+    fun `dream lifecycle gracefully finishes when application host is unavailable`() {
+        val root = FrameLayout(RuntimeEnvironment.getApplication())
+        var finished = false
+        val lifecycle =
+            DreamLifecycle(
+                host = resolveDreamSlideshowHost(Application()),
+                containerProvider = { root },
+                finish = { finished = true },
+            )
+
+        lifecycle.onDreamingStarted()
+
+        assertThat(finished).isTrue()
+    }
+
+    @Test
     fun `dream window configuration is fullscreen without wake flags`() {
         val activity = Robolectric.buildActivity(android.app.Activity::class.java).setup().get()
         activity.window.addFlags(
@@ -113,5 +159,12 @@ class DreamIntegrationTest {
         override fun detach() {
             detachCount++
         }
+    }
+
+    private class HostApplication(
+        private val host: DreamSlideshowHost,
+    ) : Application(),
+        DreamSlideshowHostProvider {
+        override fun dreamSlideshowHost() = host
     }
 }
