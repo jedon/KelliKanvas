@@ -17,7 +17,9 @@ import com.jedon.kellikanvas.source.PhotoByteStream
 import com.jedon.kellikanvas.source.SourceAdapter
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.withContext
 import org.junit.Assert.assertThrows
 import org.junit.Test
 import java.io.Closeable
@@ -71,6 +73,35 @@ class AdapterContractFixtureTest : AdapterContract() {
             }
 
         contract.`listing cancellation propagates and closes its resource`()
+    }
+
+    @Test
+    fun `suppressed cancellation completions have bounded diagnostic timeouts`() {
+        val checks =
+            listOf<Pair<String, AdapterContract.() -> Unit>>(
+                "listing cancellation to complete" to {
+                    `listing cancellation propagates and closes its resource`()
+                },
+                "read cancellation to complete" to {
+                    `read cancellation propagates and closes its resource`()
+                },
+            )
+
+        checks.forEach { (diagnostic, exercise) ->
+            val contract =
+                object : AdapterContract() {
+                    override fun createHarness(): AdapterHarness = this@AdapterContractFixtureTest.newHarness(
+                        suppressCancellationCompletion = true,
+                    )
+                }
+
+            val failure =
+                assertThrows(AssertionError::class.java) {
+                    contract.exercise()
+                }
+
+            assertThat(failure).hasMessageThat().contains(diagnostic)
+        }
     }
 
     @Test
@@ -225,6 +256,7 @@ class AdapterContractFixtureTest : AdapterContract() {
         diagnosticLeak: String? = null,
         translateCancellation: Boolean = false,
         wrapCancellation: Boolean = false,
+        suppressCancellationCompletion: Boolean = false,
         signalListingStart: Boolean = true,
         signalListingClose: Boolean = true,
         transformScenarios: (AdapterScenarioCapabilities) -> AdapterScenarioCapabilities = { it },
@@ -295,6 +327,7 @@ class AdapterContractFixtureTest : AdapterContract() {
                 kind = kind,
                 translateCancellation = translateCancellation,
                 wrapCancellation = wrapCancellation,
+                suppressCancellationCompletion = suppressCancellationCompletion,
                 signalListingStart = signalListingStart,
                 signalListingClose = signalListingClose,
             )
@@ -365,6 +398,7 @@ private class InMemoryAdapter(
     override val kind: SourceKind,
     private val translateCancellation: Boolean,
     private val wrapCancellation: Boolean,
+    private val suppressCancellationCompletion: Boolean,
     private val signalListingStart: Boolean,
     private val signalListingClose: Boolean,
 ) : SourceAdapter() {
@@ -577,6 +611,11 @@ private class InMemoryAdapter(
         try {
             awaitCancellation()
         } catch (failure: CancellationException) {
+            if (suppressCancellationCompletion) {
+                withContext(NonCancellable) {
+                    awaitCancellation()
+                }
+            }
             if (translateCancellation) {
                 throw CancellationException("adapter-created-cancellation")
             }

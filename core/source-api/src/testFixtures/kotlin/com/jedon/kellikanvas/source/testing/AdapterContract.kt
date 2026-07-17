@@ -13,6 +13,7 @@ import com.jedon.kellikanvas.source.PhotoByteStream
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
@@ -135,7 +136,7 @@ abstract class AdapterContract {
         val stall = harness.stallNextListing()
         val caught = CompletableDeferred<CancellationException>()
         val job =
-            launch {
+            backgroundScope.launch {
                 try {
                     harness.adapter.listChildren(harness.root, null)
                 } catch (failure: CancellationException) {
@@ -147,7 +148,7 @@ abstract class AdapterContract {
         awaitSignal(stall.started, "listing resource to start")
         val cancellation = CancellationException("contract-listing-cancelled")
         job.cancel(cancellation)
-        job.join()
+        awaitJobCompletion(job, "listing cancellation to complete")
 
         assertThat(caught.isCompleted).isTrue()
         assertCancellationContains(caught.await(), cancellation)
@@ -162,7 +163,7 @@ abstract class AdapterContract {
         val caught = CompletableDeferred<CancellationException>()
         val opened = CompletableDeferred<Unit>()
         val job =
-            launch {
+            backgroundScope.launch {
                 try {
                     harness.adapter.open(asset).use { stream ->
                         opened.complete(Unit)
@@ -178,7 +179,7 @@ abstract class AdapterContract {
         assertThat(opened.isCompleted).isTrue()
         val cancellation = CancellationException("contract-read-cancelled")
         job.cancel(cancellation)
-        job.join()
+        awaitJobCompletion(job, "read cancellation to complete")
 
         assertThat(caught.isCompleted).isTrue()
         assertCancellationContains(caught.await(), cancellation)
@@ -532,10 +533,24 @@ abstract class AdapterContract {
     private suspend fun awaitSignal(
         signal: Deferred<Unit>,
         description: String,
+    ) = awaitWithinContractTimeout(description) {
+        signal.await()
+    }
+
+    private suspend fun awaitJobCompletion(
+        job: Job,
+        description: String,
+    ) = awaitWithinContractTimeout(description) {
+        job.join()
+    }
+
+    private suspend fun awaitWithinContractTimeout(
+        description: String,
+        block: suspend () -> Unit,
     ) {
         try {
             withTimeout(STALL_TIMEOUT_MILLIS) {
-                signal.await()
+                block()
             }
         } catch (failure: TimeoutCancellationException) {
             throw AssertionError("Timed out waiting for $description", failure)
