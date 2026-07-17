@@ -42,12 +42,34 @@ if (Test-Path $deployedControl) {
     }
     $deployed = $deployedPayloadJson | ConvertFrom-Json
     $sameControl = (Get-FileHash $controlPath -Algorithm SHA256).Hash -eq (Get-FileHash $deployedControl -Algorithm SHA256).Hash
-    if (!$sameControl -and (
-        [long] $manifest.sequence -le [long] $deployed.sequence -or
-        [long] $manifest.versionCode -lt [long] $deployed.versionCode
-    )) {
-        throw "Release sequence/version is not monotonic."
+    if (!$sameControl -and [long] $manifest.sequence -le [long] $deployed.sequence) {
+        throw "Release sequence is not monotonic."
     }
+    if (!$sameControl -and [long] $manifest.versionCode -le [long] $deployed.versionCode) {
+        throw "Changed release metadata must strictly increase versionCode."
+    }
+}
+
+function Test-IdenticalFile([string] $Source, [string] $DestinationPath) {
+    if (!(Test-Path $DestinationPath)) {
+        return $false
+    }
+    if ((Get-FileHash $Source -Algorithm SHA256).Hash -ne (Get-FileHash $DestinationPath -Algorithm SHA256).Hash) {
+        throw "Refusing to overwrite immutable update file $DestinationPath with different bytes."
+    }
+    return $true
+}
+
+$apkDestination = Join-Path $Destination $apkName
+$checksumDestination = Join-Path $Destination $checksumName
+$apkExistsIdentically = Test-IdenticalFile $apkPath $apkDestination
+$checksumExistsIdentically = Test-IdenticalFile $checksumPath $checksumDestination
+if ($sameControl) {
+    if (!$apkExistsIdentically -or !$checksumExistsIdentically) {
+        throw "Idempotent publication requires byte-identical envelope and referenced files."
+    }
+    Write-Host "KelliKanvas update $($manifest.versionCode) is already published identically."
+    return
 }
 
 function Stage-File([string] $Source, [string] $Name) {
@@ -64,13 +86,20 @@ function Stage-File([string] $Source, [string] $Name) {
 
 $staged = @()
 try {
-    $staged += @{ Temp = (Stage-File $apkPath $apkName); Name = $apkName }
-    $staged += @{ Temp = (Stage-File $checksumPath $checksumName); Name = $checksumName }
+    if (!$apkExistsIdentically) {
+        $staged += @{ Temp = (Stage-File $apkPath $apkName); Name = $apkName }
+    }
+    if (!$checksumExistsIdentically) {
+        $staged += @{ Temp = (Stage-File $checksumPath $checksumName); Name = $checksumName }
+    }
     $staged += @{ Temp = (Stage-File $controlPath "update-envelope.json"); Name = "update-envelope.json" }
     foreach ($file in $staged | Where-Object { $_.Name -ne "update-envelope.json" }) {
-        Move-Item $file.Temp (Join-Path $Destination $file.Name) -Force
+        Move-Item $file.Temp (Join-Path $Destination $file.Name)
     }
     $controlStage = $staged | Where-Object { $_.Name -eq "update-envelope.json" }
+    if ($env:KELLIKANVAS_TEST_FAIL_CONTROL_COMMIT -eq "1") {
+        throw "Simulated interruption before control-envelope commit."
+    }
     Move-Item $controlStage.Temp $deployedControl -Force
 } finally {
     foreach ($file in $staged) {

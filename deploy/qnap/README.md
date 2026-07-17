@@ -41,6 +41,10 @@ and checksum hashes, and enforces monotonic sequence/version against the
 deployed valid envelope. It stages and publishes versioned data first, then
 atomically replaces the single `update-envelope.json` control file last. Any
 failure before that rename leaves the previous control file active.
+Changed envelopes must strictly increase `versionCode`; a higher sequence alone
+cannot replace a release. Exact-envelope retries require byte-identical APK and
+checksum files, and an existing immutable versioned file is never overwritten
+with different bytes.
 The server allows only GET and HEAD, disables directory listing, marks metadata
 as `no-store`, and marks versioned APKs immutable.
 
@@ -53,9 +57,12 @@ upgraded.
 `./gradlew :platform:update:assembleDebugAndroidTest` compiles device tests
 without requiring a stored fixture key. The Android build signs the generated
 target/test APKs with its ephemeral debug keystore; tests inspect that real APK
-through `PackageManager`, exercise a real `PackageInstaller` session lifecycle,
-and verify `FileProvider` grants. Before release, run
-`:platform:update:connectedDebugAndroidTest` on API 26, 28, 30, 34, and 36
+and signer lineage through `PackageManager`, then use the production stager to
+write/read/abandon a real `PackageInstaller` session and verify `FileProvider`
+grants. They do not automate commit or claim installation completion because
+Android's user-confirmation UI is intentionally outside a reliable test gate.
+Before release, run
+`:platform:update:connectedDebugAndroidTest` on API 28, 30, 34, and 36
 emulators/devices. JVM/Robolectric success is not a substitute for this gate;
 this repository does not claim those device tests ran unless those targets
 were actually connected.

@@ -22,6 +22,9 @@ class QnapDeploymentTest(unittest.TestCase):
         self.assertIn("X-Content-Type-Options nosniff", nginx)
         self.assertIn("location = /update-envelope.json", nginx)
         self.assertNotIn("location = /manifest.json", nginx)
+        readme = (ROOT / "deploy/qnap/README.md").read_text(encoding="utf-8")
+        self.assertIn("API 28, 30, 34, and 36", readme)
+        self.assertNotIn("API 26", readme)
 
     @unittest.skipUnless(
         (shutil.which("powershell") or shutil.which("pwsh")) and shutil.which("openssl"),
@@ -198,6 +201,103 @@ class QnapDeploymentTest(unittest.TestCase):
                 successful_control,
                 (destination / "update-envelope.json").read_bytes(),
             )
+
+            same_version = dict(manifest)
+            same_version["sequence"] = 3
+            same_version_payload = (
+                json.dumps(same_version, sort_keys=True, separators=(",", ":")) + "\n"
+            ).encode()
+            write_envelope(bundle / "update-envelope.json", same_version_payload)
+            same_version_result = subprocess.run(
+                [
+                    shell,
+                    "-NoProfile",
+                    "-File",
+                    str(ROOT / "tools/publish-to-qnap.ps1"),
+                    "-BundlePath",
+                    str(bundle),
+                    "-Destination",
+                    str(destination),
+                    "-MetadataPublicKeyFile",
+                    str(public_key),
+                ],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+            )
+            self.assertNotEqual(0, same_version_result.returncode)
+            self.assertEqual(successful_control, (destination / "update-envelope.json").read_bytes())
+
+            (bundle / "update-envelope.json").write_bytes(successful_control)
+            original_checksum = (destination / "kellikanvas-2.apk.sha256").read_bytes()
+            (bundle / "kellikanvas-2.apk.sha256").write_bytes(original_checksum + b"# changed\n")
+            nonidentical_retry = subprocess.run(
+                [
+                    shell,
+                    "-NoProfile",
+                    "-File",
+                    str(ROOT / "tools/publish-to-qnap.ps1"),
+                    "-BundlePath",
+                    str(bundle),
+                    "-Destination",
+                    str(destination),
+                    "-MetadataPublicKeyFile",
+                    str(public_key),
+                ],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+            )
+            self.assertNotEqual(0, nonidentical_retry.returncode)
+            self.assertEqual(
+                original_checksum,
+                (destination / "kellikanvas-2.apk.sha256").read_bytes(),
+            )
+
+            apk3 = b"apk-version-3"
+            digest3 = hashlib.sha256(apk3).hexdigest()
+            (bundle / "kellikanvas-3.apk").write_bytes(apk3)
+            (bundle / "kellikanvas-3.apk.sha256").write_text(
+                f"{digest3}  kellikanvas-3.apk\n", encoding="ascii"
+            )
+            manifest3 = dict(manifest)
+            manifest3.update(
+                {
+                    "apkUrl": "http://darklingnas:8088/kellikanvas-3.apk",
+                    "checksumUrl": "http://darklingnas:8088/kellikanvas-3.apk.sha256",
+                    "sequence": 4,
+                    "sha256": digest3,
+                    "sizeBytes": len(apk3),
+                    "versionCode": 3,
+                    "versionName": "3",
+                }
+            )
+            payload3 = (
+                json.dumps(manifest3, sort_keys=True, separators=(",", ":")) + "\n"
+            ).encode()
+            write_envelope(bundle / "update-envelope.json", payload3)
+            interrupted_environment = os.environ.copy()
+            interrupted_environment["KELLIKANVAS_TEST_FAIL_CONTROL_COMMIT"] = "1"
+            interrupted = subprocess.run(
+                [
+                    shell,
+                    "-NoProfile",
+                    "-File",
+                    str(ROOT / "tools/publish-to-qnap.ps1"),
+                    "-BundlePath",
+                    str(bundle),
+                    "-Destination",
+                    str(destination),
+                    "-MetadataPublicKeyFile",
+                    str(public_key),
+                ],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                env=interrupted_environment,
+            )
+            self.assertNotEqual(0, interrupted.returncode)
+            self.assertEqual(successful_control, (destination / "update-envelope.json").read_bytes())
 
 
 if __name__ == "__main__":
