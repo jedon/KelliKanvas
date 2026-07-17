@@ -76,6 +76,58 @@ class ApkIndexTest(unittest.TestCase):
             self.assertTrue(all(isinstance(release, ApkRelease) for release in releases))
             self.assertEqual(releases[0].version, "2.0.0")
 
+    def test_equal_precedence_uses_mtime_and_highlights_newest_release(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            mtimes = {
+                "KelliKanvas-3.4.5+build.1.apk": 300,
+                "KelliKanvas-3.4.5+build.2.apk": 200,
+                "KelliKanvas-3.4.5.apk": 100,
+                "KelliKanvas-3.4.5-rc.1.apk": 400,
+            }
+            for name, modified in mtimes.items():
+                apk = root / name
+                apk.write_bytes(b"apk")
+                os.utime(apk, (modified, modified))
+
+            releases = discover_apks(root)
+
+            self.assertEqual(
+                [release.filename for release in releases],
+                [
+                    "KelliKanvas-3.4.5+build.1.apk",
+                    "KelliKanvas-3.4.5+build.2.apk",
+                    "KelliKanvas-3.4.5.apk",
+                    "KelliKanvas-3.4.5-rc.1.apk",
+                ],
+            )
+            first_card = (
+                render_page(releases)
+                .split('<article class="apk-card">', 1)[1]
+                .split("</article>", 1)[0]
+            )
+            self.assertIn("Version 3.4.5+build.1", first_card)
+            self.assertIn("Latest version", first_card)
+
+    def test_equal_precedence_and_mtime_uses_filename_deterministically(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for name in (
+                "KelliKanvas-3.4.5+build.1.apk",
+                "KelliKanvas-3.4.5+build.2.apk",
+            ):
+                apk = root / name
+                apk.write_bytes(b"apk")
+                os.utime(apk, (500, 500))
+
+            self.assertEqual(
+                [release.filename for release in discover_apks(root)],
+                [
+                    "KelliKanvas-3.4.5+build.2.apk",
+                    "KelliKanvas-3.4.5+build.1.apk",
+                ],
+            )
+
     def test_discovery_rejects_unicode_digits(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

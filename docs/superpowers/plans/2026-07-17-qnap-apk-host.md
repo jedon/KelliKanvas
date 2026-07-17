@@ -180,6 +180,7 @@ def _release(path: Path) -> ApkRelease | None:
             int(patch),
             prerelease is None,
             _prerelease_key(prerelease),
+            stat.st_mtime_ns,
             path.name,
         ),
     )
