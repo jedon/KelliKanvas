@@ -156,7 +156,8 @@ SEMVER_APK_PATTERN='^KelliKanvas-(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]
 
 cleanup_publication() {
   STATUS=$?
-  trap - EXIT HUP INT TERM
+  trap - 0 HUP INT TERM
+  set +e
   test -z "$TEMP" || rm -f "$TEMP"
   rmdir "$LOCK" 2>/dev/null || true
   exit "$STATUS"
@@ -174,7 +175,10 @@ if ! mkdir "$LOCK"; then
   echo "Another operation holds the version lock: $LOCK" >&2
   exit 1
 fi
-trap cleanup_publication EXIT HUP INT TERM
+trap cleanup_publication 0
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 TEMP="$(mktemp "$CONTENT/.$NAME.publish.XXXXXX")"
 cp "$SOURCE" "$TEMP"
@@ -197,7 +201,8 @@ fi
 rm "$TEMP"
 TEMP=
 rmdir "$LOCK"
-trap - EXIT HUP INT TERM
+trap - 0 HUP INT TERM
+exit 0
 ```
 
 Do not continue after a digest mismatch or failed `ln`. The temporary and final
