@@ -1,6 +1,5 @@
 package com.jedon.kellikanvas.source.saf
 
-import android.os.ParcelFileDescriptor
 import com.jedon.kellikanvas.source.PhotoByteStream
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -16,13 +15,12 @@ class SafPhotoByteStream(
     private val opened: SafOpenDocument,
     contentLength: Long?,
 ) : PhotoByteStream(contentLength) {
-    private val descriptor: ParcelFileDescriptor = opened.descriptor
     private val closed = AtomicBoolean()
     private val source =
         try {
-            ParcelFileDescriptor.AutoCloseInputStream(descriptor).source().buffer()
+            android.os.ParcelFileDescriptor.AutoCloseInputStream(opened.descriptor).source().buffer()
         } catch (failure: Throwable) {
-            descriptor.close()
+            opened.close()
             throw failure
         }
 
@@ -50,11 +48,7 @@ class SafPhotoByteStream(
         try {
             source.close()
         } finally {
-            try {
-                descriptor.close()
-            } finally {
-                opened.onClose()
-            }
+            opened.close()
         }
     }
 

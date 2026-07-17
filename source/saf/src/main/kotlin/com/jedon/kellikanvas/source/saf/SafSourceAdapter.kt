@@ -15,6 +15,7 @@ import com.jedon.kellikanvas.model.SourceStatus
 import com.jedon.kellikanvas.source.PhotoByteStream
 import com.jedon.kellikanvas.source.SourceAdapter
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.ensureActive
 import java.io.FileNotFoundException
 import java.io.IOException
 import java.nio.charset.StandardCharsets
@@ -90,7 +91,13 @@ class SafSourceAdapter(
                 treeUri = profile.grant.treeUri,
                 documentId = asset.objectId.value,
             )
-        SafPhotoByteStream(opened, asset.byteLength)
+        try {
+            kotlin.coroutines.coroutineContext.ensureActive()
+            SafPhotoByteStream(opened, asset.byteLength)
+        } catch (failure: Throwable) {
+            opened.close()
+            throw failure
+        }
     }
 
     private fun toEntry(document: SafDocument): SourceEntry = if (document.isFolder) {

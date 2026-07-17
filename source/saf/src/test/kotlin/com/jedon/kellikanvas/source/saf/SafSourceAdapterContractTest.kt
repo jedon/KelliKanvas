@@ -18,25 +18,41 @@ import com.jedon.kellikanvas.source.testing.CredentialApplicability
 import com.jedon.kellikanvas.source.testing.ResourceStall
 import com.jedon.kellikanvas.source.testing.ScenarioDeclaration
 import com.jedon.kellikanvas.source.testing.StreamResourceObservation
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.awaitCancellation
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [28])
 class SafSourceAdapterContractTest : AdapterContract() {
     override fun createHarness(): AdapterHarness {
-        val provider = TestDocumentsProvider()
+        val fixture = registerSafProvider()
+        val provider = fixture.provider
+        val readObserver = ContractReadObserver()
+        val queryObserver = ContractQueryObserver()
         val profile =
             SafProfile(
                 id = PROFILE_ID,
                 grant = SafTreeGrant(
-                    treeUri = TestDocumentsProvider.TREE_URI,
+                    treeUri = fixture.treeUri,
                     documentId = TestDocumentsProvider.ROOT_ID,
                     flags = Intent.FLAG_GRANT_READ_URI_PERMISSION,
                 ),
             )
-        val adapter = SafSourceAdapter(profile, provider)
+        val adapter =
+            SafSourceAdapter(
+                profile,
+                ContentResolverSafDocuments(
+                    resolver = fixture.resolver,
+                    readObserver = readObserver,
+                    queryObserver = queryObserver,
+                ),
+            )
         val dataset = createDataset(adapter.root)
 
         return AdapterHarness(
@@ -65,24 +81,16 @@ class SafSourceAdapterContractTest : AdapterContract() {
                     "SAF delegates provider transport to the Android document API",
                 ),
             ),
-            ioCount = { provider.ioCount },
+            ioCount = provider.ioCount::get,
             makeMissing = { asset -> provider.remove(asset.objectId.value) },
             removeSource = { provider.mode = TestDocumentsProvider.Mode.REMOVED },
             stallNextListing = {
-                provider.stallNextListing().let { ResourceStall(it.started, it.closed) }
+                queryObserver.stallNext().let { ResourceStall(it.started, it.closed) }
             },
             stallNextRead = { asset ->
-                provider.stallNextRead(asset.objectId.value).let { ResourceStall(it.started, it.closed) }
+                readObserver.stallNext(asset.objectId.value).let { ResourceStall(it.started, it.closed) }
             },
-            streamObservation = { asset ->
-                provider.observation(asset.objectId.value).let {
-                    StreamResourceObservation(
-                        openedStreams = it.opened,
-                        bytesRead = it.bytesRead,
-                        closedStreams = it.closed,
-                    )
-                }
-            },
+            streamObservation = { asset -> readObserver.observation(asset.objectId.value) },
             diagnostics = { listOf(provider) },
         )
     }
@@ -146,4 +154,83 @@ class SafSourceAdapterContractTest : AdapterContract() {
         val PROFILE_ID = SourceProfileId("saf-contract-profile")
         const val MODIFIED_AT = 1_700_000_000_000L
     }
+}
+
+private class ContractQueryObserver : SafQueryObserver {
+    class Stall {
+        val started = CompletableDeferred<Unit>()
+        val closed = CompletableDeferred<Unit>()
+    }
+
+    @Volatile
+    private var stall: Stall? = null
+
+    fun stallNext(): Stall = Stall().also { stall = it }
+
+    override suspend fun beforeParse() {
+        stall?.also { active ->
+            stall = null
+            active.started.complete(Unit)
+            try {
+                awaitCancellation()
+            } finally {
+                active.closed.complete(Unit)
+            }
+        }
+    }
+}
+
+private class ContractReadObserver : SafReadObserver {
+    private data class MutableObservation(
+        val opened: AtomicInteger = AtomicInteger(),
+        val bytesRead: AtomicLong = AtomicLong(),
+        val closed: AtomicInteger = AtomicInteger(),
+    )
+
+    class Stall {
+        val started = CompletableDeferred<Unit>()
+        val closed = CompletableDeferred<Unit>()
+    }
+
+    private val observations = ConcurrentHashMap<String, MutableObservation>()
+    private val stalls = ConcurrentHashMap<String, Stall>()
+
+    fun stallNext(documentId: String): Stall = Stall().also { stalls[documentId] = it }
+
+    fun observation(documentId: String): StreamResourceObservation = observationFor(documentId).let {
+        StreamResourceObservation(
+            openedStreams = it.opened.get(),
+            bytesRead = it.bytesRead.get(),
+            closedStreams = it.closed.get(),
+        )
+    }
+
+    override fun onOpen(documentId: String) {
+        observationFor(documentId).opened.incrementAndGet()
+    }
+
+    override suspend fun beforeRead(documentId: String) {
+        stalls.remove(documentId)?.let { stall ->
+            stall.started.complete(Unit)
+            try {
+                awaitCancellation()
+            } finally {
+                stall.closed.complete(Unit)
+            }
+        }
+    }
+
+    override fun onBytesRead(
+        documentId: String,
+        byteCount: Long,
+    ) {
+        observationFor(documentId).bytesRead.addAndGet(byteCount)
+    }
+
+    override fun onClose(documentId: String) {
+        observationFor(documentId).closed.incrementAndGet()
+    }
+
+    private fun observationFor(documentId: String): MutableObservation = observations
+        .computeIfAbsent(documentId) { MutableObservation() }
 }

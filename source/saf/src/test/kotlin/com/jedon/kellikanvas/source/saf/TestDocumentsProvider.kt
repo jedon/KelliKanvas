@@ -2,44 +2,67 @@ package com.jedon.kellikanvas.source.saf
 
 import android.database.Cursor
 import android.database.MatrixCursor
-import android.net.Uri
 import android.os.CancellationSignal
+import android.os.OperationCanceledException
 import android.os.ParcelFileDescriptor
 import android.provider.DocumentsContract
 import android.provider.DocumentsProvider
 import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.awaitCancellation
 import java.io.File
 import java.io.FileNotFoundException
 import java.io.IOException
+import java.util.Collections
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicReference
 
-class TestDocumentsProvider :
-    DocumentsProvider(),
-    SafDocuments {
+class TestDocumentsProvider : DocumentsProvider() {
     enum class Mode {
         ACTIVE,
         REVOKED,
         REMOVED,
     }
 
-    data class ReadObservation(
-        var opened: Int = 0,
-        var bytesRead: Long = 0,
-        var closed: Int = 0,
-    )
+    enum class CancellationBehavior {
+        THROW,
+        RETURN_RESOURCE,
+    }
 
-    class Stall {
+    class BlockingCall(
+        private val behavior: CancellationBehavior,
+    ) {
         val started = CompletableDeferred<Unit>()
-        val closed = CompletableDeferred<Unit>()
+        val signalCancelled = CompletableDeferred<Unit>()
+        val finished = CompletableDeferred<Unit>()
+        private val release = CountDownLatch(1)
+
+        fun await(signal: CancellationSignal?) {
+            started.complete(Unit)
+            signal?.setOnCancelListener {
+                signalCancelled.complete(Unit)
+                if (behavior == CancellationBehavior.THROW) release.countDown()
+            }
+            try {
+                release.await()
+                if (signal?.isCanceled == true && behavior == CancellationBehavior.THROW) {
+                    throw OperationCanceledException()
+                }
+            } finally {
+                finished.complete(Unit)
+            }
+        }
+
+        fun release() = release.countDown()
     }
 
     var mode: Mode = Mode.ACTIVE
-    var ioCount: Int = 0
-        private set
-    private val missing = mutableSetOf<String>()
-    private val observations = mutableMapOf<String, ReadObservation>()
-    private var listingStall: Stall? = null
-    private val readStalls = mutableMapOf<String, Stall>()
+    val ioCount = AtomicInteger()
+    val closedCursorCount = AtomicInteger()
+    val lastOpenedDescriptor = AtomicReference<ParcelFileDescriptor?>()
+    val lastProjection = AtomicReference<List<String>>(emptyList())
+    val onCursorMove = AtomicReference<(() -> Unit)?>(null)
+    private val missing = Collections.synchronizedSet(mutableSetOf<String>())
+    private val nextDescriptorBlock = AtomicReference<BlockingCall?>()
 
     override fun onCreate(): Boolean = true
 
@@ -47,73 +70,9 @@ class TestDocumentsProvider :
         missing += documentId
     }
 
-    fun stallNextListing(): Stall = Stall().also { listingStall = it }
-
-    fun stallNextRead(documentId: String): Stall = Stall().also { readStalls[documentId] = it }
-
-    fun observation(documentId: String): ReadObservation = observations.getOrPut(documentId) { ReadObservation() }.copy()
-
-    override suspend fun document(
-        treeUri: Uri,
-        documentId: String,
-    ): SafDocument? {
-        beforeIo()
-        return node(documentId)?.takeUnless { documentId in missing }?.document
-    }
-
-    override suspend fun children(
-        treeUri: Uri,
-        parentDocumentId: String,
-        maxEntries: Int,
-    ): List<SafDocument> {
-        beforeIo()
-        listingStall?.also { stall ->
-            listingStall = null
-            stall.started.complete(Unit)
-            try {
-                awaitCancellation()
-            } finally {
-                stall.closed.complete(Unit)
-            }
-        }
-        return NODES.values
-            .filter { it.parentId == parentDocumentId && it.document.documentId !in missing }
-            .take(maxEntries + 1)
-            .map(Node::document)
-    }
-
-    override suspend fun openRead(
-        treeUri: Uri,
-        documentId: String,
-    ): SafOpenDocument {
-        beforeIo()
-        val node = node(documentId)?.takeUnless { documentId in missing }
-            ?: throw FileNotFoundException("Missing fixture document")
-        val bytes = node.bytes ?: throw FileNotFoundException("Fixture document is not a file")
-        val observation = observations.getOrPut(documentId) { ReadObservation() }
-        observation.opened += 1
-        val file = createPayloadFile(bytes)
-        val descriptor = ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY)
-        val stall = readStalls.remove(documentId)
-        return SafOpenDocument(
-            descriptor = descriptor,
-            beforeRead = {
-                stall?.let {
-                    it.started.complete(Unit)
-                    try {
-                        awaitCancellation()
-                    } finally {
-                        it.closed.complete(Unit)
-                    }
-                }
-            },
-            onBytesRead = { observation.bytesRead += it },
-            onClose = {
-                observation.closed += 1
-                file.delete()
-            },
-        )
-    }
+    fun blockNextDescriptorOpen(
+        behavior: CancellationBehavior = CancellationBehavior.THROW,
+    ): BlockingCall = BlockingCall(behavior).also { nextDescriptorBlock.set(it) }
 
     override fun queryRoots(projection: Array<out String>?): Cursor {
         val columns = projection ?: ROOT_PROJECTION
@@ -136,10 +95,13 @@ class TestDocumentsProvider :
         documentId: String,
         projection: Array<out String>?,
     ): Cursor {
-        checkProviderMode()
+        beforeIo()
         val columns = projection ?: DOCUMENT_PROJECTION
-        return MatrixCursor(columns).apply {
-            node(documentId)?.takeUnless { documentId in missing }?.let { addDocumentRow(columns, it.document) }
+        lastProjection.set(columns.toList())
+        return TrackingCursor(columns, closedCursorCount, onCursorMove).apply {
+            node(documentId)?.takeUnless { documentId in missing }?.let {
+                addDocumentRow(columns, it.document)
+            }
         }
     }
 
@@ -147,42 +109,54 @@ class TestDocumentsProvider :
         parentDocumentId: String,
         projection: Array<out String>?,
         sortOrder: String?,
-    ): Cursor {
-        checkProviderMode()
-        val columns = projection ?: DOCUMENT_PROJECTION
-        return MatrixCursor(columns).apply {
-            NODES.values
-                .filter { it.parentId == parentDocumentId && it.document.documentId !in missing }
-                .forEach { addDocumentRow(columns, it.document) }
-        }
-    }
+    ): Cursor = queryChildren(parentDocumentId, projection)
 
     override fun openDocument(
         documentId: String,
         mode: String,
         signal: CancellationSignal?,
     ): ParcelFileDescriptor {
-        checkProviderMode()
+        beforeIo()
         if (mode != "r") throw SecurityException("Fixture is read-only")
+        nextDescriptorBlock.getAndSet(null)?.await(signal)
         val bytes =
             node(documentId)?.takeUnless { documentId in missing }?.bytes
                 ?: throw FileNotFoundException("Missing fixture document")
-        return ParcelFileDescriptor.open(createPayloadFile(bytes), ParcelFileDescriptor.MODE_READ_ONLY)
+        return ParcelFileDescriptor
+            .open(createPayloadFile(bytes), ParcelFileDescriptor.MODE_READ_ONLY)
+            .also(lastOpenedDescriptor::set)
     }
 
     override fun isChildDocument(
         parentDocumentId: String,
         documentId: String,
-    ): Boolean = node(documentId)?.parentId == parentDocumentId
+    ): Boolean {
+        var current = node(documentId)?.parentId
+        while (current != null) {
+            if (current == parentDocumentId) return true
+            current = node(current)?.parentId
+        }
+        return false
+    }
 
     override fun toString(): String = "TestDocumentsProvider(mode=$mode)"
 
-    private fun beforeIo() {
-        ioCount += 1
-        checkProviderMode()
+    private fun queryChildren(
+        parentDocumentId: String,
+        projection: Array<out String>?,
+    ): Cursor {
+        beforeIo()
+        val columns = projection ?: DOCUMENT_PROJECTION
+        lastProjection.set(columns.toList())
+        return TrackingCursor(columns, closedCursorCount, onCursorMove).apply {
+            NODES.values
+                .filter { it.parentId == parentDocumentId && it.document.documentId !in missing }
+                .forEach { addDocumentRow(columns, it.document) }
+        }
     }
 
-    private fun checkProviderMode() {
+    private fun beforeIo() {
+        ioCount.incrementAndGet()
         when (mode) {
             Mode.ACTIVE -> Unit
             Mode.REVOKED -> throw SecurityException("Fixture grant revoked")
@@ -213,7 +187,10 @@ class TestDocumentsProvider :
 
     private fun createPayloadFile(bytes: ByteArray): File = File
         .createTempFile("saf-fixture-", ".bin")
-        .apply { writeBytes(bytes) }
+        .apply {
+            writeBytes(bytes)
+            deleteOnExit()
+        }
 
     data class Node(
         val parentId: String?,
@@ -221,8 +198,26 @@ class TestDocumentsProvider :
         val bytes: ByteArray? = null,
     )
 
+    private class TrackingCursor(
+        columns: Array<out String>,
+        private val closedCount: AtomicInteger,
+        private val onMoveCallback: AtomicReference<(() -> Unit)?>,
+    ) : MatrixCursor(columns) {
+        override fun onMove(
+            oldPosition: Int,
+            newPosition: Int,
+        ): Boolean {
+            onMoveCallback.getAndSet(null)?.invoke()
+            return super.onMove(oldPosition, newPosition)
+        }
+
+        override fun close() {
+            if (!isClosed) closedCount.incrementAndGet()
+            super.close()
+        }
+    }
+
     companion object {
-        const val AUTHORITY = "com.jedon.kellikanvas.source.saf.test.documents"
         const val ROOT_ID = "root"
         const val LANDSCAPE_ID = "folder-landscape"
         const val PORTRAIT_ID = "folder-portrait"
@@ -230,7 +225,6 @@ class TestDocumentsProvider :
         const val MOUNTAIN_ID = "photo-mountain"
         const val PERSON_ID = "photo-person"
 
-        val TREE_URI: Uri = Uri.parse("content://$AUTHORITY/tree/$ROOT_ID")
         val COVER_BYTES: ByteArray = "cover-payload".encodeToByteArray()
         val MOUNTAIN_BYTES: ByteArray = "mountain-payload".encodeToByteArray()
         val PERSON_BYTES: ByteArray = "person-payload".encodeToByteArray()
@@ -243,7 +237,8 @@ class TestDocumentsProvider :
                 ),
                 Node(
                     parentId = ROOT_ID,
-                    document = document(LANDSCAPE_ID, "Landscape", DocumentsContract.Document.MIME_TYPE_DIR),
+                    document = document(COVER_ID, "Welcome", "image/jpeg", COVER_BYTES.size.toLong()),
+                    bytes = COVER_BYTES,
                 ),
                 Node(
                     parentId = ROOT_ID,
@@ -251,8 +246,7 @@ class TestDocumentsProvider :
                 ),
                 Node(
                     parentId = ROOT_ID,
-                    document = document(COVER_ID, "Welcome", "image/jpeg", COVER_BYTES.size.toLong()),
-                    bytes = COVER_BYTES,
+                    document = document(LANDSCAPE_ID, "Landscape", DocumentsContract.Document.MIME_TYPE_DIR),
                 ),
                 Node(
                     parentId = ROOT_ID,

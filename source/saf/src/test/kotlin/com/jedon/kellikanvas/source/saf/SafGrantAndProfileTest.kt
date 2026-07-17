@@ -5,7 +5,12 @@ import android.net.Uri
 import com.google.common.truth.Truth.assertThat
 import com.jedon.kellikanvas.model.SourceProfileId
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [28])
 class SafGrantAndProfileTest {
     @Test
     fun `grant flags retain read persistable and prefix only`() {
