@@ -21,9 +21,10 @@ import org.junit.Test
 /**
  * JUnit 4 contract suite for every source adapter.
  *
- * Concrete suites subclass this type and return a fresh [AdapterHarness] for every invocation.
- * Nullable scenario capabilities let sources such as SAF omit credential behavior they do not
- * possess while still requiring all declared credential and grant scenarios.
+ * Concrete suites subclass this type and return a fresh adapter in each [AdapterHarness] while
+ * reusing one immutable [ContractDataset] instance. Nullable scenario capabilities let sources
+ * such as SAF omit credential behavior they do not possess while still requiring all declared
+ * credential and grant scenarios.
  */
 abstract class AdapterContract {
     protected abstract fun createHarness(): AdapterHarness
@@ -73,19 +74,26 @@ abstract class AdapterContract {
     }
 
     @Test
-    fun `metadata agrees with every listed photo`() = runTest {
+    fun `metadata agrees with listings and stays stable across adapters`() = runTest {
         val harness = createHarness()
+        val freshHarness = createHarness()
+        assertThat(freshHarness.adapter).isNotSameInstanceAs(harness.adapter)
+        assertThat(freshHarness.dataset).isSameInstanceAs(harness.dataset)
         val scan = traverse(harness)
         val listedPhotos = scan.values.flatten().filterIsInstance<SourceEntry.Photo>()
 
         listedPhotos.forEach { listed ->
             val expected = requireNotNull(harness.dataset.photo(listed.asset))
-            val actual = harness.adapter.metadata(listed.asset)
+            val first = harness.adapter.metadata(listed.asset)
+            val repeated = harness.adapter.metadata(listed.asset)
+            val fromFreshAdapter = freshHarness.adapter.metadata(listed.asset)
 
-            assertThat(actual).isEqualTo(expected.metadata)
-            assertThat(actual.asset).isEqualTo(listed.asset)
-            assertThat(actual.width).isEqualTo(listed.width)
-            assertThat(actual.height).isEqualTo(listed.height)
+            assertThat(first).isEqualTo(expected.metadata)
+            assertThat(repeated).isEqualTo(first)
+            assertThat(fromFreshAdapter).isEqualTo(first)
+            assertThat(first.asset).isEqualTo(listed.asset)
+            assertThat(first.width).isEqualTo(listed.width)
+            assertThat(first.height).isEqualTo(listed.height)
         }
     }
 
@@ -136,7 +144,7 @@ abstract class AdapterContract {
         job.join()
 
         assertThat(caught.isCompleted).isTrue()
-        assertThat(caught.await().message).isEqualTo(cancellation.message)
+        assertThat(caught.await()).isSameInstanceAs(cancellation)
         assertThat(stall.closed.isCompleted).isTrue()
     }
 
@@ -167,7 +175,7 @@ abstract class AdapterContract {
         job.join()
 
         assertThat(caught.isCompleted).isTrue()
-        assertThat(caught.await().message).isEqualTo(cancellation.message)
+        assertThat(caught.await()).isSameInstanceAs(cancellation)
         assertThat(stall.closed.isCompleted).isTrue()
     }
 
@@ -239,8 +247,11 @@ abstract class AdapterContract {
     }
 
     @Test
-    fun `photo streams read bounded chunks without preloading a complete photo`() = runTest {
+    fun `photo bytes stay stable across bounded fresh streams and adapters`() = runTest {
         val harness = createHarness()
+        val freshHarness = createHarness()
+        assertThat(freshHarness.adapter).isNotSameInstanceAs(harness.adapter)
+        assertThat(freshHarness.dataset).isSameInstanceAs(harness.dataset)
 
         harness.dataset.photos.forEach { expected ->
             val payload = expected.bytes
@@ -248,23 +259,13 @@ abstract class AdapterContract {
                 "Contract photos must contain multiple bytes to exercise bounded streaming"
             }
             val requestedChunkSize = minOf(4, payload.size - 1).toLong()
-            val sink = Buffer()
+            val first = readPhoto(harness, expected, requestedChunkSize)
+            val repeated = readPhoto(harness, expected, requestedChunkSize)
+            val fromFreshAdapter = readPhoto(freshHarness, expected, requestedChunkSize)
 
-            harness.adapter.open(expected.entry.asset).use { stream ->
-                stream.contentLength?.let { assertThat(it).isEqualTo(payload.size.toLong()) }
-                val firstRead = stream.read(sink, requestedChunkSize)
-                assertThat(firstRead).isGreaterThan(0)
-                assertThat(firstRead).isAtMost(requestedChunkSize)
-                assertThat(firstRead).isLessThan(payload.size.toLong())
-
-                while (true) {
-                    val read = stream.read(sink, requestedChunkSize)
-                    if (read == -1L) break
-                    assertThat(read).isAtMost(requestedChunkSize)
-                }
-            }
-
-            assertThat(sink.readByteArray()).isEqualTo(payload)
+            assertThat(first).isEqualTo(payload)
+            assertThat(repeated).isEqualTo(first)
+            assertThat(fromFreshAdapter).isEqualTo(first)
         }
     }
 
@@ -342,6 +343,29 @@ abstract class AdapterContract {
 
         assertThat(actual.map(::entryIdentity).distinct()).hasSize(actual.size)
         return actual
+    }
+
+    private suspend fun readPhoto(
+        harness: AdapterHarness,
+        expected: ContractPhoto,
+        requestedChunkSize: Long,
+    ): ByteArray {
+        val payload = expected.bytes
+        val sink = Buffer()
+        harness.adapter.open(expected.entry.asset).use { stream ->
+            stream.contentLength?.let { assertThat(it).isEqualTo(payload.size.toLong()) }
+            val firstRead = stream.read(sink, requestedChunkSize)
+            assertThat(firstRead).isGreaterThan(0)
+            assertThat(firstRead).isAtMost(requestedChunkSize)
+            assertThat(firstRead).isLessThan(payload.size.toLong())
+
+            while (true) {
+                val read = stream.read(sink, requestedChunkSize)
+                if (read == -1L) break
+                assertThat(read).isAtMost(requestedChunkSize)
+            }
+        }
+        return sink.readByteArray()
     }
 
     private suspend fun traverse(harness: AdapterHarness): Map<FolderRef, List<SourceEntry>> {

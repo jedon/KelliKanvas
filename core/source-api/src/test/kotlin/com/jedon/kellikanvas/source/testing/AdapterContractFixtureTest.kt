@@ -15,11 +15,14 @@ import com.jedon.kellikanvas.model.SourceProfileId
 import com.jedon.kellikanvas.model.SourceStatus
 import com.jedon.kellikanvas.source.PhotoByteStream
 import com.jedon.kellikanvas.source.SourceAdapter
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.awaitCancellation
 import java.io.Closeable
 
 class AdapterContractFixtureTest : AdapterContract() {
+    private var sharedDataset: ContractDataset? = null
+
     override fun createHarness(): AdapterHarness {
         val profileId = SourceProfileId("fixture-profile")
         val root = FolderRef(profileId, ProviderObjectId("root-stable-id"))
@@ -52,24 +55,27 @@ class AdapterContractFixtureTest : AdapterContract() {
                 height = 768,
             )
         val dataset =
-            ContractDataset(
-                root = root,
-                childrenByFolder =
-                mapOf(
-                    root to
-                        listOf(
-                            first.entry,
-                            SourceEntry.Folder(nested, "sensitive-folder"),
-                            second.entry,
-                        ),
-                    nested to
-                        listOf(
-                            nestedPhoto.entry,
-                            SourceEntry.Folder(root, "cycle-to-root"),
-                        ),
-                ),
-                photos = listOf(first, second, nestedPhoto),
-            )
+            sharedDataset
+                ?: ContractDataset(
+                    root = root,
+                    childrenByFolder =
+                    mapOf(
+                        root to
+                            listOf(
+                                first.entry,
+                                SourceEntry.Folder(nested, "sensitive-folder"),
+                                second.entry,
+                            ),
+                        nested to
+                            listOf(
+                                nestedPhoto.entry,
+                                SourceEntry.Folder(root, "cycle-to-root"),
+                            ),
+                    ),
+                    photos = listOf(first, second, nestedPhoto),
+                ).also {
+                    sharedDataset = it
+                }
         val sensitiveValues =
             setOf(
                 "credential-value-123",
@@ -227,7 +233,7 @@ private class InMemoryAdapter(
         checkAvailable("list_children")
         listingStall?.also { listingStall = null }?.use {
             it.started.complete(Unit)
-            awaitCancellation()
+            awaitOriginalCancellation()
         }
         val children = dataset.children(folder)
         val offset = cursor?.value?.toInt() ?: 0
@@ -259,7 +265,7 @@ private class InMemoryAdapter(
             maxChunkSize = 3,
             beforeRead = {
                 stall?.started?.complete(Unit)
-                if (stall != null) awaitCancellation()
+                if (stall != null) awaitOriginalCancellation()
             },
             onClose = { stall?.close() },
         )
@@ -284,6 +290,20 @@ private class InMemoryAdapter(
         REMOVED,
         REVOKED_PERMISSION,
     }
+}
+
+private suspend fun awaitOriginalCancellation(): Nothing {
+    try {
+        awaitCancellation()
+    } catch (failure: CancellationException) {
+        // Coroutine stack-trace recovery links its copy to the cancellation supplied to Job.cancel.
+        throw failure.originalCancellation()
+    }
+}
+
+private tailrec fun CancellationException.originalCancellation(): CancellationException {
+    val wrapped = cause as? CancellationException
+    return if (wrapped == null || wrapped === this) this else wrapped.originalCancellation()
 }
 
 private class TestResourceStall : Closeable {
