@@ -3,13 +3,6 @@ plugins {
     id("com.jedon.kellikanvas.android.compose")
 }
 
-val releaseSigningEnvironment =
-    mapOf(
-        "file" to providers.environmentVariable("KELLIKANVAS_KEYSTORE_FILE").orNull,
-        "storePassword" to providers.environmentVariable("KELLIKANVAS_KEYSTORE_PASSWORD").orNull,
-        "alias" to providers.environmentVariable("KELLIKANVAS_KEY_ALIAS").orNull,
-        "keyPassword" to providers.environmentVariable("KELLIKANVAS_KEY_PASSWORD").orNull,
-    )
 val metadataPublicKeyBase64 = providers.environmentVariable("KELLIKANVAS_METADATA_PUBLIC_KEY_BASE64").orNull
 
 android {
@@ -28,47 +21,20 @@ android {
             "\"${metadataPublicKeyBase64.orEmpty()}\"",
         )
     }
-
-    if (releaseSigningEnvironment.values.all { !it.isNullOrBlank() }) {
-        signingConfigs {
-            create("release") {
-                storeFile = file(requireNotNull(releaseSigningEnvironment["file"]))
-                storePassword = releaseSigningEnvironment["storePassword"]
-                keyAlias = releaseSigningEnvironment["alias"]
-                keyPassword = releaseSigningEnvironment["keyPassword"]
-            }
-        }
-        buildTypes {
-            getByName("release") {
-                signingConfig = signingConfigs.getByName("release")
-            }
-        }
-    }
 }
 
-val missingReleaseSigningVariables =
-    releaseSigningEnvironment
-        .filterValues { it.isNullOrBlank() }
-        .keys
-        .plus(listOfNotNull("metadataPublicKey".takeIf { metadataPublicKeyBase64.isNullOrBlank() }))
-        .joinToString(",")
-
-tasks.register("validateReleaseSigning") {
-    inputs.property("missingReleaseSigningVariables", missingReleaseSigningVariables)
+tasks.register("validateReleaseMetadataPin") {
+    inputs.property("metadataPublicKeyConfigured", !metadataPublicKeyBase64.isNullOrBlank())
     doLast {
-        if (inputs.properties.getValue("missingReleaseSigningVariables").toString().isNotEmpty()) {
-            throw GradleException(
-                "Release signing requires KELLIKANVAS_KEYSTORE_FILE, " +
-                    "KELLIKANVAS_KEYSTORE_PASSWORD, KELLIKANVAS_KEY_ALIAS, and " +
-                    "KELLIKANVAS_KEY_PASSWORD.",
-            )
+        if (inputs.properties.getValue("metadataPublicKeyConfigured") != true) {
+            throw GradleException("Release build requires KELLIKANVAS_METADATA_PUBLIC_KEY_BASE64.")
         }
     }
 }
 
 tasks.configureEach {
-    if (name.contains("Release", ignoreCase = true) && name != "validateReleaseSigning") {
-        dependsOn("validateReleaseSigning")
+    if (name.contains("Release", ignoreCase = true) && name != "validateReleaseMetadataPin") {
+        dependsOn("validateReleaseMetadataPin")
     }
 }
 

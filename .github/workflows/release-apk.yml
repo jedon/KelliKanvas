@@ -42,7 +42,7 @@ jobs:
           python -m unittest tools.tests.test_qnap_deployment
           ./gradlew ktlintCheck lintDebug testDebugUnitTest --stacktrace
 
-  release:
+  build-unsigned:
     needs: verify
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -67,33 +67,147 @@ jobs:
             "platforms;android-37.0" "build-tools;36.0.0" "platform-tools"
           echo "$ANDROID_SDK_ROOT/build-tools/36.0.0" >> "$GITHUB_PATH"
 
-      - name: Isolated signing and metadata step
+      - name: Build unsigned release APK
+        env:
+          KELLIKANVAS_METADATA_PUBLIC_KEY_BASE64: ${{ vars.KELLIKANVAS_METADATA_PUBLIC_KEY_BASE64 }}
+        run: ./gradlew :app:assembleRelease --stacktrace
+
+      - name: Upload unsigned APK
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: kellikanvas-unsigned-apk
+          path: app/build/outputs/apk/release/app-release-unsigned.apk
+          if-no-files-found: error
+          retention-days: 1
+
+  apk-sign:
+    needs: build-unsigned
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Download unsigned APK
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: kellikanvas-unsigned-apk
+          path: input
+
+      - name: Install APK signing tool
+        run: |
+          "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" "build-tools;36.0.0"
+          echo "$ANDROID_SDK_ROOT/build-tools/36.0.0" >> "$GITHUB_PATH"
+
+      - name: Sign APK in isolated process
         env:
           KEYSTORE_BASE64: ${{ secrets.KELLIKANVAS_KEYSTORE_BASE64 }}
-          KELLIKANVAS_KEYSTORE_PASSWORD: ${{ secrets.KELLIKANVAS_KEYSTORE_PASSWORD }}
-          KELLIKANVAS_KEY_ALIAS: ${{ secrets.KELLIKANVAS_KEY_ALIAS }}
-          KELLIKANVAS_KEY_PASSWORD: ${{ secrets.KELLIKANVAS_KEY_PASSWORD }}
-          METADATA_PRIVATE_KEY_BASE64: ${{ secrets.KELLIKANVAS_METADATA_PRIVATE_KEY_BASE64 }}
-          KELLIKANVAS_METADATA_PUBLIC_KEY_BASE64: ${{ vars.KELLIKANVAS_METADATA_PUBLIC_KEY_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KELLIKANVAS_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KELLIKANVAS_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KELLIKANVAS_KEY_PASSWORD }}
         run: |
           set -euo pipefail
-          mkdir -p .release
-          export KELLIKANVAS_KEYSTORE_FILE="$PWD/.release/kellikanvas.jks"
-          metadata_key="$PWD/.release/metadata-key.pem"
-          cleanup() { rm -rf .release; }
+          key_file="$RUNNER_TEMP/kellikanvas.jks"
+          cleanup() { rm -f "$key_file"; }
           trap cleanup EXIT
-          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$KELLIKANVAS_KEYSTORE_FILE"
-          printf '%s' "$METADATA_PRIVATE_KEY_BASE64" | base64 --decode > "$metadata_key"
-          chmod 600 "$KELLIKANVAS_KEYSTORE_FILE" "$metadata_key"
-          unset KEYSTORE_BASE64 METADATA_PRIVATE_KEY_BASE64
-          ./gradlew :app:assembleRelease --stacktrace
-          unset KELLIKANVAS_KEYSTORE_PASSWORD KELLIKANVAS_KEY_ALIAS KELLIKANVAS_KEY_PASSWORD
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$key_file"
+          chmod 600 "$key_file"
+          unset KEYSTORE_BASE64
+          apksigner sign \
+            --ks "$key_file" \
+            --ks-pass "env:KEYSTORE_PASSWORD" \
+            --ks-key-alias "$KEY_ALIAS" \
+            --key-pass "env:KEY_PASSWORD" \
+            --out kellikanvas-signed.apk \
+            input/app-release-unsigned.apk
+          apksigner verify --verbose --print-certs kellikanvas-signed.apk
+          cleanup
+          trap - EXIT
+
+      - name: Upload signed APK
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: kellikanvas-signed-apk
+          path: kellikanvas-signed.apk
+          if-no-files-found: error
+          retention-days: 1
+
+  prepare-update:
+    needs: apk-sign
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+
+      - name: Download signed APK
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: kellikanvas-signed-apk
+          path: input
+
+      - name: Install APK inspection tools
+        run: |
+          "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" "build-tools;36.0.0"
+          echo "$ANDROID_SDK_ROOT/build-tools/36.0.0" >> "$GITHUB_PATH"
+
+      - name: Prepare canonical unsigned metadata
+        run: |
           python tools/build_update_bundle.py \
-            app/build/outputs/apk/release/app-release.apk \
+            input/kellikanvas-signed.apk \
             --apksigner "$ANDROID_SDK_ROOT/build-tools/36.0.0/apksigner" \
             --apkanalyzer "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/apkanalyzer" \
-            --metadata-private-key "$metadata_key" \
-            --sequence "${{ inputs.release_sequence }}"
+            --sequence "${{ inputs.release_sequence }}" \
+            --prepare-only
+
+      - name: Upload prepared update
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: kellikanvas-prepared-update
+          path: dist/
+          if-no-files-found: error
+          retention-days: 1
+
+  metadata-sign:
+    needs: prepare-update
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Download prepared update
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: kellikanvas-prepared-update
+          path: dist
+
+      - name: Sign canonical metadata only
+        env:
+          METADATA_PRIVATE_KEY_BASE64: ${{ secrets.KELLIKANVAS_METADATA_PRIVATE_KEY_BASE64 }}
+          METADATA_KEY_ID: ${{ vars.KELLIKANVAS_METADATA_KEY_ID }}
+        run: |
+          set -euo pipefail
+          metadata_key="$RUNNER_TEMP/metadata-key.pem"
+          signature="$RUNNER_TEMP/metadata-signature"
+          cleanup() { rm -f "$metadata_key" "$signature" dist/manifest.payload.json; }
+          trap cleanup EXIT
+          [[ "$METADATA_KEY_ID" =~ ^[A-Za-z0-9._-]{1,64}$ ]]
+          printf '%s' "$METADATA_PRIVATE_KEY_BASE64" | base64 --decode > "$metadata_key"
+          chmod 600 "$metadata_key"
+          unset METADATA_PRIVATE_KEY_BASE64
+          openssl dgst -sha256 -sign "$metadata_key" \
+            -out "$signature" dist/manifest.payload.json
+          python - "$signature" "$METADATA_KEY_ID" <<'PY'
+          import base64, json, pathlib, sys
+          signature = pathlib.Path(sys.argv[1]).read_bytes()
+          payload_path = pathlib.Path("dist/manifest.payload.json")
+          envelope = {
+              "envelopeSchema": 1,
+              "keyId": sys.argv[2],
+              "payload": base64.b64encode(payload_path.read_bytes()).decode("ascii"),
+              "signature": base64.b64encode(signature).decode("ascii"),
+          }
+          pathlib.Path("dist/update-envelope.json").write_bytes(
+              (json.dumps(envelope, sort_keys=True, separators=(",", ":")) + "\n").encode()
+          )
+          PY
           cleanup
           trap - EXIT
 
