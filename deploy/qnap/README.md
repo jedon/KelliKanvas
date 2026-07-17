@@ -34,6 +34,7 @@ From PowerShell at the repository root, create the remote directories and copy
 the approved files:
 
 ```powershell
+$ErrorActionPreference = "Stop"
 if ([string]::IsNullOrWhiteSpace($env:QNAP_NAS_HOST) -or
     [string]::IsNullOrWhiteSpace($env:QNAP_NAS_USERNAME)) {
     throw "Set QNAP_NAS_HOST and QNAP_NAS_USERNAME first"
@@ -42,14 +43,28 @@ $Remote = "$($env:QNAP_NAS_USERNAME)@$($env:QNAP_NAS_HOST)"
 
 $Bootstrap = @'
 set -eu
-mkdir -p /share/Container/KelliKanvas /share/Public/KelliKanvas
-chmod 0755 /share/Container/KelliKanvas /share/Public/KelliKanvas
+for DIRECTORY in /share/Container/KelliKanvas /share/Public/KelliKanvas; do
+  if [ ! -d "$DIRECTORY" ]; then
+    mkdir -p "$DIRECTORY"
+    chmod 0755 "$DIRECTORY"
+  fi
+  test -x "$DIRECTORY" || {
+    echo "Directory is not traversable: $DIRECTORY" >&2
+    exit 1
+  }
+done
 '@
 ssh $Remote $Bootstrap
+if ($LASTEXITCODE -ne 0) {
+    throw "Failed to create or validate remote directories"
+}
 
 scp deploy/qnap/compose.yaml deploy/qnap/nginx.conf `
   tools/generate_apk_index.py `
   "${Remote}:/share/Container/KelliKanvas/"
+if ($LASTEXITCODE -ne 0) {
+    throw "Failed to upload QNAP deployment files"
+}
 
 $Permissions = @'
 set -eu
@@ -59,6 +74,9 @@ chmod 0644 \
   /share/Container/KelliKanvas/generate_apk_index.py
 '@
 ssh $Remote $Permissions
+if ($LASTEXITCODE -ne 0) {
+    throw "Failed to set remote deployment-file modes"
+}
 ```
 
 Generate the initial index and start Compose from the workstation. The remote
@@ -75,12 +93,36 @@ test -x "$CS/bin/docker"
   -v /share/Container/KelliKanvas/generate_apk_index.py:/app/generate.py:ro \
   python:3.13-alpine@sha256:399babc8b49529dabfd9c922f2b5eea81d611e4512e3ed250d75bd2e7683f4b0 \
   python /app/generate.py --directory /content
+"$CS/bin/docker" run --rm --user 101:101 \
+  -v /share/Public/KelliKanvas:/content:ro \
+  python:3.13-alpine@sha256:399babc8b49529dabfd9c922f2b5eea81d611e4512e3ed250d75bd2e7683f4b0 \
+  sh -c 'test -x /content && test -r /content/index.html'
 "$CS/bin/docker" compose \
   -f /share/Container/KelliKanvas/compose.yaml config
 "$CS/bin/docker" compose \
   -f /share/Container/KelliKanvas/compose.yaml up -d
+
+ATTEMPT=0
+HEALTH=starting
+while [ "$ATTEMPT" -lt 30 ]; do
+  if HEALTH="$("$CS/bin/docker" inspect \
+    --format '{{.State.Health.Status}}' kellikanvas-apk-host 2>/dev/null)"; then
+    test "$HEALTH" = healthy && break
+  else
+    HEALTH=unavailable
+  fi
+  ATTEMPT=$((ATTEMPT + 1))
+  sleep 2
+done
+test "$HEALTH" = healthy || {
+  echo "Container did not become healthy; last state: $HEALTH" >&2
+  exit 1
+}
 '@
 ssh $Remote $Start
+if ($LASTEXITCODE -ne 0) {
+    throw "Failed to generate the index or start a healthy APK host"
+}
 ```
 
 ## Publish an APK
@@ -90,18 +132,35 @@ Stable and prerelease examples are `KelliKanvas-1.2.3.apk` and
 `KelliKanvas-1.2.3-rc.1.apk`. Do not add a `v`, omit a numeric component, use
 leading zeroes in numeric identifiers, or use underscores.
 
-Set `SOURCE` to the completed APK and `NAME` to its exact basename. Copy it to a
-hidden temporary name, calculate both SHA-256 digests, explicitly compare them,
-and only then atomically rename it:
+Run the publication commands on the NAS. Set `SOURCE` to a completed APK on a
+non-public path and `NAME` to its exact basename. If the APK must be transferred
+from a workstation, SCP it first to a restricted staging directory such as
+`/share/Container/KelliKanvas/incoming` created with mode `0700`, wait for SCP to
+finish successfully, and use that staged file as `SOURCE`; never SCP directly
+into the public content directory.
+
+The command creates a unique temporary file in the content directory, compares
+the complete source and copied SHA-256 digests, and creates the final path with
+a same-filesystem hard link. `ln` is atomic and fails rather than replacing an
+existing version:
 
 ```sh
 set -eu
 CONTENT=/share/Public/KelliKanvas
-SOURCE=/path/to/KelliKanvas-1.2.3.apk
+SOURCE=/share/Container/KelliKanvas/incoming/KelliKanvas-1.2.3.apk
 NAME=KelliKanvas-1.2.3.apk
-TEMP="$CONTENT/.$NAME.tmp"
 FINAL="$CONTENT/$NAME"
+LOCK="$CONTENT/.$NAME.lock"
+TEMP=
 SEMVER_APK_PATTERN='^KelliKanvas-(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-(0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)(\.(0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?\.apk$'
+
+cleanup_publication() {
+  STATUS=$?
+  trap - EXIT HUP INT TERM
+  test -z "$TEMP" || rm -f "$TEMP"
+  rmdir "$LOCK" 2>/dev/null || true
+  exit "$STATUS"
+}
 
 test "$(basename "$SOURCE")" = "$NAME" || {
   echo "SOURCE basename and NAME differ; publication stopped" >&2
@@ -111,13 +170,13 @@ printf '%s\n' "$NAME" | grep -Eq "$SEMVER_APK_PATTERN" || {
   echo "Invalid KelliKanvas SemVer filename; publication stopped" >&2
   exit 1
 }
-if [ -e "$FINAL" ] || [ -L "$FINAL" ]; then
-  echo "Version already exists; immutable APK will not be overwritten: $FINAL" >&2
+if ! mkdir "$LOCK"; then
+  echo "Another operation holds the version lock: $LOCK" >&2
   exit 1
 fi
+trap cleanup_publication EXIT HUP INT TERM
 
-rm -f "$TEMP"
-trap 'rm -f "$TEMP"' EXIT HUP INT TERM
+TEMP="$(mktemp "$CONTENT/.$NAME.publish.XXXXXX")"
 cp "$SOURCE" "$TEMP"
 SOURCE_SHA256="$(sha256sum "$SOURCE")"
 SOURCE_SHA256="${SOURCE_SHA256%% *}"
@@ -131,12 +190,20 @@ if [ "$SOURCE_SHA256" != "$COPIED_SHA256" ]; then
 fi
 
 chmod 0644 "$TEMP"
-mv "$TEMP" "$FINAL"
+if ! ln "$TEMP" "$FINAL"; then
+  echo "Version already exists or cannot be published: $FINAL" >&2
+  exit 1
+fi
+rm "$TEMP"
+TEMP=
+rmdir "$LOCK"
 trap - EXIT HUP INT TERM
 ```
 
-Do not continue after a digest mismatch. A published version is immutable: never
-replace an existing final path. After a successful rename, regenerate the index.
+Do not continue after a digest mismatch or failed `ln`. The temporary and final
+links refer to the same verified inode until the temporary link is removed. A
+published version is immutable: never replace an existing final path. After a
+successful publication, regenerate the index.
 
 ## Regenerate the index
 
@@ -187,69 +254,119 @@ test "$HEALTH" = healthy || {
 }
 ```
 
-Run the HTTP checks on the NAS or another LAN machine. Set `NAME` to a
+Run the HTTP policy checks on the NAS or another LAN machine. Set `NAME` to a
 published version:
 
 ```sh
 set -eu
 BASE=http://darklingnas:8088
 NAME=KelliKanvas-1.2.3.apk
+CHECK_DIR="$(mktemp -d)"
+trap 'rm -rf "$CHECK_DIR"' EXIT HUP INT TERM
 
-# Health endpoint and page
-HEALTH_BODY="$(curl -fsS "$BASE/healthz")"
-test "$HEALTH_BODY" = ok || {
-  echo "Unexpected health response: $HEALTH_BODY" >&2
+HEALTH_STATUS="$(curl -fsS -o "$CHECK_DIR/health" \
+  -w '%{http_code}' "$BASE/healthz")"
+test "$HEALTH_STATUS" = 200 || {
+  echo "Health returned $HEALTH_STATUS, expected 200" >&2
   exit 1
 }
-curl -fsS "$BASE/" >/dev/null
+test "$(cat "$CHECK_DIR/health")" = ok || {
+  echo "Unexpected health response body" >&2
+  exit 1
+}
 
-# Published APK supports HEAD
-curl -fsSI "$BASE/$NAME" >/dev/null
+ROOT_STATUS="$(curl -fsS -D "$CHECK_DIR/root.headers" \
+  -o "$CHECK_DIR/root.body" -w '%{http_code}' "$BASE/")"
+test "$ROOT_STATUS" = 200 || {
+  echo "Root returned $ROOT_STATUS, expected 200" >&2
+  exit 1
+}
 
-# Mutation is rejected
+APK_STATUS="$(curl -fsSI -o "$CHECK_DIR/apk.headers" \
+  -w '%{http_code}' "$BASE/$NAME")"
+test "$APK_STATUS" = 200 || {
+  echo "APK HEAD returned $APK_STATUS, expected 200" >&2
+  exit 1
+}
+
 POST_STATUS="$(curl -sS -o /dev/null -w '%{http_code}' \
   -X POST "$BASE/")"
 test "$POST_STATUS" = 405 || {
   echo "POST returned $POST_STATUS, expected 405" >&2
   exit 1
 }
-```
 
-Verify the page's security headers and ensure the `Server` header does not
-disclose an nginx version:
+HIDDEN_STATUS="$(curl -sS -o /dev/null -w '%{http_code}' \
+  "$BASE/.KelliKanvas-hidden.publish.XXXXXX")"
+test "$HIDDEN_STATUS" = 404 || {
+  echo "Hidden path returned $HIDDEN_STATUS, expected 404" >&2
+  exit 1
+}
 
-```sh
-set -eu
-BASE=http://darklingnas:8088
-HEADERS="$(mktemp)"
-trap 'rm -f "$HEADERS"' EXIT HUP INT TERM
-curl -fsSI "$BASE/" >"$HEADERS"
-grep -Eiq '^X-Content-Type-Options:[[:space:]]*nosniff' "$HEADERS" || {
+ARBITRARY_STATUS="$(curl -sS -o /dev/null -w '%{http_code}' \
+  "$BASE/not-an-apk.txt")"
+test "$ARBITRARY_STATUS" = 404 || {
+  echo "Arbitrary path returned $ARBITRARY_STATUS, expected 404" >&2
+  exit 1
+}
+
+grep -Eiq '^X-Content-Type-Options:[[:space:]]*nosniff' \
+  "$CHECK_DIR/root.headers" || {
   echo "Missing X-Content-Type-Options: nosniff" >&2
   exit 1
 }
-grep -Eiq '^Referrer-Policy:[[:space:]]*no-referrer' "$HEADERS" || {
+grep -Eiq '^Referrer-Policy:[[:space:]]*no-referrer' \
+  "$CHECK_DIR/root.headers" || {
   echo "Missing Referrer-Policy: no-referrer" >&2
   exit 1
 }
-grep -Eiq "^Content-Security-Policy:.*default-src 'none'" "$HEADERS" || {
+grep -Eiq "^Content-Security-Policy:.*default-src 'none'.*frame-ancestors 'none'" \
+  "$CHECK_DIR/root.headers" || {
   echo "Missing restrictive Content-Security-Policy" >&2
   exit 1
 }
-grep -Eiq '^Cache-Control:[[:space:]]*no-store' "$HEADERS" || {
+grep -Eiq '^Cache-Control:[[:space:]]*no-store' \
+  "$CHECK_DIR/root.headers" || {
   echo "Missing Cache-Control: no-store" >&2
   exit 1
 }
-grep -Eiq '^Server:[[:space:]]*nginx[[:space:]]*$' "$HEADERS" || {
+grep -Eiq '^Server:[[:space:]]*nginx[[:space:]]*$' \
+  "$CHECK_DIR/root.headers" || {
   echo "Missing version-free Server: nginx header" >&2
   exit 1
 }
-
-if grep -Eiq '^Server:.*nginx/' "$HEADERS"; then
+if grep -Eiq '^Server:.*nginx/' "$CHECK_DIR/root.headers"; then
   echo "nginx version disclosed" >&2
   exit 1
 fi
-rm -f "$HEADERS"
+
+grep -Eiq '^Content-Type:[[:space:]]*application/vnd\.android\.package-archive' \
+  "$CHECK_DIR/apk.headers" || {
+  echo "Missing Android APK Content-Type" >&2
+  exit 1
+}
+grep -Eiq '^Cache-Control:[[:space:]]*public,[[:space:]]*max-age=31536000,[[:space:]]*immutable' \
+  "$CHECK_DIR/apk.headers" || {
+  echo "Missing immutable APK Cache-Control" >&2
+  exit 1
+}
+grep -Eiq '^Content-Disposition:[[:space:]]*attachment' \
+  "$CHECK_DIR/apk.headers" || {
+  echo "Missing attachment Content-Disposition" >&2
+  exit 1
+}
+grep -Eiq '^X-Content-Type-Options:[[:space:]]*nosniff' \
+  "$CHECK_DIR/apk.headers" || {
+  echo "Missing APK X-Content-Type-Options: nosniff" >&2
+  exit 1
+}
+grep -Eiq '^Referrer-Policy:[[:space:]]*no-referrer' \
+  "$CHECK_DIR/apk.headers" || {
+  echo "Missing APK Referrer-Policy: no-referrer" >&2
+  exit 1
+}
+
+rm -rf "$CHECK_DIR"
 trap - EXIT HUP INT TERM
 ```
 
@@ -281,8 +398,13 @@ trap - EXIT HUP INT TERM
 
 Published URLs are immutable and remain stable when newer APKs are added.
 Publication refuses to overwrite an existing version. To remove one explicitly
-selected version, run the following on the NAS. If it was the latest version,
-the next valid version becomes latest after regeneration:
+selected version, run the following on the NAS. It takes the same per-version
+lock used by publication, atomically moves the APK into a unique hidden
+quarantine directory, regenerates and verifies the page, and only then deletes
+the quarantined file. If generation or verification fails, the exit trap
+atomically restores the APK and regenerates the old index before returning a
+nonzero status. If the removed APK was latest, the next valid version becomes
+latest:
 
 ```sh
 set -eu
@@ -290,7 +412,42 @@ CONTENT=/share/Public/KelliKanvas
 BASE=http://darklingnas:8088
 NAME=KelliKanvas-1.2.3.apk
 FINAL="$CONTENT/$NAME"
+LOCK="$CONTENT/.$NAME.lock"
+QUARANTINE_DIR=
+QUARANTINE=
+PAGE=
+RESTORE_NEEDED=0
 SEMVER_APK_PATTERN='^KelliKanvas-(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-(0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)(\.(0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?\.apk$'
+CS="$(getcfg container-station Install_Path -f /etc/config/qpkg.conf)"
+test -x "$CS/bin/docker"
+
+regenerate_index() {
+  "$CS/bin/docker" run --rm \
+    -v /share/Public/KelliKanvas:/content \
+    -v /share/Container/KelliKanvas/generate_apk_index.py:/app/generate.py:ro \
+    python:3.13-alpine@sha256:399babc8b49529dabfd9c922f2b5eea81d611e4512e3ed250d75bd2e7683f4b0 \
+    python /app/generate.py --directory /content
+}
+
+rollback_removal() {
+  STATUS=$?
+  test "$STATUS" -ne 0 || STATUS=1
+  trap - EXIT HUP INT TERM
+  set +e
+  test -z "$PAGE" || rm -f "$PAGE"
+  if [ "$RESTORE_NEEDED" -eq 1 ] && [ -f "$QUARANTINE" ]; then
+    if mv "$QUARANTINE" "$FINAL"; then
+      if ! regenerate_index; then
+        echo "CRITICAL: APK restored but old index regeneration failed" >&2
+      fi
+    else
+      echo "CRITICAL: failed to restore quarantined APK: $QUARANTINE" >&2
+    fi
+  fi
+  test -z "$QUARANTINE_DIR" || rmdir "$QUARANTINE_DIR" 2>/dev/null
+  rmdir "$LOCK" 2>/dev/null
+  exit "$STATUS"
+}
 
 printf '%s\n' "$NAME" | grep -Eq "$SEMVER_APK_PATTERN" || {
   echo "Refusing to remove an invalid or ambiguous filename" >&2
@@ -300,18 +457,19 @@ if [ ! -f "$FINAL" ] || [ -L "$FINAL" ]; then
   echo "Selected version does not exist: $FINAL" >&2
   exit 1
 fi
-rm "$FINAL"
+if ! mkdir "$LOCK"; then
+  echo "Another operation holds the version lock: $LOCK" >&2
+  exit 1
+fi
+trap rollback_removal EXIT HUP INT TERM
 
-CS="$(getcfg container-station Install_Path -f /etc/config/qpkg.conf)"
-test -x "$CS/bin/docker"
-"$CS/bin/docker" run --rm \
-  -v /share/Public/KelliKanvas:/content \
-  -v /share/Container/KelliKanvas/generate_apk_index.py:/app/generate.py:ro \
-  python:3.13-alpine@sha256:399babc8b49529dabfd9c922f2b5eea81d611e4512e3ed250d75bd2e7683f4b0 \
-  python /app/generate.py --directory /content
+QUARANTINE_DIR="$(mktemp -d "$CONTENT/.$NAME.quarantine.XXXXXX")"
+QUARANTINE="$QUARANTINE_DIR/$NAME"
+mv "$FINAL" "$QUARANTINE"
+RESTORE_NEEDED=1
+regenerate_index
 
 PAGE="$(mktemp)"
-trap 'rm -f "$PAGE"' EXIT HUP INT TERM
 curl -fsS "$BASE/" -o "$PAGE"
 if grep -Fq "$NAME" "$PAGE"; then
   echo "Removed version is still advertised" >&2
@@ -322,7 +480,14 @@ test "$REMOVED_STATUS" = 404 || {
   echo "Removed URL returned $REMOVED_STATUS, expected 404" >&2
   exit 1
 }
+
+rm "$QUARANTINE"
+RESTORE_NEEDED=0
 rm -f "$PAGE"
+PAGE=
+rmdir "$QUARANTINE_DIR"
+QUARANTINE_DIR=
+rmdir "$LOCK"
 trap - EXIT HUP INT TERM
 ```
 
@@ -364,8 +529,9 @@ ls -l \
 ### Permission denied or 404
 
 APKs and `index.html` must be mode `0644`. Every directory component must be
-traversable by container UID 101. `ls` and `stat` are available on QNAP even
-when `namei` is not:
+traversable by container UID 101. New dedicated directories use mode `0755`;
+existing directory modes are not reset because they may implement a local QNAP
+access policy. `ls` and `stat` are available on QNAP even when `namei` is not:
 
 ```sh
 set -eu
@@ -391,8 +557,9 @@ done
   test -r /usr/share/nginx/html/index.html
 ```
 
-Use `chmod 0755 /share/Public/KelliKanvas` and `chmod 0644` on the index and
-APKs to correct the documented default modes.
+Use `chmod 0644` on an incorrectly-modeled index or APK. Change an existing
+directory policy only after confirming the intended QNAP ACLs; the container
+read test above is the authoritative traversability check.
 
 ### Hostname does not resolve
 
@@ -431,7 +598,9 @@ CONTENT=/share/Public/KelliKanvas
 SEMVER_APK_PATTERN='^KelliKanvas-(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-(0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)(\.(0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?\.apk$'
 
 for APK in "$CONTENT"/*.apk; do
-  test -e "$APK" || continue
+  if [ ! -e "$APK" ] && [ ! -L "$APK" ]; then
+    continue
+  fi
   NAME="${APK##*/}"
   if test -L "$APK" || test ! -f "$APK" ||
     ! printf '%s\n' "$NAME" | grep -Eq "$SEMVER_APK_PATTERN"; then
