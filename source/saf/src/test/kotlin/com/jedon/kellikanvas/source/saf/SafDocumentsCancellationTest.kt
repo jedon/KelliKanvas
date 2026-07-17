@@ -2,6 +2,7 @@ package com.jedon.kellikanvas.source.saf
 
 import android.content.Intent
 import android.os.OperationCanceledException
+import android.os.ParcelFileDescriptor
 import com.google.common.truth.Truth.assertThat
 import com.jedon.kellikanvas.model.AssetRef
 import com.jedon.kellikanvas.model.ProviderObjectId
@@ -17,8 +18,10 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import java.io.File
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 
 @RunWith(RobolectricTestRunner::class)
@@ -67,7 +70,7 @@ class SafDocumentsCancellationTest {
                 failure
             }
 
-        assertThat(failure.cause).isInstanceOf(OperationCanceledException::class.java)
+        assertThat(failure.hasCause<OperationCanceledException>()).isTrue()
     }
 
     @Test
@@ -89,6 +92,7 @@ class SafDocumentsCancellationTest {
         block.release()
         block.finished.await()
         operation.join()
+        awaitExecutorIdle()
 
         assertThat(fixture.provider.closedCursorCount.get()).isEqualTo(1)
     }
@@ -116,8 +120,8 @@ class SafDocumentsCancellationTest {
     @Test
     fun `descriptor open cancellation immediately cancels platform signal`() = runTest {
         val fixture = registerSafProvider()
-        val block = fixture.provider.blockNextDescriptorOpen()
-        val documents = ContentResolverSafDocuments(fixture.resolver, executor)
+        val block = TestDocumentsProvider.BlockingCall(TestDocumentsProvider.CancellationBehavior.THROW)
+        val documents = descriptorDocuments(fixture, block)
         val operation =
             async {
                 documents.openRead(fixture.treeUri, TestDocumentsProvider.COVER_ID)
@@ -134,11 +138,8 @@ class SafDocumentsCancellationTest {
     @Test
     fun `descriptor returned after cancellation is closed`() = runTest {
         val fixture = registerSafProvider()
-        val block =
-            fixture.provider.blockNextDescriptorOpen(
-                TestDocumentsProvider.CancellationBehavior.RETURN_RESOURCE,
-            )
-        val documents = ContentResolverSafDocuments(fixture.resolver, executor)
+        val block = TestDocumentsProvider.BlockingCall(TestDocumentsProvider.CancellationBehavior.RETURN_RESOURCE)
+        val documents = descriptorDocuments(fixture, block)
         val operation =
             async {
                 documents.openRead(fixture.treeUri, TestDocumentsProvider.COVER_ID)
@@ -150,6 +151,7 @@ class SafDocumentsCancellationTest {
         block.release()
         block.finished.await()
         operation.join()
+        awaitExecutorIdle()
 
         assertThat(fixture.provider.lastOpenedDescriptor.get()?.fileDescriptor?.valid()).isFalse()
     }
@@ -202,4 +204,36 @@ class SafDocumentsCancellationTest {
         assertThat(closed.get()).isEqualTo(1)
         assertThat(fixture.provider.lastOpenedDescriptor.get()?.fileDescriptor?.valid()).isFalse()
     }
+
+    private fun awaitExecutorIdle() {
+        executor.submit {}.get(5, TimeUnit.SECONDS)
+    }
+
+    private fun descriptorDocuments(
+        fixture: RobolectricSafProvider,
+        block: TestDocumentsProvider.BlockingCall,
+    ): ContentResolverSafDocuments = ContentResolverSafDocuments(
+        resolver = fixture.resolver,
+        ioExecutor = executor,
+        openDescriptor = { _, signal ->
+            block.await(signal)
+            ParcelFileDescriptor
+                .open(descriptorPayload(), ParcelFileDescriptor.MODE_READ_ONLY)
+                .also(fixture.provider.lastOpenedDescriptor::set)
+        },
+    )
+
+    private fun descriptorPayload(): File = File.createTempFile("saf-cancellation-", ".bin").apply {
+        writeBytes(TestDocumentsProvider.COVER_BYTES)
+        deleteOnExit()
+    }
+}
+
+private inline fun <reified T : Throwable> Throwable.hasCause(): Boolean {
+    var current: Throwable? = this
+    while (current != null) {
+        if (current is T) return true
+        current = current.cause
+    }
+    return false
 }

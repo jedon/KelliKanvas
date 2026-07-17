@@ -4,7 +4,6 @@ import com.google.common.truth.Truth.assertThat
 import org.junit.Test
 import org.w3c.dom.Element
 import java.io.File
-import javax.xml.XMLConstants
 import javax.xml.parsers.DocumentBuilderFactory
 
 class BackupRulesSourceTest {
@@ -29,8 +28,8 @@ class BackupRulesSourceTest {
         setFeature("http://apache.org/xml/features/disallow-doctype-decl", true)
         setFeature("http://xml.org/sax/features/external-general-entities", false)
         setFeature("http://xml.org/sax/features/external-parameter-entities", false)
-        setAttribute(XMLConstants.ACCESS_EXTERNAL_DTD, "")
-        setAttribute(XMLConstants.ACCESS_EXTERNAL_SCHEMA, "")
+        setAttribute(ACCESS_EXTERNAL_DTD, "")
+        setAttribute(ACCESS_EXTERNAL_SCHEMA, "")
     }.newDocumentBuilder().parse(file)
 
     private fun Element.androidAttribute(name: String): String = getAttributeNS(
@@ -43,10 +42,18 @@ class BackupRulesSourceTest {
         preferencesFile: String,
     ): Int = (0 until document.getElementsByTagName("exclude").length)
         .map { document.getElementsByTagName("exclude").item(it) as Element }
-        .count { it.getAttribute("domain") == "sharedpref" && it.getAttribute("path") == preferencesFile }
+        .count {
+            it.getAttribute("domain") == "sharedpref" &&
+                it.getAttribute("path") in setOf(".", preferencesFile)
+        }
 
     private fun projectRoot(): File = generateSequence(File(System.getProperty("user.dir")).absoluteFile) {
         it.parentFile
     }
         .first { File(it, "settings.gradle.kts").isFile }
+
+    private companion object {
+        const val ACCESS_EXTERNAL_DTD = "http://javax.xml.XMLConstants/property/accessExternalDTD"
+        const val ACCESS_EXTERNAL_SCHEMA = "http://javax.xml.XMLConstants/property/accessExternalSchema"
+    }
 }

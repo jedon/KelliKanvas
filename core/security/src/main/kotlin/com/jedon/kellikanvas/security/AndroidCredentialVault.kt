@@ -1,5 +1,6 @@
 package com.jedon.kellikanvas.security
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.content.SharedPreferences
 import android.util.Base64
@@ -9,6 +10,7 @@ import java.nio.charset.StandardCharsets
 import java.security.GeneralSecurityException
 import java.security.MessageDigest
 
+@SuppressLint("ApplySharedPref") // Synchronous success is required before releasing OPERATION_LOCK.
 class AndroidCredentialVault(
     context: Context,
     private val keyProvider: CredentialKeyProvider = AndroidKeystoreKeyProvider(),

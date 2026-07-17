@@ -13,10 +13,12 @@ import com.jedon.kellikanvas.source.PhotoByteStream
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import okio.Buffer
 import org.junit.Assert.fail
@@ -37,7 +39,7 @@ abstract class AdapterContract {
     protected abstract fun createHarness(): AdapterHarness
 
     @Test
-    fun `paging honors limits and cursors neither skip nor duplicate entries`() = runTest {
+    fun pagingHonorsLimitsAndCursorsNeitherSkipNorDuplicateEntries() = runTest {
         val harness = createHarness()
         val expected = harness.dataset.children(harness.root)
         require(expected.size >= 3) {
@@ -50,7 +52,7 @@ abstract class AdapterContract {
     }
 
     @Test
-    fun `invalid limits are rejected before adapter IO`() = runTest {
+    fun invalidLimitsAreRejectedBeforeAdapterIo() = runTest {
         val harness = createHarness()
         val before = harness.ioCount()
 
@@ -65,7 +67,7 @@ abstract class AdapterContract {
     }
 
     @Test
-    fun `provider IDs stay stable and nested folders traverse with cycle protection`() = runTest {
+    fun providerIdsStayStableAndNestedFoldersTraverseWithCycleProtection() = runTest {
         val firstHarness = createHarness()
         val firstScan = traverse(firstHarness)
         val secondHarness = createHarness()
@@ -81,7 +83,7 @@ abstract class AdapterContract {
     }
 
     @Test
-    fun `metadata agrees with listings and stays stable across adapters`() = runTest {
+    fun metadataAgreesWithListingsAndStaysStableAcrossAdapters() = runTest {
         val harness = createHarness()
         val freshHarness = createHarness()
         assertThat(freshHarness.adapter).isNotSameInstanceAs(harness.adapter)
@@ -105,7 +107,7 @@ abstract class AdapterContract {
     }
 
     @Test
-    fun `cross-profile references are rejected before adapter IO`() = runTest {
+    fun crossProfileReferencesAreRejectedBeforeAdapterIo() = runTest {
         val harness = createHarness()
         val otherProfile = SourceProfileId("contract-other-profile")
         val folder = FolderRef(otherProfile, ProviderObjectId("contract-other-folder"))
@@ -131,7 +133,7 @@ abstract class AdapterContract {
     }
 
     @Test
-    fun `listing cancellation propagates and closes its resource`() = runTest {
+    fun listingCancellationPropagatesAndClosesItsResource() = runTest {
         val harness = createHarness()
         val stall = harness.stallNextListing()
         val caught = CompletableDeferred<CancellationException>()
@@ -156,7 +158,7 @@ abstract class AdapterContract {
     }
 
     @Test
-    fun `read cancellation propagates and closes its resource`() = runTest {
+    fun readCancellationPropagatesAndClosesItsResource() = runTest {
         val harness = createHarness()
         val asset = harness.dataset.photos.first().entry.asset
         val stall = harness.stallNextRead(asset)
@@ -187,7 +189,7 @@ abstract class AdapterContract {
     }
 
     @Test
-    fun `missing items normalize to not found`() = runTest {
+    fun missingItemsNormalizeToNotFound() = runTest {
         val harness = createHarness()
         val asset = harness.dataset.photos.first().entry.asset
         harness.makeMissing(asset)
@@ -206,7 +208,7 @@ abstract class AdapterContract {
     }
 
     @Test
-    fun `removed sources normalize to source unavailable`() = runTest {
+    fun removedSourcesNormalizeToSourceUnavailable() = runTest {
         val harness = createHarness()
         harness.removeSource()
 
@@ -224,7 +226,7 @@ abstract class AdapterContract {
     }
 
     @Test
-    fun `configured invalid credentials normalize to authentication required`() = runTest {
+    fun configuredInvalidCredentialsNormalizeToAuthenticationRequired() = runTest {
         val harness = createHarness()
         assertDeclaredScenario(
             harness = harness,
@@ -234,7 +236,7 @@ abstract class AdapterContract {
     }
 
     @Test
-    fun `configured revoked grants normalize to permission revoked`() = runTest {
+    fun configuredRevokedGrantsNormalizeToPermissionRevoked() = runTest {
         val harness = createHarness()
         assertDeclaredScenario(
             harness = harness,
@@ -244,7 +246,7 @@ abstract class AdapterContract {
     }
 
     @Test
-    fun `configured timeouts normalize to timeout`() = runTest {
+    fun configuredTimeoutsNormalizeToTimeout() = runTest {
         val harness = createHarness()
         assertDeclaredScenario(
             harness = harness,
@@ -254,7 +256,7 @@ abstract class AdapterContract {
     }
 
     @Test
-    fun `configured protocol errors normalize to protocol failure`() = runTest {
+    fun configuredProtocolErrorsNormalizeToProtocolFailure() = runTest {
         val harness = createHarness()
         assertDeclaredScenario(
             harness = harness,
@@ -268,7 +270,7 @@ abstract class AdapterContract {
      * Unsupported-format and corrupt-content classification belongs to the image decoder contract.
      */
     @Test
-    fun `photo bytes stay stable across bounded fresh streams and adapters`() = runTest {
+    fun photoBytesStayStableAcrossBoundedFreshStreamsAndAdapters() = runTest {
         val harness = createHarness()
         val freshHarness = createHarness()
         assertThat(freshHarness.adapter).isNotSameInstanceAs(harness.adapter)
@@ -291,7 +293,7 @@ abstract class AdapterContract {
     }
 
     @Test
-    fun `photo stream closes after an early consumer close`() = runTest {
+    fun photoStreamClosesAfterAnEarlyConsumerClose() = runTest {
         val harness = createHarness()
         val expected = harness.dataset.photos.first()
         val asset = expected.entry.asset
@@ -314,7 +316,7 @@ abstract class AdapterContract {
     }
 
     @Test
-    fun `photo stream invariant enforcement rejects an over-read`() = runTest {
+    fun photoStreamInvariantEnforcementRejectsAnOverRead() = runTest {
         val invalidStream =
             object : PhotoByteStream(contentLength = null) {
                 override suspend fun readAtMostTo(
@@ -334,7 +336,7 @@ abstract class AdapterContract {
     }
 
     @Test
-    fun `diagnostics do not disclose source secrets or sensitive paths`() = runTest {
+    fun diagnosticsDoNotDiscloseSourceSecretsOrSensitivePaths() = runTest {
         val harness = createHarness()
         val diagnostics = mutableListOf<Any?>()
         diagnostics += harness
@@ -549,8 +551,10 @@ abstract class AdapterContract {
         block: suspend () -> Unit,
     ) {
         try {
-            withTimeout(STALL_TIMEOUT_MILLIS) {
-                block()
+            withContext(Dispatchers.Default) {
+                withTimeout(STALL_TIMEOUT_MILLIS) {
+                    block()
+                }
             }
         } catch (failure: TimeoutCancellationException) {
             throw AssertionError("Timed out waiting for $description", failure)

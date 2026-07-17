@@ -40,15 +40,18 @@ class DlnaProfileDiscovery(
         profileId: SourceProfileId,
     ): DlnaProfile? = try {
         val description = parser.parse(loadDescription(device.location), device.location.toString())
-        if (!description.udn.equals(device.udn, ignoreCase = true)) return null
-        DlnaEndpointPolicy(device.location).validateInitial(description.controlUrl)
-        DlnaProfile(
-            id = profileId,
-            serverUdn = device.udn,
-            descriptionLocation = device.location,
-            controlUrl = description.controlUrl,
-            contentDirectoryVersion = description.version,
-        )
+        if (!description.udn.equals(device.udn, ignoreCase = true)) {
+            null
+        } else {
+            DlnaEndpointPolicy(device.location).validateInitial(description.controlUrl)
+            DlnaProfile(
+                id = profileId,
+                serverUdn = device.udn,
+                descriptionLocation = device.location,
+                controlUrl = description.controlUrl,
+                contentDirectoryVersion = description.version,
+            )
+        }
     } catch (failure: CancellationException) {
         throw failure
     } catch (_: DlnaProtocolException) {

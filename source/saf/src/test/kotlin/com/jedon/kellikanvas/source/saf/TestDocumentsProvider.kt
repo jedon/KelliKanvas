@@ -2,6 +2,7 @@ package com.jedon.kellikanvas.source.saf
 
 import android.database.Cursor
 import android.database.MatrixCursor
+import android.os.Bundle
 import android.os.CancellationSignal
 import android.os.OperationCanceledException
 import android.os.ParcelFileDescriptor
@@ -108,6 +109,12 @@ class TestDocumentsProvider : DocumentsProvider() {
         parentDocumentId: String,
         projection: Array<out String>?,
         sortOrder: String?,
+    ): Cursor = queryChildren(parentDocumentId, projection)
+
+    override fun queryChildDocuments(
+        parentDocumentId: String,
+        projection: Array<out String>?,
+        queryArgs: Bundle?,
     ): Cursor = queryChildren(parentDocumentId, projection)
 
     override fun openDocument(

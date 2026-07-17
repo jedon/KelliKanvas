@@ -14,12 +14,16 @@ android {
     defaultConfig {
         applicationId = "com.jedon.kellikanvas"
         versionCode = 1
-        versionName = "0.1.0"
+        versionName = "1.0.0"
         buildConfigField(
             "String",
             "UPDATE_METADATA_PUBLIC_KEY_BASE64",
             "\"${metadataPublicKeyBase64.orEmpty()}\"",
         )
+    }
+
+    testOptions {
+        unitTests.isIncludeAndroidResources = true
     }
 }
 
@@ -33,12 +37,8 @@ tasks.register("validateReleaseMetadataPin") {
 }
 
 tasks.configureEach {
-    if (name.contains("Release", ignoreCase = true) && name != "validateReleaseMetadataPin") {
+    if (name == "assembleRelease" || name == "bundleRelease") {
         dependsOn("validateReleaseMetadataPin")
-    }
-
-    testOptions {
-        unitTests.isIncludeAndroidResources = true
     }
 }
 

@@ -3,6 +3,7 @@ package com.jedon.kellikanvas.source.saf
 import android.content.ContentResolver
 import android.database.Cursor
 import android.net.Uri
+import android.os.Bundle
 import android.os.CancellationSignal
 import android.os.OperationCanceledException
 import android.os.ParcelFileDescriptor
@@ -108,13 +109,16 @@ class ContentResolverSafDocuments(
     private val ioExecutor: Executor = Dispatchers.IO.asExecutor(),
     private val readObserver: SafReadObserver = NoOpSafReadObserver,
     private val queryObserver: SafQueryObserver = NoOpSafQueryObserver,
+    private val openDescriptor: (Uri, CancellationSignal) -> ParcelFileDescriptor? = { uri, signal ->
+        resolver.openFileDescriptor(uri, "r", signal)
+    },
 ) : SafDocuments {
     override suspend fun document(
         treeUri: Uri,
         documentId: String,
     ): SafDocument? {
         val uri = DocumentsContract.buildDocumentUriUsingTree(treeUri, documentId)
-        query(uri).use { cursor ->
+        return query(uri).use { cursor ->
             queryObserver.beforeParse()
             coroutineContext.ensureActive()
             if (cursor == null || !cursor.moveToFirst()) null else cursor.readDocument()
@@ -130,7 +134,7 @@ class ContentResolverSafDocuments(
             "SAF folder entry bound must be between 1 and $MAX_SAF_FOLDER_ENTRIES"
         }
         val uri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, parentDocumentId)
-        query(uri).use { cursor ->
+        return query(uri).use { cursor ->
             if (cursor == null) throw IOException("SAF provider returned no cursor")
             queryObserver.beforeParse()
             buildList {
@@ -150,7 +154,7 @@ class ContentResolverSafDocuments(
         val uri = DocumentsContract.buildDocumentUriUsingTree(treeUri, documentId)
         val descriptor =
             awaitCloseable { signal ->
-                resolver.openFileDescriptor(uri, "r", signal)
+                openDescriptor(uri, signal)
             } ?: throw FileNotFoundException("SAF provider returned no file descriptor")
         val opened = SafOpenDocument(descriptor, documentId, readObserver)
         return try {
@@ -164,7 +168,7 @@ class ContentResolverSafDocuments(
     }
 
     private suspend fun query(uri: Uri): Cursor? = awaitCloseable { signal ->
-        resolver.query(uri, PROJECTION, null, null, null, signal)
+        resolver.query(uri, PROJECTION, Bundle.EMPTY, signal)
     }
 
     private suspend fun <T : Closeable> awaitCloseable(

@@ -5,6 +5,7 @@ import android.content.ContentValues
 import android.database.Cursor
 import android.database.MatrixCursor
 import android.net.Uri
+import android.os.Bundle
 import android.os.CancellationSignal
 import android.os.OperationCanceledException
 import android.provider.DocumentsContract
@@ -18,6 +19,13 @@ class BlockingQueryProvider : ContentProvider() {
     var cancelImmediately: Boolean = false
 
     override fun onCreate(): Boolean = true
+
+    override fun query(
+        uri: Uri,
+        projection: Array<out String>?,
+        queryArgs: Bundle?,
+        cancellationSignal: CancellationSignal?,
+    ): Cursor = query(uri, projection, null, null, null, cancellationSignal)
 
     override fun query(
         uri: Uri,

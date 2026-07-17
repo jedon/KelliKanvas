@@ -1,6 +1,7 @@
 package com.jedon.kellikanvas.source.saf
 
 import android.Manifest
+import android.os.Bundle
 import android.provider.DocumentsContract
 import com.google.common.truth.Truth.assertThat
 import kotlinx.coroutines.test.runTest
@@ -28,7 +29,12 @@ class SafDocumentsRobolectricTest {
         assertThat(info.readPermission).isEqualTo(Manifest.permission.MANAGE_DOCUMENTS)
         assertThat(info.writePermission).isEqualTo(Manifest.permission.MANAGE_DOCUMENTS)
         assertThat(fixture.provider.context).isNotNull()
-        fixture.resolver.query(rootDocumentUri, arrayOf(DocumentsContract.Document.COLUMN_DOCUMENT_ID), null, null, null)
+        fixture.resolver.query(
+            rootDocumentUri,
+            arrayOf(DocumentsContract.Document.COLUMN_DOCUMENT_ID),
+            Bundle.EMPTY,
+            null,
+        )
             .use { cursor ->
                 assertThat(cursor).isNotNull()
                 assertThat(cursor?.moveToFirst()).isTrue()

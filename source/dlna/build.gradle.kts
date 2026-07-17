@@ -11,7 +11,7 @@ dependencies {
     implementation(project(":core:source-api"))
     implementation(libs.okhttp)
     implementation(libs.kotlinx.coroutines.core)
-    implementation("net.sf.kxml:kxml2:2.3.0")
+    implementation(libs.kxml2)
 
     testImplementation(testFixtures(project(":core:source-api")))
     testImplementation(libs.junit4)
