@@ -116,6 +116,19 @@ class SchedulePolicyTest {
     }
 
     @Test
+    fun `equal day and night brightness needs no future boundary`() {
+        val schedule =
+            DayNightSchedule(
+                dayBrightness = 0.42f,
+                nightBrightness = 0.42f,
+            )
+        val policy = policyAt("2026-07-17T12:00:00Z", schedule)
+
+        assertThat(policy.brightness()).isEqualTo(0.42f)
+        assertThat(policy.nextBoundaryInstant()).isNull()
+    }
+
+    @Test
     fun `coordinator precedence is sensor then schedule then follow TV`() {
         val coordinator = AmbientCoordinator()
 

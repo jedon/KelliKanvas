@@ -109,10 +109,13 @@ class Gate private constructor(
         require(elapsedRealtimeNanos >= 0L)
         if (occupied) {
             vacancyDeadlineNanos = null
+            val stateCanAcceptResume =
+                playbackState == PlaybackState.PLAYING ||
+                    playbackState == PlaybackState.PAUSED_BY_PRESENCE
             val shouldResume =
                 pauseIssued &&
                     resumeOnReturn &&
-                    playbackState == PlaybackState.PAUSED_BY_PRESENCE
+                    stateCanAcceptResume
             pauseIssued = false
             return if (shouldResume) AmbientAction.RESUME else AmbientAction.NONE
         }

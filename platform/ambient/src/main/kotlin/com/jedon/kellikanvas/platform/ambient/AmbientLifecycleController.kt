@@ -373,7 +373,8 @@ class AmbientLifecycleController(
         ) {
             return
         }
-        val delay = Duration.between(wallClock.instant(), schedulePolicy.nextBoundaryInstant())
+        val nextBoundary = schedulePolicy.nextBoundaryInstant() ?: return
+        val delay = Duration.between(wallClock.instant(), nextBoundary)
         val safeDelay = if (delay.isNegative) Duration.ZERO else delay
         val timerToken = scheduleTimeoutToken
         scheduleTimeout =

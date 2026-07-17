@@ -119,6 +119,30 @@ class AmbientLifecycleControllerTest {
     }
 
     @Test
+    fun `occupied return orders resume after pause despite delayed playback state`() {
+        val source = FakeSensorSource(inventory)
+        val playback = RecordingPlaybackHost()
+        val elapsed = FakeElapsedTimeSource(0L)
+        val scheduler = FakeAmbientScheduler(elapsed)
+        val controller =
+            controller(
+                source = source,
+                config = sensorAndPresenceConfig(timeout = Duration.ZERO),
+                elapsed = elapsed,
+                playback = playback,
+                scheduler = scheduler,
+            )
+        controller.start()
+
+        source.emit(presence, 0f)
+        scheduler.advanceBy(Duration.ZERO)
+        source.emit(presence, 10f)
+        source.emit(presence, 10f)
+
+        assertThat(playback.actions).containsExactly("PAUSE", "RESUME").inOrder()
+    }
+
+    @Test
     fun `vacancy timeout pauses without another sensor event`() {
         val source = FakeSensorSource(inventory)
         val playback = RecordingPlaybackHost()
@@ -383,6 +407,57 @@ class AmbientLifecycleControllerTest {
     }
 
     @Test
+    fun `constant schedule reapplies without timer then config change schedules boundary`() {
+        val constantSchedule =
+            DayNightSchedule(
+                dayBrightness = 0.42f,
+                nightBrightness = 0.42f,
+            )
+        val repository =
+            FakeConfigRepository(
+                AmbientConfig(
+                    brightnessMode = BrightnessMode.SCHEDULE,
+                    scheduleEnabled = true,
+                    dayNightSchedule = constantSchedule,
+                ),
+            )
+        val timezone = FakeTimezoneChangeSource()
+        val sink = RecordingBrightnessSink()
+        val elapsed = FakeElapsedTimeSource(0L)
+        val scheduler = FakeAmbientScheduler(elapsed)
+        val controller =
+            controller(
+                configRepository = repository,
+                timezone = timezone,
+                sink = sink,
+                elapsed = elapsed,
+                scheduler = scheduler,
+            )
+
+        controller.start()
+        assertThat(sink.decisions).containsExactly(BrightnessDecision.Schedule(0.42f))
+        assertThat(scheduler.pendingCount).isEqualTo(0)
+
+        timezone.fire()
+        assertThat(sink.decisions.last()).isEqualTo(BrightnessDecision.Schedule(0.42f))
+        assertThat(scheduler.pendingCount).isEqualTo(0)
+
+        repository.update(
+            AmbientConfig(
+                brightnessMode = BrightnessMode.SCHEDULE,
+                scheduleEnabled = true,
+            ),
+        )
+        assertThat(sink.decisions.last()).isEqualTo(BrightnessDecision.Schedule(0.70f))
+        assertThat(scheduler.pendingCount).isEqualTo(1)
+
+        controller.stop()
+        assertThat(timezone.activeCount).isEqualTo(0)
+        assertThat(scheduler.pendingCount).isEqualTo(0)
+        assertThat(sink.decisions.last()).isEqualTo(BrightnessDecision.FollowTv)
+    }
+
+    @Test
     fun `disabled schedule applies follow TV and registers no timezone observer`() {
         val timezone = FakeTimezoneChangeSource()
         val sink = RecordingBrightnessSink()
@@ -614,15 +689,18 @@ class AmbientLifecycleControllerTest {
         var state = PlaybackState.PLAYING
         var pauseCount = 0
         var resumeCount = 0
+        val actions = mutableListOf<String>()
 
         override fun playbackState() = state
 
         override fun pauseForPresence() {
             pauseCount++
+            actions += "PAUSE"
         }
 
         override fun resumeFromPresence() {
             resumeCount++
+            actions += "RESUME"
         }
     }
 

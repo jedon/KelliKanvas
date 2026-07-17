@@ -112,6 +112,19 @@ class PresenceGateTest {
     }
 
     @Test
+    fun `occupied return queues one resume behind unpropagated pause`() {
+        val gate = gate(vacancyTimeout = Duration.ZERO, resumeOnReturn = true)
+        gate.onPresence(false, PlaybackState.PLAYING, now)
+        assertThat(gate.onVacancyTimeout(PlaybackState.PLAYING, now))
+            .isEqualTo(AmbientAction.PAUSE)
+
+        assertThat(gate.onPresence(true, PlaybackState.PLAYING, now + 1))
+            .isEqualTo(AmbientAction.RESUME)
+        assertThat(gate.onPresence(true, PlaybackState.PLAYING, now + 2))
+            .isEqualTo(AmbientAction.NONE)
+    }
+
+    @Test
     fun `disabled return option never resumes`() {
         val gate = gate(vacancyTimeout = Duration.ZERO, resumeOnReturn = false)
         gate.onPresence(false, PlaybackState.PLAYING, now)
@@ -127,7 +140,7 @@ class PresenceGateTest {
     }
 
     @Test
-    fun `occupied state rearms after presence pause was manually resumed`() {
+    fun `manual resume rearms without repeated resume commands`() {
         val gate = gate(vacancyTimeout = Duration.ZERO, resumeOnReturn = true)
         assertThat(gate.onPresence(false, PlaybackState.PLAYING, now))
             .isEqualTo(AmbientAction.NONE)
@@ -135,11 +148,13 @@ class PresenceGateTest {
             .isEqualTo(AmbientAction.PAUSE)
 
         assertThat(gate.onPresence(true, PlaybackState.PLAYING, now + 1))
+            .isEqualTo(AmbientAction.RESUME)
+        assertThat(gate.onPresence(true, PlaybackState.PLAYING, now + 2))
             .isEqualTo(AmbientAction.NONE)
 
-        assertThat(gate.onPresence(false, PlaybackState.PLAYING, now + 2))
+        assertThat(gate.onPresence(false, PlaybackState.PLAYING, now + 3))
             .isEqualTo(AmbientAction.NONE)
-        assertThat(gate.onVacancyTimeout(PlaybackState.PLAYING, now + 2))
+        assertThat(gate.onVacancyTimeout(PlaybackState.PLAYING, now + 3))
             .isEqualTo(AmbientAction.PAUSE)
     }
 

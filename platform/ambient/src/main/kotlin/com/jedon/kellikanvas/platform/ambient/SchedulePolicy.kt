@@ -29,7 +29,8 @@ class SchedulePolicy(
         return if (isDay(localTime)) schedule.dayBrightness else schedule.nightBrightness
     }
 
-    fun nextBoundaryInstant(): Instant {
+    /** Returns the next instant that changes brightness, or null for a constant schedule. */
+    fun nextBoundaryInstant(): Instant? {
         val now = clock.instant()
         val zone = zoneIdProvider()
         val localDate = now.atZone(zone).toLocalDate()
@@ -58,7 +59,6 @@ class SchedulePolicy(
             .firstOrNull {
                 brightnessAt(it.minusNanos(1), zone) != brightnessAt(it, zone)
             }
-            ?: error("A future schedule boundary must exist")
     }
 
     private fun brightnessAt(
