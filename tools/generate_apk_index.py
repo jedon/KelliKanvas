@@ -11,9 +11,9 @@ from pathlib import Path
 from typing import Iterable
 
 
-_CORE_IDENTIFIER = r"(?:0|[1-9]\d*)"
+_CORE_IDENTIFIER = r"(?:0|[1-9][0-9]*)"
 _PRERELEASE_IDENTIFIER = (
-    r"(?:0|[1-9]\d*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)"
+    r"(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)"
 )
 _BUILD_IDENTIFIER = r"[0-9A-Za-z-]+"
 APK_PATTERN = re.compile(

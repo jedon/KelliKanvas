@@ -3,6 +3,7 @@ import tempfile
 import unittest
 from datetime import datetime, timezone
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 from tools.generate_apk_index import ApkRelease, discover_apks, generate_index, render_page
 
@@ -53,11 +54,6 @@ class ApkIndexTest(unittest.TestCase):
                 (root / name).write_bytes(b"not an accepted apk")
 
             (root / "KelliKanvas-8.0.0.apk").mkdir()
-            symlink = root / "KelliKanvas-9.0.0.apk"
-            try:
-                symlink.symlink_to(root / "KelliKanvas-2.0.0.apk")
-            except OSError as error:
-                self.skipTest(f"symlink creation is unavailable: {error}")
 
             releases = discover_apks(root)
 
@@ -78,6 +74,26 @@ class ApkIndexTest(unittest.TestCase):
             )
             self.assertTrue(all(isinstance(release, ApkRelease) for release in releases))
             self.assertEqual(releases[0].version, "2.0.0")
+
+    def test_discovery_rejects_unicode_digits(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "KelliKanvas-1١.0.0.apk").write_bytes(b"not strict SemVer")
+
+            self.assertEqual(discover_apks(root), [])
+
+    def test_discovery_rejects_symlinks(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            target = root / "payload.bin"
+            target.write_bytes(b"apk")
+            symlink = root / "KelliKanvas-9.0.0.apk"
+            try:
+                symlink.symlink_to(target)
+            except OSError as error:
+                self.skipTest(f"symlink creation is unavailable: {error}")
+
+            self.assertEqual(discover_apks(root), [])
 
     def test_page_contains_metadata_relative_links_and_copy_controls(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -125,6 +141,78 @@ class ApkIndexTest(unittest.TestCase):
 
             self.assertEqual(result, output)
             self.assertNotEqual(output.read_text(encoding="utf-8"), "old")
+            self.assertEqual(list(root.glob(".index-*.tmp")), [])
+
+    def test_generation_requests_same_directory_temp_and_uses_replace(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            output_parent = root / "site"
+            output_parent.mkdir()
+            output = output_parent / "downloads.html"
+
+            with patch(
+                "tools.generate_apk_index.tempfile.NamedTemporaryFile",
+                wraps=tempfile.NamedTemporaryFile,
+            ) as named_temporary:
+                with patch("tools.generate_apk_index.os.replace") as replace:
+                    result = generate_index(root, output)
+
+            self.assertEqual(
+                named_temporary.call_args.kwargs["dir"],
+                output.parent,
+            )
+            replace.assert_called_once()
+            temporary_path, replacement_path = replace.call_args.args
+            self.assertEqual(Path(temporary_path).parent, output.parent)
+            self.assertEqual(replacement_path, output)
+            self.assertEqual(result, output)
+            self.assertFalse(output.exists())
+            self.assertEqual(list(output.parent.glob(".index-*.tmp")), [])
+
+    def test_generation_flushes_and_fsyncs_before_replace(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            output = root / "index.html"
+            events: list[str] = []
+            temporary = MagicMock()
+            temporary.name = str(root / ".index-order.tmp")
+            temporary.fileno.return_value = 42
+            context_manager = MagicMock()
+            context_manager.__enter__.return_value = temporary
+            temporary.flush.side_effect = lambda: events.append("flush")
+
+            with patch(
+                "tools.generate_apk_index.tempfile.NamedTemporaryFile",
+                return_value=context_manager,
+            ):
+                with patch(
+                    "tools.generate_apk_index.os.fsync",
+                    side_effect=lambda _fd: events.append("fsync"),
+                ) as fsync:
+                    with patch(
+                        "tools.generate_apk_index.os.replace",
+                        side_effect=lambda _source, _output: events.append("replace"),
+                    ):
+                        generate_index(root, output)
+
+            temporary.write.assert_called_once()
+            fsync.assert_called_once_with(42)
+            self.assertEqual(events, ["flush", "fsync", "replace"])
+
+    def test_generation_cleans_temp_when_replace_raises(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            output = root / "index.html"
+            output.write_text("old", encoding="utf-8")
+
+            with patch(
+                "tools.generate_apk_index.os.replace",
+                side_effect=OSError("replace failed"),
+            ):
+                with self.assertRaisesRegex(OSError, "replace failed"):
+                    generate_index(root, output)
+
+            self.assertEqual(output.read_text(encoding="utf-8"), "old")
             self.assertEqual(list(root.glob(".index-*.tmp")), [])
 
 
