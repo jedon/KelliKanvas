@@ -20,6 +20,88 @@ class AndroidCredentialVault(
     override fun write(
         profileId: SourceProfileId,
         secret: ByteArray,
+    ) = synchronized(OPERATION_LOCK) {
+        try {
+            try {
+                writeLocked(profileId, secret)
+            } catch (_: CredentialKeyInvalidatedException) {
+                recoverInvalidatedKey()
+                writeLocked(profileId, secret)
+            } catch (_: CredentialCipherKeyInvalidatedException) {
+                recoverInvalidatedKey()
+                writeLocked(profileId, secret)
+            }
+        } catch (_: CredentialKeyAccessException) {
+            throw CredentialVaultUnavailableException()
+        } catch (_: CredentialCipherUnavailableException) {
+            throw CredentialVaultUnavailableException()
+        } catch (_: GeneralSecurityException) {
+            throw CredentialVaultUnavailableException()
+        }
+    }
+
+    override fun write(
+        profileId: SourceProfileId,
+        secret: CharArray,
+    ) = synchronized(OPERATION_LOCK) {
+        require(secret.isNotEmpty()) { "Credential must not be empty" }
+        val encoded = StandardCharsets.UTF_8.newEncoder().encode(CharBuffer.wrap(secret))
+        val temporarySecret = ByteArray(encoded.remaining())
+        encoded.get(temporarySecret)
+        if (encoded.hasArray()) {
+            encoded.array().fill(0)
+        }
+        try {
+            write(profileId, temporarySecret)
+        } finally {
+            temporarySecret.fill(0)
+        }
+    }
+
+    override fun read(profileId: SourceProfileId): CredentialReadResult = synchronized(OPERATION_LOCK) {
+        val preferenceKey = storageKey(profileId)
+        val stored =
+            preferences.getString(preferenceKey, null)
+                ?: return@synchronized CredentialReadResult.Missing
+        var encrypted: EncryptedCredential? = null
+        var plaintext: ByteArray? = null
+        try {
+            val key = keyProvider.get() ?: return@synchronized recoverMissingKey()
+            val decoded = decode(stored)
+            encrypted = decoded
+            val decrypted = cipher.decrypt(key, profileId, decoded)
+            plaintext = decrypted
+            CredentialReadResult.Present(CredentialSecret(decrypted))
+        } catch (_: CredentialKeyInvalidatedException) {
+            recoverInvalidatedKey()
+        } catch (_: CredentialCipherKeyInvalidatedException) {
+            recoverInvalidatedKey()
+        } catch (_: CredentialCipherCorruptedException) {
+            requiresReentry(preferenceKey)
+        } catch (_: IllegalArgumentException) {
+            requiresReentry(preferenceKey)
+        } catch (_: CredentialKeyAccessException) {
+            throw CredentialVaultUnavailableException()
+        } catch (_: CredentialCipherUnavailableException) {
+            throw CredentialVaultUnavailableException()
+        } catch (_: GeneralSecurityException) {
+            throw CredentialVaultUnavailableException()
+        } finally {
+            encrypted?.iv?.fill(0)
+            encrypted?.ciphertext?.fill(0)
+            plaintext?.fill(0)
+        }
+    }
+
+    override fun remove(profileId: SourceProfileId) = synchronized(OPERATION_LOCK) {
+        check(preferences.edit().remove(storageKey(profileId)).commit()) {
+            "Unable to remove encrypted credential"
+        }
+    }
+
+    private fun writeLocked(
+        profileId: SourceProfileId,
+        secret: ByteArray,
     ) {
         require(secret.isNotEmpty()) { "Credential must not be empty" }
         val temporarySecret = secret.copyOf()
@@ -38,58 +120,28 @@ class AndroidCredentialVault(
         }
     }
 
-    override fun write(
-        profileId: SourceProfileId,
-        secret: CharArray,
-    ) {
-        require(secret.isNotEmpty()) { "Credential must not be empty" }
-        val encoded = StandardCharsets.UTF_8.newEncoder().encode(CharBuffer.wrap(secret))
-        val temporarySecret = ByteArray(encoded.remaining())
-        encoded.get(temporarySecret)
-        if (encoded.hasArray()) {
-            encoded.array().fill(0)
-        }
-        try {
-            write(profileId, temporarySecret)
-        } finally {
-            temporarySecret.fill(0)
-        }
-    }
-
-    override fun read(profileId: SourceProfileId): CredentialReadResult {
-        val preferenceKey = storageKey(profileId)
-        val stored = preferences.getString(preferenceKey, null) ?: return CredentialReadResult.Missing
-        var encrypted: EncryptedCredential? = null
-        var plaintext: ByteArray? = null
-        return try {
-            val key = keyProvider.get() ?: return requiresReentry(preferenceKey)
-            val decoded = decode(stored)
-            encrypted = decoded
-            val decrypted = cipher.decrypt(key, profileId, decoded)
-            plaintext = decrypted
-            CredentialReadResult.Present(CredentialSecret(decrypted))
-        } catch (_: CredentialKeyUnavailableException) {
-            requiresReentry(preferenceKey)
-        } catch (_: GeneralSecurityException) {
-            requiresReentry(preferenceKey)
-        } catch (_: IllegalArgumentException) {
-            requiresReentry(preferenceKey)
-        } finally {
-            encrypted?.iv?.fill(0)
-            encrypted?.ciphertext?.fill(0)
-            plaintext?.fill(0)
-        }
-    }
-
-    override fun remove(profileId: SourceProfileId) {
-        check(preferences.edit().remove(storageKey(profileId)).commit()) {
-            "Unable to remove encrypted credential"
-        }
-    }
-
     private fun requiresReentry(preferenceKey: String): CredentialReadResult {
         check(preferences.edit().remove(preferenceKey).commit()) {
             "Unable to remove unusable encrypted credential"
+        }
+        return CredentialReadResult.RequiresReentry
+    }
+
+    private fun recoverInvalidatedKey(): CredentialReadResult {
+        try {
+            keyProvider.delete()
+        } catch (_: CredentialKeyAccessException) {
+            throw CredentialVaultUnavailableException()
+        }
+        check(preferences.edit().clear().commit()) {
+            "Unable to remove unusable encrypted credentials"
+        }
+        return CredentialReadResult.RequiresReentry
+    }
+
+    private fun recoverMissingKey(): CredentialReadResult {
+        check(preferences.edit().clear().commit()) {
+            "Unable to remove credentials whose key is missing"
         }
         return CredentialReadResult.RequiresReentry
     }
@@ -124,6 +176,7 @@ class AndroidCredentialVault(
 
     companion object {
         const val PREFERENCES_NAME = "kellikanvas_source_credentials"
+        private val OPERATION_LOCK = Any()
         private const val SEPARATOR = '.'
     }
 }

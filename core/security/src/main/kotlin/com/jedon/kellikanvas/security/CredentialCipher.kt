@@ -1,6 +1,7 @@
 package com.jedon.kellikanvas.security
 
 import com.jedon.kellikanvas.model.SourceProfileId
+import java.security.GeneralSecurityException
 import javax.crypto.SecretKey
 
 class EncryptedCredential(
@@ -39,3 +40,28 @@ interface CredentialCipher {
         encrypted: EncryptedCredential,
     ): ByteArray
 }
+
+internal fun interface CipherSessionFactory {
+    fun create(): CipherSession
+}
+
+internal interface CipherSession {
+    val iv: ByteArray
+
+    fun initForEncryption(key: SecretKey)
+
+    fun initForDecryption(
+        key: SecretKey,
+        iv: ByteArray,
+    )
+
+    fun updateAad(aad: ByteArray)
+
+    fun doFinal(input: ByteArray): ByteArray
+}
+
+class CredentialCipherCorruptedException : GeneralSecurityException("Encrypted credential is unusable")
+
+class CredentialCipherKeyInvalidatedException : GeneralSecurityException("Credential key is invalidated")
+
+class CredentialCipherUnavailableException : GeneralSecurityException("Credential cipher is temporarily unavailable")

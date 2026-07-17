@@ -5,6 +5,8 @@ import com.jedon.kellikanvas.model.SourceProfileId
 import org.junit.Assert.assertThrows
 import org.junit.Test
 import java.security.GeneralSecurityException
+import java.security.ProviderException
+import javax.crypto.SecretKey
 import javax.crypto.spec.SecretKeySpec
 
 class AesGcmCredentialCipherTest {
@@ -63,5 +65,73 @@ class AesGcmCredentialCipherTest {
         assertThat(second.iv).hasLength(12)
         assertThat(first.iv).isNotEqualTo(second.iv)
         secret.fill(0)
+    }
+
+    @Test
+    fun encryptionUsesProviderGeneratedIv() {
+        val session = RecordingCipherSession()
+        val providerGeneratedIv = ByteArray(12) { (it + 1).toByte() }
+        session.generatedIv = providerGeneratedIv
+        val cipher = AesGcmCredentialCipher(CipherSessionFactory { session })
+        val secret = byteArrayOf(12, 13, 14)
+
+        val encrypted = cipher.encrypt(key, profileId, secret)
+
+        assertThat(session.encryptInitCount).isEqualTo(1)
+        assertThat(encrypted.iv).isEqualTo(providerGeneratedIv)
+        secret.fill(0)
+    }
+
+    @Test
+    fun providerFailureDoesNotExposeProviderDetails() {
+        val session = RecordingCipherSession()
+        session.failure = ProviderException("sensitive provider detail")
+        val cipher = AesGcmCredentialCipher(CipherSessionFactory { session })
+
+        val failure =
+            assertThrows(CredentialCipherUnavailableException::class.java) {
+                cipher.encrypt(key, profileId, byteArrayOf(15, 16, 17))
+            }
+
+        assertThat(failure).hasMessageThat().isEqualTo("Credential cipher is temporarily unavailable")
+        assertThat(failure.cause).isNull()
+    }
+
+    @Test
+    fun profileAadIntermediateIsZeroed() {
+        val session = RecordingCipherSession()
+        val cipher = AesGcmCredentialCipher(CipherSessionFactory { session })
+
+        cipher.encrypt(key, profileId, byteArrayOf(18, 19, 20))
+
+        assertThat(checkNotNull(session.aad).all { it == 0.toByte() }).isTrue()
+    }
+
+    private class RecordingCipherSession : CipherSession {
+        var generatedIv = ByteArray(12)
+        var encryptInitCount = 0
+        var failure: RuntimeException? = null
+        var aad: ByteArray? = null
+
+        override val iv: ByteArray
+            get() = generatedIv.copyOf()
+
+        override fun initForEncryption(key: SecretKey) {
+            encryptInitCount += 1
+        }
+
+        override fun initForDecryption(
+            key: SecretKey,
+            iv: ByteArray,
+        ) = Unit
+
+        override fun updateAad(aad: ByteArray) {
+            this.aad = aad
+        }
+
+        override fun doFinal(input: ByteArray): ByteArray {
+            failure?.let { throw it }
+            return input.copyOf()
+        }
     }
 }

@@ -17,6 +17,8 @@ sealed interface CredentialReadResult {
     }
 }
 
+class CredentialVaultUnavailableException : RuntimeException("Credential vault temporarily unavailable")
+
 class CredentialSecret(
     bytes: ByteArray,
 ) : Closeable {
