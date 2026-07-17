@@ -28,10 +28,10 @@ class AndroidTestDocumentsProvider : DocumentsProvider() {
         method: String,
         arg: String?,
         extras: Bundle?,
-    ): Bundle {
-        require(method == METHOD_SET_MODE || method == METHOD_GET_MODE) {
-            "Unsupported instrumentation provider control method"
-        }
+    ): Bundle? {
+        super.call(method, arg, extras)?.let { return it }
+        if (method != METHOD_SET_MODE && method != METHOD_GET_MODE) return null
+
         val ownerPackage = requireNotNull(context).packageName
         require(callingPackage == ownerPackage) {
             "Instrumentation provider control requires its owner package"
