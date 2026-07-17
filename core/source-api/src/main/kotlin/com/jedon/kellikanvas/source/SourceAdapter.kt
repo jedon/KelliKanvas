@@ -18,30 +18,38 @@ const val MAX_PAGE_LIMIT: Int = 500
 /**
  * Source-neutral access to one configured source profile.
  *
- * Implementations validate [limit] with [validatePageLimit] before performing I/O and let
- * cancellation exceptions propagate unchanged.
+ * Page limits are validated before implementations perform I/O. Cancellation exceptions from
+ * implementations propagate unchanged.
  */
-interface SourceAdapter {
-    val profileId: SourceProfileId
-    val kind: SourceKind
-    val capabilities: SourceCapabilities
+abstract class SourceAdapter {
+    abstract val profileId: SourceProfileId
+    abstract val kind: SourceKind
+    abstract val capabilities: SourceCapabilities
 
-    suspend fun probe(): SourceStatus
+    abstract suspend fun probe(): SourceStatus
 
-    suspend fun listChildren(
+    final suspend fun listChildren(
         folder: FolderRef,
         cursor: PageCursor?,
         limit: Int = DEFAULT_PAGE_LIMIT,
+    ): Page<SourceEntry> {
+        validatePageLimit(limit)
+        return listChildrenPage(folder, cursor, limit)
+    }
+
+    protected abstract suspend fun listChildrenPage(
+        folder: FolderRef,
+        cursor: PageCursor?,
+        limit: Int,
     ): Page<SourceEntry>
 
-    suspend fun metadata(asset: AssetRef): PhotoMetadata
+    abstract suspend fun metadata(asset: AssetRef): PhotoMetadata
 
-    suspend fun open(asset: AssetRef): PhotoByteStream
+    abstract suspend fun open(asset: AssetRef): PhotoByteStream
 }
 
-fun validatePageLimit(limit: Int): Int {
+private fun validatePageLimit(limit: Int) {
     require(limit in MIN_PAGE_LIMIT..MAX_PAGE_LIMIT) {
         "Page limit must be between $MIN_PAGE_LIMIT and $MAX_PAGE_LIMIT"
     }
-    return limit
 }

@@ -62,6 +62,39 @@ class SourceFailureTest {
     }
 
     @Test
+    fun `every source failure route rejects common secret disclosures`() {
+        val failureFactories: List<(String) -> SourceFailure> =
+            listOf(
+                { detail -> SourceFailure.AuthenticationRequired(profileId, "probe", detail) },
+                { detail -> SourceFailure.PermissionRevoked(profileId, "list_children", detail) },
+                { detail -> SourceFailure.SourceUnavailable(profileId, "probe", detail) },
+                { detail -> SourceFailure.NotFound(profileId, "metadata", detail) },
+                { detail -> SourceFailure.UnsupportedFormat(profileId, "metadata", detail) },
+                { detail -> SourceFailure.CorruptContent(profileId, "open", detail) },
+                { detail -> SourceFailure.Timeout(profileId, "open", detail) },
+                { detail -> SourceFailure.ProtocolFailure(profileId, "list_children", detail) },
+            )
+        val unsafeDetails =
+            listOf(
+                "password is secret",
+                "Bearer abc",
+                "api key abc",
+                "token abc",
+                "credential abc",
+                "authorization abc",
+                "secret",
+            )
+
+        failureFactories.forEach { createFailure ->
+            unsafeDetails.forEach { unsafeDetail ->
+                assertThrows(IllegalArgumentException::class.java) {
+                    createFailure(unsafeDetail)
+                }
+            }
+        }
+    }
+
+    @Test
     fun `source failures reject blank operations and details`() {
         assertThrows(IllegalArgumentException::class.java) {
             SourceFailure.Timeout(profileId, " ")

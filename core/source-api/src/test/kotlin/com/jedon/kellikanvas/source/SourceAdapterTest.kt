@@ -12,6 +12,7 @@ import com.jedon.kellikanvas.model.SourceEntry
 import com.jedon.kellikanvas.model.SourceKind
 import com.jedon.kellikanvas.model.SourceProfileId
 import com.jedon.kellikanvas.model.SourceStatus
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.fail
 import org.junit.Test
@@ -37,9 +38,24 @@ class SourceAdapterTest {
         val adapter = RecordingAdapter()
 
         assertInvalidLimit(adapter, 0)
+        assertThat(adapter.recordedLimit).isNull()
         assertInvalidLimit(adapter, 501)
+        assertThat(adapter.recordedLimit).isNull()
         assertThat(adapter.listChildren(folder, PageCursor("next"), 1).items).isEmpty()
         assertThat(adapter.listChildren(folder, null, 500).items).isEmpty()
+    }
+
+    @Test
+    fun `adapter propagates cancellation from page loading unchanged`() = runTest {
+        val cancellation = CancellationException("cancelled")
+        val adapter = RecordingAdapter(pageFailure = cancellation)
+
+        try {
+            adapter.listChildren(folder, null)
+            fail("Expected cancellation")
+        } catch (caught: CancellationException) {
+            assertThat(caught).isSameInstanceAs(cancellation)
+        }
     }
 
     private suspend fun assertInvalidLimit(
@@ -54,7 +70,9 @@ class SourceAdapterTest {
         }
     }
 
-    private inner class RecordingAdapter : SourceAdapter {
+    private inner class RecordingAdapter(
+        private val pageFailure: Throwable? = null,
+    ) : SourceAdapter() {
         override val profileId = this@SourceAdapterTest.profileId
         override val kind = SourceKind.SMB
         override val capabilities = SourceCapabilities(supportsPaging = true)
@@ -62,12 +80,12 @@ class SourceAdapterTest {
 
         override suspend fun probe() = SourceStatus(available = true, summary = "Connected")
 
-        override suspend fun listChildren(
+        override suspend fun listChildrenPage(
             folder: FolderRef,
             cursor: PageCursor?,
             limit: Int,
         ): Page<SourceEntry> {
-            validatePageLimit(limit)
+            pageFailure?.let { throw it }
             recordedLimit = limit
             return Page(emptyList())
         }

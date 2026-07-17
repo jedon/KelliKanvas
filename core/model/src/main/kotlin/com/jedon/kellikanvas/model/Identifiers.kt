@@ -1,8 +1,8 @@
 package com.jedon.kellikanvas.model
 
 private val uriPattern = Regex("""(?i)\b[a-z][a-z0-9+.-]*://\S*""")
-private val secretAssignmentPattern =
-    Regex("""(?i)\b(?:token|password|credential|authorization)\s*[:=]\s*\S+""")
+private val sensitiveDiagnosticTermPattern =
+    Regex("""(?i)\b(?:bearer|password|tokens?|credentials?|authorization|secrets?)\b|\bapi[\s_-]*key\b""")
 
 @JvmInline
 value class SourceProfileId(
@@ -44,13 +44,19 @@ value class PageCursor(
     override fun toString(): String = "PageCursor(<redacted>)"
 }
 
+/**
+ * Rejects common high-risk disclosure forms as a defensive guard.
+ *
+ * This does not prove arbitrary text is safe. Callers must still provide curated diagnostics and
+ * must never pass endpoint or credential material.
+ */
 internal fun requirePrivacySafeText(
     value: String,
     label: String,
 ): String {
     require(value.isNotBlank()) { "$label must not be blank" }
     require(!uriPattern.containsMatchIn(value)) { "$label must not contain a URI" }
-    require(!secretAssignmentPattern.containsMatchIn(value)) {
+    require(!sensitiveDiagnosticTermPattern.containsMatchIn(value)) {
         "$label must not contain credential material"
     }
     return value

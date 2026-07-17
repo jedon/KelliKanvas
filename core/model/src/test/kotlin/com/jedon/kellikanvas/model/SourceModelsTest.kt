@@ -80,6 +80,41 @@ class SourceModelsTest {
     }
 
     @Test
+    fun `source status rejects common secret disclosures`() {
+        val unsafeSummaries =
+            listOf(
+                "password is secret",
+                "Bearer abc",
+                "api key abc",
+                "token abc",
+                "credential abc",
+                "authorization abc",
+                "secret",
+            )
+
+        unsafeSummaries.forEach { unsafeSummary ->
+            assertThrows(IllegalArgumentException::class.java) {
+                SourceStatus(available = false, summary = unsafeSummary)
+            }
+        }
+    }
+
+    @Test
+    fun `source status accepts approved safe summaries and protocol labels`() {
+        listOf("Connected", "Authentication required", "Source unavailable").forEach { summary ->
+            val status =
+                SourceStatus(
+                    available = true,
+                    summary = summary,
+                    negotiatedProtocol = "SMB 3.1.1",
+                )
+
+            assertThat(status.summary).isEqualTo(summary)
+            assertThat(status.negotiatedProtocol).isEqualTo("SMB 3.1.1")
+        }
+    }
+
+    @Test
     fun `model toString output never exposes URIs or version tokens`() {
         val uri = "https://private.test/photo.jpg"
         val secret = "credential-secret"
