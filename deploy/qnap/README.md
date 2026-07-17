@@ -210,25 +210,140 @@ links refer to the same verified inode until the temporary link is removed. A
 published version is immutable: never replace an existing final path. After a
 successful publication, regenerate the index.
 
-`SIGKILL` and a NAS reboot cannot run shell traps, so either can leave the
-dedicated per-version lock directory behind. If `mkdir "$LOCK"` reports a lock,
-first confirm that no publication or removal shell/session is operating on that
-exact `NAME`. Inspect the specific lock and process list; only after that manual
-confirmation, remove the empty dedicated lock with `rmdir`:
+`SIGKILL` and a NAS reboot cannot run shell traps. They can leave a locked
+version with a hidden publication temporary or quarantined APK while
+`index.html` reflects either the old or new state. If `mkdir "$LOCK"` reports a
+lock, run this conservative reconciliation on the NAS for exactly one version.
+It refuses ambiguous states before changing anything, requires interactive
+confirmation, reconciles the APK, regenerates the index, and removes the lock
+only after generation succeeds:
 
 ```sh
 set -eu
 CONTENT=/share/Public/KelliKanvas
 NAME=KelliKanvas-1.2.3.apk
+FINAL="$CONTENT/$NAME"
 LOCK="$CONTENT/.$NAME.lock"
+PUBLISH_TEMP=
+PUBLISH_COUNT=0
+QUARANTINE_DIR=
+QUARANTINE_APK=
+QUARANTINE_COUNT=0
+SEMVER_APK_PATTERN='^KelliKanvas-(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-(0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)(\.(0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?\.apk$'
 
-ls -ld "$LOCK"
+refuse_recovery() {
+  echo "Recovery refused: $*" >&2
+  echo "Lock retained for manual investigation: $LOCK" >&2
+  exit 1
+}
+
+printf '%s\n' "$NAME" | grep -Eq "$SEMVER_APK_PATTERN" ||
+  refuse_recovery "NAME is not strict KelliKanvas SemVer"
+test -d "$LOCK" && test ! -L "$LOCK" ||
+  refuse_recovery "exact lock is missing, not a directory, or a symlink"
+test -z "$(ls -A "$LOCK")" ||
+  refuse_recovery "exact lock directory contains unexpected entries"
+
+if [ -e "$FINAL" ] || [ -L "$FINAL" ]; then
+  test -f "$FINAL" && test ! -L "$FINAL" ||
+    refuse_recovery "FINAL exists but is not a regular non-symlink APK"
+  FINAL_PRESENT=1
+else
+  FINAL_PRESENT=0
+fi
+
+for CANDIDATE in "$CONTENT/.$NAME.publish."*; do
+  if [ ! -e "$CANDIDATE" ] && [ ! -L "$CANDIDATE" ]; then
+    continue
+  fi
+  PUBLISH_COUNT=$((PUBLISH_COUNT + 1))
+  test "$PUBLISH_COUNT" -eq 1 ||
+    refuse_recovery "multiple matching publication temporaries"
+  test -f "$CANDIDATE" && test ! -L "$CANDIDATE" ||
+    refuse_recovery "publication temporary has an unexpected type"
+  PUBLISH_TEMP="$CANDIDATE"
+done
+
+for CANDIDATE in "$CONTENT/.$NAME.quarantine."*; do
+  if [ ! -e "$CANDIDATE" ] && [ ! -L "$CANDIDATE" ]; then
+    continue
+  fi
+  QUARANTINE_COUNT=$((QUARANTINE_COUNT + 1))
+  test "$QUARANTINE_COUNT" -eq 1 ||
+    refuse_recovery "multiple matching quarantine paths"
+  test -d "$CANDIDATE" && test ! -L "$CANDIDATE" ||
+    refuse_recovery "quarantine path is not a regular directory"
+  test "$(ls -A "$CANDIDATE")" = "$NAME" ||
+    refuse_recovery "quarantine contains missing or unexpected entries"
+  test -f "$CANDIDATE/$NAME" && test ! -L "$CANDIDATE/$NAME" ||
+    refuse_recovery "quarantined APK has an unexpected type"
+  QUARANTINE_DIR="$CANDIDATE"
+  QUARANTINE_APK="$CANDIDATE/$NAME"
+done
+
+test "$PUBLISH_COUNT" -eq 0 || test "$QUARANTINE_COUNT" -eq 0 ||
+  refuse_recovery "publication temporary and quarantine both exist"
+test "$FINAL_PRESENT" -eq 0 || test "$QUARANTINE_COUNT" -eq 0 ||
+  refuse_recovery "FINAL and quarantine both exist"
+
+echo "Exact recovery state:"
+ls -lid "$LOCK"
+if [ "$FINAL_PRESENT" -eq 1 ]; then
+  ls -li "$FINAL"
+else
+  echo "FINAL is absent: $FINAL"
+fi
+if [ "$PUBLISH_COUNT" -eq 1 ]; then
+  ls -li "$PUBLISH_TEMP"
+  if [ "$FINAL_PRESENT" -eq 1 ]; then
+    TEMP_ID="$(stat -c '%d:%i' "$PUBLISH_TEMP")"
+    FINAL_ID="$(stat -c '%d:%i' "$FINAL")"
+    if [ "$TEMP_ID" = "$FINAL_ID" ]; then
+      echo "Publication temporary is another hard link to FINAL."
+    else
+      echo "Publication temporary is distinct from FINAL."
+    fi
+  fi
+fi
+if [ "$QUARANTINE_COUNT" -eq 1 ]; then
+  ls -lid "$QUARANTINE_DIR"
+  ls -li "$QUARANTINE_APK"
+fi
 ps
-# Confirm no live publication/removal process or session uses this exact NAME.
-rmdir "$LOCK"
+
+printf 'After checking all sessions/processes, type the exact NAME to reconcile: '
+IFS= read -r CONFIRMED_NAME ||
+  refuse_recovery "interactive confirmation was not read"
+test "$CONFIRMED_NAME" = "$NAME" ||
+  refuse_recovery "confirmation did not exactly match NAME"
+
+if [ "$QUARANTINE_COUNT" -eq 1 ]; then
+  mv "$QUARANTINE_APK" "$FINAL"
+  rmdir "$QUARANTINE_DIR"
+  FINAL_PRESENT=1
+fi
+
+if [ "$PUBLISH_COUNT" -eq 1 ]; then
+  rm "$PUBLISH_TEMP"
+fi
+
+CS="$(getcfg container-station Install_Path -f /etc/config/qpkg.conf)"
+test -x "$CS/bin/docker" ||
+  refuse_recovery "Container Station Docker is unavailable"
+"$CS/bin/docker" run --rm \
+  -v /share/Public/KelliKanvas:/content \
+  -v /share/Container/KelliKanvas/generate_apk_index.py:/app/generate.py:ro \
+  python:3.13-alpine@sha256:399babc8b49529dabfd9c922f2b5eea81d611e4512e3ed250d75bd2e7683f4b0 \
+  python /app/generate.py --directory /content ||
+  refuse_recovery "index regeneration failed after APK reconciliation"
+
+rmdir "$LOCK" ||
+  refuse_recovery "index is consistent but exact lock removal failed"
 ```
 
-Do not use a wildcard or recursive removal for lock recovery.
+If the procedure refuses or any command fails, leave the exact lock in place and
+investigate manually. Do not remove matching files with a wildcard, recursively
+delete a lock/quarantine, or use this as a general cleanup utility.
 
 ## Regenerate the index
 
