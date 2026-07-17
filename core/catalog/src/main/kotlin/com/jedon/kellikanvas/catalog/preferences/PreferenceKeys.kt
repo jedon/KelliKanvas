@@ -29,7 +29,7 @@ object PreferenceKeys {
     val presenceEnabled = booleanPreferencesKey("presence_enabled_v1")
     val brightnessMode = stringPreferencesKey("brightness_mode_v1")
     val reducedMotion = booleanPreferencesKey("reduced_motion_v1")
-    val lastHomeDestination = stringPreferencesKey("last_home_destination_v1")
+    val lastHomeControl = stringPreferencesKey("last_home_control_v1")
 
     val names: Set<String> =
         setOf(
@@ -55,7 +55,7 @@ object PreferenceKeys {
             presenceEnabled.name,
             brightnessMode.name,
             reducedMotion.name,
-            lastHomeDestination.name,
+            lastHomeControl.name,
         )
 
     init {

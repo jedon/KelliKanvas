@@ -8,7 +8,9 @@ import androidx.room.RoomDatabase
 @Database(
     entities = [
         SourceProfileEntity::class,
+        CatalogCollectionEntity::class,
         SelectedRootEntity::class,
+        SelectedRootFilterEntity::class,
         CatalogAssetEntity::class,
         PlaylistCycleEntity::class,
         PlaylistCycleItemEntity::class,
@@ -20,6 +22,8 @@ import androidx.room.RoomDatabase
 )
 abstract class KelliKanvasDatabase : RoomDatabase() {
     internal abstract fun roomSourceProfiles(): RoomSourceProfileDao
+
+    internal abstract fun roomCollections(): RoomCollectionDao
 
     internal abstract fun roomSelectedRoots(): RoomSelectedRootDao
 
@@ -36,8 +40,11 @@ abstract class KelliKanvasDatabase : RoomDatabase() {
     val sourceProfiles: SourceProfileDao by lazy {
         SourceProfileDao(roomSourceProfiles())
     }
+    val collections: CollectionDao by lazy {
+        CollectionDao(roomCollections())
+    }
     val selectedRoots: SelectedRootDao by lazy {
-        SelectedRootDao(roomSelectedRoots())
+        SelectedRootDao(this, roomSelectedRoots())
     }
     val catalogAssets: CatalogAssetDao by lazy {
         CatalogAssetDao(roomCatalogAssets())
@@ -54,15 +61,21 @@ abstract class KelliKanvasDatabase : RoomDatabase() {
     val slideshowSessions: SlideshowSessionDao by lazy {
         SlideshowSessionDao(roomSlideshowSessions())
     }
+    val cycleSnapshots: CycleSnapshotDao by lazy {
+        CycleSnapshotDao(this)
+    }
 }
 
 object KelliKanvasDatabaseFactory {
     const val DATABASE_NAME: String = "kellikanvas-catalog.db"
 
-    fun create(context: Context): KelliKanvasDatabase = Room.databaseBuilder(
+    fun create(
+        context: Context,
+        databaseName: String = DATABASE_NAME,
+    ): KelliKanvasDatabase = Room.databaseBuilder(
         context.applicationContext,
         KelliKanvasDatabase::class.java,
-        DATABASE_NAME,
+        databaseName,
     ).build()
 
     fun inMemory(context: Context): KelliKanvasDatabase = Room.inMemoryDatabaseBuilder(

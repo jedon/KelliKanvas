@@ -3,24 +3,25 @@ package com.jedon.kellikanvas.catalog.preferences
 import com.jedon.kellikanvas.model.AppPreferences
 import kotlinx.coroutines.flow.Flow
 
-enum class HomeDestination(
+enum class HomeControl(
     val stableRoute: String,
 ) {
-    COLLECTION("collection"),
-    SOURCES("sources"),
-    SLIDESHOW("slideshow"),
-    SETTINGS("settings"),
+    START_OR_RESUME("home/start-or-resume"),
+    COLLECTION("home/collection"),
+    APPEARANCE("home/appearance"),
+    PLAYBACK("home/playback"),
+    AMBIENT_AND_SYSTEM("home/ambient-and-system"),
     ;
 
     companion object {
-        fun fromStableRoute(route: String?): HomeDestination = entries.firstOrNull { it.stableRoute == route } ?: COLLECTION
+        fun fromStableRoute(route: String?): HomeControl = entries.firstOrNull { it.stableRoute == route } ?: START_OR_RESUME
     }
 }
 
 data class AppPreferencesState(
     val appPreferences: AppPreferences = AppPreferences(),
     val reducedMotion: Boolean = false,
-    val lastHomeDestination: HomeDestination = HomeDestination.COLLECTION,
+    val lastHomeControl: HomeControl = HomeControl.START_OR_RESUME,
 )
 
 interface AppPreferencesRepository {

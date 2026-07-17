@@ -19,12 +19,43 @@ internal interface RoomSourceProfileDao {
 }
 
 @Dao
+internal interface RoomCollectionDao {
+    @Upsert
+    suspend fun upsert(entity: CatalogCollectionEntity)
+
+    @Query("SELECT * FROM collections WHERE collection_id = :collectionId")
+    suspend fun get(collectionId: String): CatalogCollectionEntity?
+}
+
+@Dao
 internal interface RoomSelectedRootDao {
     @Upsert
     suspend fun upsert(entity: SelectedRootEntity)
 
-    @Query("SELECT * FROM selected_roots WHERE profile_id = :profileId ORDER BY object_id")
-    suspend fun list(profileId: String): List<SelectedRootEntity>
+    @Query(
+        "DELETE FROM selected_root_filters WHERE collection_id = :collectionId " +
+            "AND profile_id = :profileId AND object_id = :objectId",
+    )
+    suspend fun deleteFilters(
+        collectionId: String,
+        profileId: String,
+        objectId: String,
+    )
+
+    @Insert
+    suspend fun insertFilters(entities: List<SelectedRootFilterEntity>)
+
+    @Query(
+        "SELECT * FROM selected_roots WHERE collection_id = :collectionId " +
+            "ORDER BY profile_id, object_id",
+    )
+    suspend fun list(collectionId: String): List<SelectedRootEntity>
+
+    @Query(
+        "SELECT * FROM selected_root_filters WHERE collection_id = :collectionId " +
+            "ORDER BY profile_id, object_id, filter_value",
+    )
+    suspend fun listFilters(collectionId: String): List<SelectedRootFilterEntity>
 }
 
 @Dao
@@ -54,8 +85,8 @@ internal interface RoomCatalogAssetDao {
 
 @Dao
 internal interface RoomPlaylistCycleDao {
-    @Upsert
-    suspend fun upsert(entity: PlaylistCycleEntity)
+    @Insert
+    suspend fun insert(entity: PlaylistCycleEntity)
 
     @Query("SELECT * FROM playlist_cycles WHERE cycle_id = :cycleId")
     suspend fun get(cycleId: String): PlaylistCycleEntity?
@@ -69,6 +100,9 @@ internal interface RoomPlaylistCycleItemDao {
     @Insert
     suspend fun insert(entity: PlaylistCycleItemEntity)
 
+    @Insert
+    suspend fun insertAll(entities: List<PlaylistCycleItemEntity>)
+
     @Query("SELECT * FROM playlist_cycle_items WHERE cycle_id = :cycleId ORDER BY ordinal")
     suspend fun list(cycleId: String): List<PlaylistCycleItemEntity>
 }
@@ -77,6 +111,9 @@ internal interface RoomPlaylistCycleItemDao {
 internal interface RoomConsumedPortraitPartnerDao {
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insert(entity: ConsumedPortraitPartnerEntity)
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertAll(entities: List<ConsumedPortraitPartnerEntity>)
 
     @Query(
         "SELECT * FROM consumed_portrait_partners WHERE cycle_id = :cycleId " +

@@ -3,6 +3,7 @@ package com.jedon.kellikanvas.catalog
 import com.google.common.truth.Truth.assertThat
 import com.jedon.kellikanvas.model.AssetKey
 import com.jedon.kellikanvas.model.ProviderObjectId
+import com.jedon.kellikanvas.model.SourceKind
 import com.jedon.kellikanvas.model.SourceProfileId
 import kotlinx.coroutines.test.runTest
 import org.junit.After
@@ -30,7 +31,14 @@ class SlideshowStateTest {
 
     @Test
     fun `slideshow session round trips collection cycle ordinal and asset keys`() = runTest {
-        database.playlistCycles.upsert(PlaylistCycle("cycle-7", "living-room", 1))
+        prepareSourceAndCollection()
+        database.catalogAssets.upsertAll(
+            listOf(catalogAsset("current"), catalogAsset("last")),
+        )
+        database.playlistCycles.insert(PlaylistCycle("cycle-7", "living-room", "seed", 1))
+        database.playlistCycleItems.insert(
+            PlaylistCycleItem("cycle-7", 3, assetKey("current")),
+        )
         val session =
             SlideshowSession(
                 collectionId = "living-room",
@@ -48,8 +56,12 @@ class SlideshowStateTest {
     @Test
     fun `consumed portrait partners are unique and round trip`() = runTest {
         val partner = ConsumedPortraitPartner("cycle-7", assetKey("partner"))
+        prepareSourceAndCollection()
         database.catalogAssets.upsert(catalogAsset("partner"))
-        database.playlistCycles.upsert(PlaylistCycle("cycle-7", "living-room", 1))
+        database.playlistCycles.insert(PlaylistCycle("cycle-7", "living-room", "seed", 1))
+        database.playlistCycleItems.insert(
+            PlaylistCycleItem("cycle-7", 0, assetKey("partner")),
+        )
 
         database.consumedPortraitPartners.insert(partner)
         database.consumedPortraitPartners.insert(partner)
@@ -85,6 +97,18 @@ class SlideshowStateTest {
     }
 
     private fun assetKey(objectId: String) = AssetKey(SourceProfileId("source-1"), ProviderObjectId(objectId))
+
+    private suspend fun prepareSourceAndCollection() {
+        database.sourceProfiles.upsert(
+            SourceProfile(
+                SourceProfileId("source-1"),
+                SourceKind.SAF,
+                "USB",
+                createdAtMillis = 1,
+            ),
+        )
+        database.collections.upsert(CatalogCollection("living-room", "Living Room"))
+    }
 
     private fun catalogAsset(objectId: String) = CatalogAsset(
         key = assetKey(objectId),

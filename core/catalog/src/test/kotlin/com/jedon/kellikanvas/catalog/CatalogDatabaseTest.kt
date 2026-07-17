@@ -44,34 +44,45 @@ class CatalogDatabaseTest {
             )
         val root =
             SelectedRoot(
+                collectionId = "collection-1",
                 profileId = profile.id,
                 objectId = ProviderObjectId("photos/holidays"),
-                recursive = true,
+                displayLabel = "Holidays",
+                includeDescendants = true,
             )
 
         database.sourceProfiles.upsert(profile)
-        database.selectedRoots.upsert(root)
+        database.collections.upsert(CatalogCollection("collection-1", "Collection"))
+        database.selectedRoots.replace(root)
 
         assertThat(database.sourceProfiles.get(profile.id)).isEqualTo(profile)
-        assertThat(database.selectedRoots.list(profile.id)).containsExactly(root)
+        assertThat(database.selectedRoots.list("collection-1")).containsExactly(root)
     }
 
     @Test
     fun `deleting a source cascades its selected roots`() = runTest {
         val profile = sourceProfile()
         database.sourceProfiles.upsert(profile)
-        database.selectedRoots.upsert(
-            SelectedRoot(profile.id, ProviderObjectId("root"), recursive = false),
+        database.collections.upsert(CatalogCollection("collection-1", "Collection"))
+        database.selectedRoots.replace(
+            SelectedRoot(
+                "collection-1",
+                profile.id,
+                ProviderObjectId("root"),
+                "Root",
+                includeDescendants = false,
+            ),
         )
 
         database.sourceProfiles.delete(profile.id)
 
-        assertThat(database.selectedRoots.list(profile.id)).isEmpty()
+        assertThat(database.selectedRoots.list("collection-1")).isEmpty()
     }
 
     @Test
     fun `catalog asset metadata upsert replaces mutable metadata`() = runTest {
         val key = assetKey("photo-1")
+        database.sourceProfiles.upsert(sourceProfile())
         database.catalogAssets.upsert(
             CatalogAsset(key, "image/jpeg", "old.jpg", 100, 200, 1, 2, "v1"),
         )
@@ -87,8 +98,9 @@ class CatalogDatabaseTest {
     fun `cycle ordinals and assets are unique within a cycle`() = runTest {
         val first = catalogAsset("photo-1")
         val second = catalogAsset("photo-2")
+        prepareCollection()
         database.catalogAssets.upsertAll(listOf(first, second))
-        database.playlistCycles.upsert(PlaylistCycle("cycle-1", "collection-1", 20))
+        database.playlistCycles.insert(PlaylistCycle("cycle-1", "collection-1", "seed", 20))
         database.playlistCycleItems.insert(
             PlaylistCycleItem("cycle-1", 0, first.key),
         )
@@ -113,8 +125,9 @@ class CatalogDatabaseTest {
     @Test
     fun `catalog assets cannot be removed while an active cycle references them`() = runTest {
         val asset = catalogAsset("photo-1")
+        prepareCollection()
         database.catalogAssets.upsert(asset)
-        database.playlistCycles.upsert(PlaylistCycle("cycle-1", "collection-1", 20))
+        database.playlistCycles.insert(PlaylistCycle("cycle-1", "collection-1", "seed", 20))
         database.playlistCycleItems.insert(PlaylistCycleItem("cycle-1", 0, asset.key))
 
         val failure = runCatching { database.catalogAssets.delete(asset.key) }.exceptionOrNull()
@@ -129,6 +142,11 @@ class CatalogDatabaseTest {
         displayName = "USB",
         createdAtMillis = 1,
     )
+
+    private suspend fun prepareCollection() {
+        database.sourceProfiles.upsert(sourceProfile())
+        database.collections.upsert(CatalogCollection("collection-1", "Collection"))
+    }
 
     private fun assetKey(objectId: String) = AssetKey(SourceProfileId("source-1"), ProviderObjectId(objectId))
 

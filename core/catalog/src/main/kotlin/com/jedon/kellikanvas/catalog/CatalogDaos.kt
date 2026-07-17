@@ -1,5 +1,6 @@
 package com.jedon.kellikanvas.catalog
 
+import androidx.room.withTransaction
 import com.jedon.kellikanvas.model.AssetKey
 import com.jedon.kellikanvas.model.ProviderObjectId
 import com.jedon.kellikanvas.model.SourceKind
@@ -15,12 +16,40 @@ class SourceProfileDao internal constructor(
     suspend fun delete(id: SourceProfileId) = roomDao.delete(id.value)
 }
 
+class CollectionDao internal constructor(
+    private val roomDao: RoomCollectionDao,
+) {
+    suspend fun upsert(collection: CatalogCollection) = roomDao.upsert(collection.toEntity())
+
+    suspend fun get(collectionId: String): CatalogCollection? = roomDao.get(collectionId)?.toDomain()
+}
+
 class SelectedRootDao internal constructor(
+    private val database: KelliKanvasDatabase,
     private val roomDao: RoomSelectedRootDao,
 ) {
-    suspend fun upsert(root: SelectedRoot) = roomDao.upsert(root.toEntity())
+    suspend fun replace(root: SelectedRoot) {
+        database.withTransaction {
+            val entity = root.toEntity()
+            roomDao.upsert(entity)
+            roomDao.deleteFilters(entity.collectionId, entity.profileId, entity.objectId)
+            roomDao.insertFilters(root.toFilterEntities())
+        }
+    }
 
-    suspend fun list(profileId: SourceProfileId): List<SelectedRoot> = roomDao.list(profileId.value).map(SelectedRootEntity::toDomain)
+    suspend fun list(collectionId: String): List<SelectedRoot> {
+        val filters =
+            roomDao.listFilters(collectionId).groupBy {
+                RootKey(it.collectionId, it.profileId, it.objectId)
+            }
+        return roomDao.list(collectionId).map { entity ->
+            entity.toDomain(
+                filters[RootKey(entity.collectionId, entity.profileId, entity.objectId)]
+                    .orEmpty()
+                    .mapTo(linkedSetOf(), SelectedRootFilterEntity::filterValue),
+            )
+        }
+    }
 }
 
 class CatalogAssetDao internal constructor(
@@ -38,7 +67,7 @@ class CatalogAssetDao internal constructor(
 class PlaylistCycleDao internal constructor(
     private val roomDao: RoomPlaylistCycleDao,
 ) {
-    suspend fun upsert(cycle: PlaylistCycle) = roomDao.upsert(cycle.toEntity())
+    suspend fun insert(cycle: PlaylistCycle) = roomDao.insert(cycle.toEntity())
 
     suspend fun get(cycleId: String): PlaylistCycle? = roomDao.get(cycleId)?.toDomain()
 
@@ -71,13 +100,135 @@ class SlideshowSessionDao internal constructor(
     suspend fun delete(collectionId: String) = roomDao.delete(collectionId)
 }
 
-private fun SourceProfile.toEntity() = SourceProfileEntity(id.value, kind.name, displayName, createdAtMillis)
+class CycleSnapshotDao internal constructor(
+    private val database: KelliKanvasDatabase,
+) {
+    suspend fun persist(snapshot: CycleSnapshot) {
+        database.withTransaction {
+            database.roomPlaylistCycles().insert(snapshot.cycle.toEntity())
+            database.roomPlaylistCycleItems().insertAll(
+                snapshot.items.map(PlaylistCycleItem::toEntity),
+            )
+            database.roomConsumedPortraitPartners().insertAll(
+                snapshot.consumedPartners.map(ConsumedPortraitPartner::toEntity),
+            )
+            database.roomSlideshowSessions().upsert(snapshot.session.toEntity())
+        }
+    }
+}
 
-private fun SourceProfileEntity.toDomain() = SourceProfile(SourceProfileId(profileId), SourceKind.valueOf(sourceKind), displayName, createdAtMillis)
+private data class RootKey(
+    val collectionId: String,
+    val profileId: String,
+    val objectId: String,
+)
 
-private fun SelectedRoot.toEntity() = SelectedRootEntity(profileId.value, objectId.value, recursive)
+private fun SourceProfile.toEntity() = SourceProfileEntity(
+    profileId = id.value,
+    sourceKindCode = kind.toStableCode(),
+    displayName = displayName,
+    statusCode = status.toStableCode(),
+    lastSuccessfulRefreshMillis = lastSuccessfulRefreshMillis,
+    createdAtMillis = createdAtMillis,
+)
 
-private fun SelectedRootEntity.toDomain() = SelectedRoot(SourceProfileId(profileId), ProviderObjectId(objectId), recursive)
+private fun SourceProfileEntity.toDomain() = SourceProfile(
+    id = SourceProfileId(profileId),
+    kind = sourceKindFromStableCode(sourceKindCode),
+    displayName = displayName,
+    status = sourceStatusFromStableCode(statusCode),
+    lastSuccessfulRefreshMillis = lastSuccessfulRefreshMillis,
+    createdAtMillis = createdAtMillis,
+)
+
+private fun SourceProfileKind.toStableCode(): String = when (this) {
+    is SourceProfileKind.Unknown -> stableCode
+    is SourceProfileKind.Known ->
+        when (value) {
+            SourceKind.DLNA -> "dlna_v1"
+            SourceKind.SMB -> "smb_v1"
+            SourceKind.SAF -> "saf_v1"
+            SourceKind.HTTP -> "http_v1"
+        }
+}
+
+private fun sourceKindFromStableCode(code: String): SourceProfileKind = when (code) {
+    "dlna_v1" -> SourceProfileKind.Known(SourceKind.DLNA)
+    "smb_v1" -> SourceProfileKind.Known(SourceKind.SMB)
+    "saf_v1" -> SourceProfileKind.Known(SourceKind.SAF)
+    "http_v1" -> SourceProfileKind.Known(SourceKind.HTTP)
+    else -> SourceProfileKind.Unknown(code)
+}
+
+private fun SourceProfileStatus.toStableCode(): String = when (this) {
+    SourceProfileStatus.UNKNOWN -> "unknown"
+    SourceProfileStatus.AVAILABLE -> "available"
+    SourceProfileStatus.UNAVAILABLE -> "unavailable"
+    SourceProfileStatus.REQUIRES_REPAIR -> "requires_repair"
+}
+
+private fun sourceStatusFromStableCode(code: String): SourceProfileStatus = when (code) {
+    "available" -> SourceProfileStatus.AVAILABLE
+    "unavailable" -> SourceProfileStatus.UNAVAILABLE
+    "requires_repair" -> SourceProfileStatus.REQUIRES_REPAIR
+    else -> SourceProfileStatus.UNKNOWN
+}
+
+private fun CatalogCollection.toEntity() = CatalogCollectionEntity(
+    collectionId = id,
+    label = label,
+    indexStatusCode = indexStatus.toStableCode(),
+    lastIndexedAtMillis = lastIndexedAtMillis,
+)
+
+private fun CatalogCollectionEntity.toDomain() = CatalogCollection(
+    id = collectionId,
+    label = label,
+    indexStatus = collectionIndexStatusFromStableCode(indexStatusCode),
+    lastIndexedAtMillis = lastIndexedAtMillis,
+)
+
+private fun CollectionIndexStatus.toStableCode(): String = when (this) {
+    CollectionIndexStatus.NOT_INDEXED -> "not_indexed"
+    CollectionIndexStatus.INDEXING -> "indexing"
+    CollectionIndexStatus.READY -> "ready"
+    CollectionIndexStatus.FAILED -> "failed"
+    CollectionIndexStatus.UNKNOWN -> "unknown"
+}
+
+private fun collectionIndexStatusFromStableCode(code: String): CollectionIndexStatus = when (code) {
+    "not_indexed" -> CollectionIndexStatus.NOT_INDEXED
+    "indexing" -> CollectionIndexStatus.INDEXING
+    "ready" -> CollectionIndexStatus.READY
+    "failed" -> CollectionIndexStatus.FAILED
+    else -> CollectionIndexStatus.UNKNOWN
+}
+
+private fun SelectedRoot.toEntity() = SelectedRootEntity(
+    collectionId = collectionId,
+    profileId = profileId.value,
+    objectId = objectId.value,
+    displayLabel = displayLabel,
+    includeDescendants = includeDescendants,
+)
+
+private fun SelectedRoot.toFilterEntities(): List<SelectedRootFilterEntity> = fileTypeFilters.map { filter ->
+    SelectedRootFilterEntity(
+        collectionId = collectionId,
+        profileId = profileId.value,
+        objectId = objectId.value,
+        filterValue = filter,
+    )
+}
+
+private fun SelectedRootEntity.toDomain(filters: Set<String>) = SelectedRoot(
+    collectionId = collectionId,
+    profileId = SourceProfileId(profileId),
+    objectId = ProviderObjectId(objectId),
+    displayLabel = displayLabel,
+    includeDescendants = includeDescendants,
+    fileTypeFilters = filters,
+)
 
 private fun CatalogAsset.toEntity() = CatalogAssetEntity(
     profileId = key.profileId.value,
@@ -102,9 +253,9 @@ private fun CatalogAssetEntity.toDomain() = CatalogAsset(
     versionToken = versionTag,
 )
 
-private fun PlaylistCycle.toEntity() = PlaylistCycleEntity(id, collectionId, createdAtMillis)
+private fun PlaylistCycle.toEntity() = PlaylistCycleEntity(id, collectionId, shuffleSeed, createdAtMillis)
 
-private fun PlaylistCycleEntity.toDomain() = PlaylistCycle(cycleId, collectionId, createdAtMillis)
+private fun PlaylistCycleEntity.toDomain() = PlaylistCycle(cycleId, collectionId, shuffleSeed, createdAtMillis)
 
 private fun PlaylistCycleItem.toEntity() = PlaylistCycleItemEntity(
     cycleId,
