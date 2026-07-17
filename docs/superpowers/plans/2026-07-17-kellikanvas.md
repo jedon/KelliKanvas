@@ -6,7 +6,7 @@
 
 **Architecture:** Compose for TV provides setup, browsing, settings, diagnostics, and overlays. Protocol-specific adapters implement one source contract, a metadata-only Room catalog builds immutable playlist cycles, and a bounded image pipeline renders through a native-resolution `SurfaceView`. Ambient and update behavior use pure policies behind Android adapters so unsupported hardware and private distribution degrade safely.
 
-**Tech Stack:** Kotlin 2.4.10, Android Gradle Plugin 9.3.0, Gradle 9.6.1, JDK 17, compile/target SDK 37, min SDK 28, Compose BOM 2026.06.01, Compose for TV 1.1.0, coroutines, Room 2.8.4, DataStore 1.2.1, OkHttp 5, SMBJ 0.14.0, AndroidX ExifInterface, Android Keystore, JUnit, Robolectric, Compose UI tests, MockWebServer, Testcontainers/Samba, GitHub Actions, nginx on QNAP.
+**Tech Stack:** Kotlin 2.4.10, Android Gradle Plugin 9.3.0, Gradle 9.5.0, JDK 17, compile/target SDK 37, min SDK 28, Compose BOM 2026.06.01, Compose for TV 1.1.0, coroutines, Room 2.8.4, DataStore 1.2.1, OkHttp 5, SMBJ 0.14.0, AndroidX ExifInterface, Android Keystore, JUnit, Robolectric, Compose UI tests, MockWebServer, Testcontainers/Samba, GitHub Actions, nginx on QNAP.
 
 ---
 
@@ -78,15 +78,15 @@ $env:PATH += ";$env:ANDROID_HOME\platform-tools"
 
 The current machine has JDK 25 but no Android SDK, ADB, or Gradle. Install Android Studio or command-line tools, SDK Platform 37, Build Tools 36.0.0+, and platform-tools before local compilation. CI remains the reproducible fallback.
 
-- [ ] **Step 2: Generate the Gradle 9.6.1 wrapper**
+- [ ] **Step 2: Generate the Gradle 9.5.0 wrapper**
 
 ```powershell
-Invoke-WebRequest https://services.gradle.org/distributions/gradle-9.6.1-bin.zip -OutFile "$env:TEMP\gradle-9.6.1-bin.zip"
-Expand-Archive "$env:TEMP\gradle-9.6.1-bin.zip" "$env:TEMP\gradle-9.6.1" -Force
-& "$env:TEMP\gradle-9.6.1\gradle-9.6.1\bin\gradle.bat" wrapper --gradle-version 9.6.1 --distribution-type bin
+Invoke-WebRequest https://services.gradle.org/distributions/gradle-9.5.0-bin.zip -OutFile "$env:TEMP\gradle-9.5.0-bin.zip"
+Expand-Archive "$env:TEMP\gradle-9.5.0-bin.zip" "$env:TEMP\gradle-9.5.0" -Force
+& "$env:TEMP\gradle-9.5.0\gradle-9.5.0\bin\gradle.bat" wrapper --gradle-version 9.5.0 --distribution-type bin
 ```
 
-Expected: `gradlew.bat --version` reports Gradle 9.6.1.
+Expected: `gradlew.bat --version` reports Gradle 9.5.0.
 
 - [ ] **Step 3: Pin the dependency catalog**
 

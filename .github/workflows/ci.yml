@@ -43,7 +43,7 @@ jobs:
         run: ./gradlew -p build-logic test --stacktrace
 
       - name: Check and assemble
-        run: ./gradlew ktlintCheck lintDebug testDebugUnitTest assembleDebug --stacktrace
+        run: ./gradlew ktlintCheck lintDebug testDebugUnitTest assembleDebug assembleDebugAndroidTest --stacktrace
 
       - name: Upload debug APK
         if: success()
