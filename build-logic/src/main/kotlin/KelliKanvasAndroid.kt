@@ -7,7 +7,12 @@ internal const val KELLIKANVAS_MIN_SDK = 28
 internal const val KELLIKANVAS_TARGET_SDK = 37
 
 internal fun ApplicationExtension.configureKelliKanvasApplication() {
-    compileSdk = KELLIKANVAS_COMPILE_SDK
+    compileSdk {
+        version =
+            release(KELLIKANVAS_COMPILE_SDK) {
+                minorApiLevel = 0
+            }
+    }
 
     defaultConfig {
         minSdk = KELLIKANVAS_MIN_SDK
@@ -27,7 +32,12 @@ internal fun ApplicationExtension.configureKelliKanvasApplication() {
 }
 
 internal fun LibraryExtension.configureKelliKanvasLibrary() {
-    compileSdk = KELLIKANVAS_COMPILE_SDK
+    compileSdk {
+        version =
+            release(KELLIKANVAS_COMPILE_SDK) {
+                minorApiLevel = 0
+            }
+    }
 
     defaultConfig {
         minSdk = KELLIKANVAS_MIN_SDK

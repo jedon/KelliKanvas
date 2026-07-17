@@ -8,7 +8,7 @@ with JDK 17.
 
 Install Android Studio or the Android command-line tools, then install:
 
-- Android SDK Platform 37
+- Android SDK Platform 37.0
 - Android SDK Build Tools 36.0.0 or newer
 - Android SDK Platform-Tools
 
@@ -25,7 +25,7 @@ Confirm that the expected tools are selected:
 ```powershell
 java -version
 adb version
-Test-Path "$env:ANDROID_HOME\platforms\android-37\android.jar"
+Test-Path "$env:ANDROID_HOME\platforms\android-37.0\android.jar"
 ```
 
 `java -version` must report Java 17 and the SDK check must report `True`.
@@ -46,5 +46,5 @@ Run these commands from the repository root:
 
 The wrapper version must be Gradle 9.4.1. The final command performs the same
 smoke checks as continuous integration. Android compilation requires JDK 17
-and SDK Platform 37; GitHub Actions is the reproducible fallback when either
+and SDK Platform 37.0; GitHub Actions is the reproducible fallback when either
 is unavailable locally.
