@@ -12,6 +12,7 @@
 
 # Package Files #
 *.jar
+!gradle/wrapper/gradle-wrapper.jar
 *.war
 *.nar
 *.ear
@@ -34,3 +35,23 @@ replay_pid*
 .env
 .env.*
 !.env.example
+
+# Android and Gradle
+.gradle/
+**/build/
+local.properties
+captures/
+*.apk
+*.aab
+
+# Signing and release output
+*.jks
+*.keystore
+keystore.properties
+dist/
+
+# IDE and OS files
+.idea/
+*.iml
+.DS_Store
+Thumbs.db
