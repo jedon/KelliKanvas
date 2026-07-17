@@ -31,7 +31,13 @@ jobs:
         uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a # v4
 
       - name: Install Android SDK 37.0
-        run: sdkmanager "platforms;android-37.0" "build-tools;36.0.0" "platform-tools"
+        run: |
+          "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" \
+            "platforms;android-37.0" \
+            "build-tools;36.0.0" \
+            "platform-tools"
+          test -f "$ANDROID_SDK_ROOT/platforms/android-37.0/android.jar"
+          test -f "$ANDROID_SDK_ROOT/build-tools/36.0.0/aapt2"
 
       - name: Test convention plugins
         run: ./gradlew -p build-logic test --stacktrace
