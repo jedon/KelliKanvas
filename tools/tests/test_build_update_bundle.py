@@ -14,10 +14,15 @@ class BuildUpdateBundleTest(unittest.TestCase):
             encoding="utf-8"
         )
         verify_job = workflow.split("\n  verify:", 1)[1].split("\n  build-unsigned:", 1)[0]
+        device_job = workflow.split("\n  device-security:", 1)[1].split("\n  build-unsigned:", 1)[0]
         build_job = workflow.split("\n  build-unsigned:", 1)[1].split("\n  apk-sign:", 1)[0]
         apk_job = workflow.split("\n  apk-sign:", 1)[1].split("\n  prepare-update:", 1)[0]
         metadata_job = workflow.split("\n  metadata-sign:", 1)[1]
         self.assertIn(":platform:update:assembleDebugAndroidTest", verify_job)
+        self.assertIn(":platform:update:connectedDebugAndroidTest", device_job)
+        self.assertIn("system-images;android-34;", device_job)
+        self.assertIn("needs: device-security", build_job)
+        self.assertIn("--dependency-verification strict", verify_job + device_job + build_job)
         self.assertIn("metadata-pins.txt", build_job)
         self.assertIn("BuildConfig.java", build_job)
         self.assertIn("KELLIKANVAS_KEYSTORE_BASE64", apk_job)
@@ -29,6 +34,21 @@ class BuildUpdateBundleTest(unittest.TestCase):
         self.assertIn('--key-id "$METADATA_KEY_ID"', metadata_job)
         self.assertNotIn("KELLIKANVAS_KEYSTORE", metadata_job)
         self.assertNotIn("gradlew", metadata_job)
+        sign_index = metadata_job.index("openssl dgst -sha256 -sign")
+        destroy_index = metadata_job.index('destroy_secret "$metadata_key"', sign_index)
+        repository_python_index = metadata_job.index("python -", sign_index)
+        self.assertLess(sign_index, destroy_index)
+        self.assertLess(destroy_index, repository_python_index)
+        self.assertNotIn("python", metadata_job[sign_index:destroy_index])
+        action_lines = [line.strip() for line in workflow.splitlines() if line.strip().startswith("uses:")]
+        self.assertTrue(action_lines)
+        for line in action_lines:
+            self.assertRegex(line, r"^uses: [^@\s]+@[0-9a-f]{40}(?:\s+#.*)?$")
+        verification = (
+            Path(__file__).resolve().parents[2] / "gradle/verification-metadata.xml"
+        ).read_text(encoding="utf-8")
+        self.assertIn("<verify-metadata>true</verify-metadata>", verification)
+        self.assertIn("<sha256 value=", verification)
 
     def test_verifies_tools_and_writes_deterministic_versioned_bundle(self):
         with tempfile.TemporaryDirectory() as temporary:
