@@ -58,11 +58,7 @@ class DlnaSourceAdapter(
     private val selector: DlnaResourceSelector =
         DlnaResourceSelector(setOf("image/jpeg", "image/png", "image/webp", "image/gif", "image/heic"), 3840, 2160),
 ) : SourceAdapter() {
-    private val cursorStates =
-        object : LinkedHashMap<String, CursorState>(16, 0.75f, true) {
-            override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, CursorState>?): Boolean = size >
-                MAX_ACTIVE_CURSORS
-        }
+    private val cursorStates = LinkedHashMap<String, CursorRecord>(16, 0.75f, true)
 
     override val profileId: SourceProfileId = profile.id
     override val kind: SourceKind = SourceKind.DLNA
@@ -91,29 +87,37 @@ class DlnaSourceAdapter(
         limit: Int,
     ): Page<SourceEntry> = normalize("list") {
         val objectId = decodeStableId(folder.objectId)
-        val cursorState = consumeCursor(cursor)
-        val start = cursorState.startingIndex
-        val page = backend.browse(objectId, start, limit)
-        val nextIndex = page.validateForRequest(start, limit)
-        val pageIds = page.objects.map(DlnaObject::stableId)
-        if (pageIds.any(cursorState.seenObjectIds::contains)) {
-            throw DlnaProtocolException("ContentDirectory repeated an object across pages")
-        }
-        val seenObjectIds = cursorState.seenObjectIds + pageIds
-        if (seenObjectIds.size > MAX_TRACKED_PAGING_OBJECTS) {
-            throw DlnaProtocolException("ContentDirectory paging identity limit exceeded")
-        }
-        val entries = page.objects.mapNotNull(::toEntry)
-        val hasNext =
-            if (page.totalMatches == 0) {
-                page.numberReturned == limit
-            } else {
-                nextIndex < page.totalMatches
+        val lease = acquireCursor(cursor)
+        var committed = false
+        try {
+            val start = lease.state.startingIndex
+            val page = backend.browse(objectId, start, limit)
+            val nextIndex = page.validateForRequest(start, limit)
+            val pageIds = page.objects.map(DlnaObject::stableId)
+            if (pageIds.any(lease.state.seenObjectIds::contains)) {
+                throw DlnaProtocolException("ContentDirectory repeated an object across pages")
             }
-        Page(
-            items = entries,
-            nextCursor = if (hasNext) registerCursor(nextIndex, seenObjectIds) else null,
-        )
+            val seenObjectIds = lease.state.seenObjectIds + pageIds
+            if (seenObjectIds.size > MAX_TRACKED_PAGING_OBJECTS) {
+                throw DlnaProtocolException("ContentDirectory paging identity limit exceeded")
+            }
+            val entries = page.objects.mapNotNull(::toEntry)
+            val hasNext =
+                if (page.totalMatches == 0) {
+                    page.numberReturned > 0
+                } else {
+                    nextIndex < page.totalMatches
+                }
+            val nextCursor =
+                transitionCursor(
+                    lease,
+                    if (hasNext) CursorState(nextIndex, seenObjectIds) else null,
+                )
+            committed = true
+            Page(items = entries, nextCursor = nextCursor)
+        } finally {
+            if (!committed) releaseCursor(lease)
+        }
     }
 
     override suspend fun metadataFor(asset: AssetRef): PhotoMetadata = normalize("metadata") {
@@ -154,22 +158,51 @@ class DlnaSourceAdapter(
         return id.value.substring(prefix.length)
     }
 
-    private fun consumeCursor(cursor: PageCursor?): CursorState {
-        if (cursor == null) return CursorState(0, emptySet())
+    private fun acquireCursor(cursor: PageCursor?): CursorLease {
+        if (cursor == null) return CursorLease(null, CursorState(0, emptySet()), null)
         return synchronized(cursorStates) {
-            cursorStates.remove(cursor.value)
-        } ?: throw DlnaProtocolException("Invalid or repeated DLNA page cursor")
+            val record =
+                cursorStates[cursor.value]
+                    ?: throw DlnaProtocolException("Invalid or repeated DLNA page cursor")
+            if (record.inUse) {
+                throw DlnaProtocolException("DLNA page cursor is already in use")
+            }
+            record.inUse = true
+            CursorLease(cursor.value, record.state, record)
+        }
     }
 
-    private fun registerCursor(
-        startingIndex: Int,
-        seenObjectIds: Set<String>,
-    ): PageCursor {
-        val token = UUID.randomUUID().toString()
-        synchronized(cursorStates) {
-            cursorStates[token] = CursorState(startingIndex, seenObjectIds)
+    private fun transitionCursor(
+        lease: CursorLease,
+        nextState: CursorState?,
+    ): PageCursor? = synchronized(cursorStates) {
+        if (lease.token != null) {
+            if (cursorStates[lease.token] !== lease.record || lease.record?.inUse != true) {
+                throw DlnaProtocolException("DLNA page cursor state changed")
+            }
+            cursorStates.remove(lease.token)
         }
-        return PageCursor(token)
+        if (nextState == null) return@synchronized null
+        while (cursorStates.size >= MAX_ACTIVE_CURSORS) {
+            val evictable = cursorStates.entries.firstOrNull { !it.value.inUse }
+                ?: throw DlnaProtocolException("Too many concurrent DLNA page cursors")
+            cursorStates.remove(evictable.key)
+        }
+        var token: String
+        do {
+            token = UUID.randomUUID().toString()
+        } while (cursorStates.containsKey(token))
+        cursorStates[token] = CursorRecord(nextState)
+        PageCursor(token)
+    }
+
+    private fun releaseCursor(lease: CursorLease) {
+        val token = lease.token ?: return
+        synchronized(cursorStates) {
+            if (cursorStates[token] === lease.record) {
+                lease.record?.inUse = false
+            }
+        }
     }
 
     private suspend fun <T> normalize(
@@ -231,6 +264,17 @@ class DlnaSourceAdapter(
     private data class CursorState(
         val startingIndex: Int,
         val seenObjectIds: Set<String>,
+    )
+
+    private class CursorRecord(
+        val state: CursorState,
+        var inUse: Boolean = false,
+    )
+
+    private data class CursorLease(
+        val token: String?,
+        val state: CursorState,
+        val record: CursorRecord?,
     )
 }
 

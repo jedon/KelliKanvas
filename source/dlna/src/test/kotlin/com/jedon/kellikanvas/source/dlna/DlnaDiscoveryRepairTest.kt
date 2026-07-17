@@ -11,36 +11,63 @@ class DlnaDiscoveryRepairTest {
     @Test
     fun `setup derives complete profile and rejects mismatched description UDN`() = runTest {
         val wrong = device("uuid:advertised-wrong", "http://192.168.50.10/wrong.xml")
-        val qnap = device("uuid:qnap-captured", "http://192.168.50.20:8200/root.xml")
+        val qnap = device("uuid:qnap-representative", "http://192.168.50.20:8200/root.xml")
         val discovery =
             DlnaProfileDiscovery(
                 discover = { listOf(wrong, qnap) },
                 loadDescription = { uri ->
                     if (uri == wrong.location) {
-                        fixture("dlna/twonky-description.xml")
+                        fixture("dlna/twonky-representative-description.xml")
                     } else {
-                        fixture("dlna/qnap-description.xml")
+                        fixture("dlna/qnap-representative-description.xml")
                     }
                 },
             )
 
-        val profiles = discovery.setup(SourceProfileId("profile"))
+        val profiles = discovery.setup()
 
         assertThat(profiles).hasSize(1)
-        assertThat(profiles.single().serverUdn).isEqualTo("uuid:qnap-captured")
+        assertThat(profiles.single().serverUdn).isEqualTo("uuid:qnap-representative")
         assertThat(profiles.single().descriptionLocation).isEqualTo(qnap.location)
         assertThat(profiles.single().controlUrl).isEqualTo(URI("http://192.168.50.20:8200/base/control/content"))
         assertThat(profiles.single().contentDirectoryVersion).isEqualTo(2)
     }
 
     @Test
+    fun `multi-device setup derives distinct stable profile IDs from UDN`() = runTest {
+        val qnap = device("uuid:qnap-representative", "http://192.168.50.20:8200/root.xml")
+        val twonky = device("uuid:twonky-representative", "http://192.168.50.30:9000/desc.xml")
+        val descriptions =
+            mapOf(
+                qnap.location to fixture("dlna/qnap-representative-description.xml"),
+                twonky.location to fixture("dlna/twonky-representative-description.xml"),
+            )
+
+        val first =
+            DlnaProfileDiscovery(
+                discover = { listOf(qnap, twonky) },
+                loadDescription = descriptions::getValue,
+            ).setup()
+        val reordered =
+            DlnaProfileDiscovery(
+                discover = { listOf(twonky, qnap) },
+                loadDescription = descriptions::getValue,
+            ).setup()
+
+        assertThat(first.map(DlnaProfile::id).distinct()).hasSize(2)
+        assertThat(first.associate { it.serverUdn to it.id })
+            .isEqualTo(reordered.associate { it.serverUdn to it.id })
+        assertThat(first.map { it.id.value }).containsNoneOf("uuid:qnap-representative", "uuid:twonky-representative")
+    }
+
+    @Test
     fun `repair rediscovers moved QNAP by stable UDN`() = runTest {
-        val moved = device("uuid:qnap-captured", "http://192.168.50.99:8200/root.xml")
+        val moved = device("uuid:qnap-representative", "http://192.168.50.99:8200/root.xml")
         val discovery =
             DlnaProfileDiscovery(
                 discover = { listOf(moved) },
                 loadDescription = {
-                    fixture("dlna/qnap-description.xml")
+                    fixture("dlna/qnap-representative-description.xml")
                         .decodeToString()
                         .replace("192.168.50.20", "192.168.50.99")
                         .encodeToByteArray()
@@ -49,7 +76,7 @@ class DlnaDiscoveryRepairTest {
         val stale =
             DlnaProfile(
                 id = SourceProfileId("profile"),
-                serverUdn = "uuid:qnap-captured",
+                serverUdn = "uuid:qnap-representative",
                 descriptionLocation = URI("http://192.168.50.20:8200/root.xml"),
                 controlUrl = URI("http://192.168.50.20:8200/old-control"),
                 contentDirectoryVersion = 1,
@@ -61,25 +88,26 @@ class DlnaDiscoveryRepairTest {
         assertThat(repaired.controlUrl!!.host).isEqualTo("192.168.50.99")
         assertThat(repaired.contentDirectoryVersion).isEqualTo(2)
         assertThat(repaired.serverUdn).isEqualTo(stale.serverUdn)
+        assertThat(repaired.id).isEqualTo(stale.id)
     }
 
     @Test
-    fun `captured descriptions scope embedded devices and compatible versions`() {
+    fun `representative descriptions scope embedded devices and compatible versions`() {
         val qnap =
             DeviceDescriptionParser().parse(
-                fixture("dlna/qnap-description.xml"),
+                fixture("dlna/qnap-representative-description.xml"),
                 "http://192.168.50.20:8200/root.xml",
             )
         val twonky =
             DeviceDescriptionParser().parse(
-                fixture("dlna/twonky-description.xml"),
+                fixture("dlna/twonky-representative-description.xml"),
                 "http://192.168.50.30:9000/desc.xml",
             )
 
-        assertThat(qnap.udn).isEqualTo("uuid:qnap-captured")
+        assertThat(qnap.udn).isEqualTo("uuid:qnap-representative")
         assertThat(qnap.controlUrl.toString()).isEqualTo("http://192.168.50.20:8200/base/control/content")
         assertThat(qnap.version).isEqualTo(2)
-        assertThat(twonky.udn).isEqualTo("uuid:twonky-captured")
+        assertThat(twonky.udn).isEqualTo("uuid:twonky-representative")
         assertThat(twonky.controlUrl.toString()).isEqualTo("http://192.168.50.30:9000/rpc/ContentDir")
         assertThat(twonky.version).isEqualTo(1)
     }

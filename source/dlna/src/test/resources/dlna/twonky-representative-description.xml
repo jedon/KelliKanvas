@@ -1,9 +1,10 @@
 <?xml version="1.0"?>
+<!-- Synthetic representative fixture; not captured from hardware. -->
 <root xmlns="urn:schemas-upnp-org:device-1-0">
   <device>
     <deviceType>urn:schemas-upnp-org:device:MediaServer:4</deviceType>
-    <friendlyName>Twonky Server</friendlyName>
-    <UDN>uuid:twonky-captured</UDN>
+    <friendlyName>Representative Twonky Server</friendlyName>
+    <UDN>uuid:twonky-representative</UDN>
     <serviceList>
       <service>
         <serviceType>urn:schemas-upnp-org:service:ContentDirectory:1</serviceType>

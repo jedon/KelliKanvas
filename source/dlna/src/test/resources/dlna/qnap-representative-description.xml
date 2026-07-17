@@ -1,10 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
+<!-- Synthetic representative fixture; not captured from hardware. -->
 <root xmlns="urn:schemas-upnp-org:device-1-0">
   <URLBase>http://192.168.50.20:8200/base/</URLBase>
   <device>
     <deviceType>urn:schemas-upnp-org:device:MediaServer:2</deviceType>
-    <friendlyName>QNAP Media Server</friendlyName>
-    <UDN>uuid:qnap-captured</UDN>
+    <friendlyName>Representative QNAP Media Server</friendlyName>
+    <UDN>uuid:qnap-representative</UDN>
     <deviceList>
       <device>
         <deviceType>urn:schemas-upnp-org:device:MediaServer:1</deviceType>

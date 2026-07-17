@@ -7,6 +7,9 @@ import com.jedon.kellikanvas.model.ProviderObjectId
 import com.jedon.kellikanvas.model.SourceFailure
 import com.jedon.kellikanvas.model.SourceProfileId
 import com.jedon.kellikanvas.source.PhotoByteStream
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
 import kotlinx.coroutines.test.runTest
 import org.junit.Test
 
@@ -16,22 +19,26 @@ class DlnaPagingHardeningTest {
     private val root = FolderRef(profileId, ProviderObjectId("$udn\u00000"))
 
     @Test
-    fun `unknown zero total continues full page then stops on short page`() = runTest {
+    fun `unknown zero total continues short pages until an empty page`() = runTest {
         val adapter =
             adapter { _, start, _ ->
                 if (start == 0) {
                     page(objects = listOf(folder("a"), folder("b")), returned = 2, total = 0)
-                } else {
+                } else if (start == 2) {
                     page(objects = listOf(folder("c")), returned = 1, total = 0)
+                } else {
+                    page(objects = emptyList(), returned = 0, total = 0)
                 }
             }
 
         val first = adapter.listChildren(root, null, 2)
         val second = adapter.listChildren(root, first.nextCursor, 2)
+        val third = adapter.listChildren(root, second.nextCursor, 2)
 
         assertThat(first.nextCursor).isNotNull()
-        assertThat(second.nextCursor).isNull()
-        assertThat((first.items + second.items).map { it.name }).containsExactly("a", "b", "c").inOrder()
+        assertThat(second.nextCursor).isNotNull()
+        assertThat(third.nextCursor).isNull()
+        assertThat((first.items + second.items + third.items).map { it.name }).containsExactly("a", "b", "c").inOrder()
     }
 
     @Test
@@ -74,6 +81,65 @@ class DlnaPagingHardeningTest {
         assertProtocolFailure {
             uniquePages.listChildren(root, first.nextCursor, 1)
         }
+    }
+
+    @Test
+    fun `cursor remains retryable after transient failure and cancellation`() = runTest {
+        var secondPageAttempts = 0
+        val adapter =
+            adapter { _, start, _ ->
+                if (start == 0) {
+                    page(listOf(folder("first")), returned = 1, total = 2)
+                } else {
+                    secondPageAttempts++
+                    when (secondPageAttempts) {
+                        1 -> throw java.io.IOException("temporary")
+                        2 -> throw CancellationException("cancel")
+                        else -> page(listOf(folder("second")), returned = 1, total = 2)
+                    }
+                }
+            }
+        val first = adapter.listChildren(root, null, 1)
+
+        assertThat(runCatching { adapter.listChildren(root, first.nextCursor, 1) }.exceptionOrNull())
+            .isInstanceOf(SourceFailure.SourceUnavailable::class.java)
+        assertThat(runCatching { adapter.listChildren(root, first.nextCursor, 1) }.exceptionOrNull())
+            .isInstanceOf(CancellationException::class.java)
+        val retried = adapter.listChildren(root, first.nextCursor, 1)
+
+        assertThat(retried.items.single().name).isEqualTo("second")
+        assertThat(retried.nextCursor).isNull()
+    }
+
+    @Test
+    fun `concurrent duplicate cursor use is rejected while owner can retry`() = runTest {
+        val started = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        var secondPageAttempts = 0
+        val adapter =
+            adapter { _, start, _ ->
+                if (start == 0) {
+                    page(listOf(folder("first")), returned = 1, total = 2)
+                } else {
+                    secondPageAttempts++
+                    if (secondPageAttempts == 1) {
+                        started.complete(Unit)
+                        release.await()
+                    }
+                    page(listOf(folder("second")), returned = 1, total = 2)
+                }
+            }
+        val first = adapter.listChildren(root, null, 1)
+        val owner = async { adapter.listChildren(root, first.nextCursor, 1) }
+        started.await()
+
+        assertProtocolFailure { adapter.listChildren(root, first.nextCursor, 1) }
+        owner.cancel(CancellationException("owner cancelled"))
+        release.complete(Unit)
+        runCatching { owner.await() }
+        val retried = adapter.listChildren(root, first.nextCursor, 1)
+
+        assertThat(retried.items.single().name).isEqualTo("second")
     }
 
     private fun adapter(browse: suspend (String, Int, Int) -> DlnaBrowsePage): DlnaSourceAdapter = DlnaSourceAdapter(
