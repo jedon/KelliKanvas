@@ -3,6 +3,7 @@ package com.jedon.kellikanvas.platform.update
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.content.IntentSender
 import android.content.pm.PackageInstaller
 import android.os.Build
 import android.provider.Settings
@@ -34,21 +35,29 @@ class InstallLauncher(private val platform: InstallPlatform) {
     }
 }
 
-class AndroidInstallPlatform(private val context: Context) : InstallPlatform {
-    override fun canRequestPackageInstalls(): Boolean = context.packageManager.canRequestPackageInstalls()
-
-    override fun launchUnknownAppSettings() {
-        context.startActivity(
-            Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, "package:${context.packageName}".toUri())
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-        )
+class StagedPackageSession(
+    private val installer: PackageInstaller,
+    val sessionId: Int,
+) {
+    fun commit(statusReceiver: IntentSender) {
+        installer.openSession(sessionId).use { it.commit(statusReceiver) }
     }
 
-    override fun stagePackageInstallerSession(apk: File) {
-        val installer = context.packageManager.packageInstaller
+    fun abandon() {
+        installer.abandonSession(sessionId)
+    }
+}
+
+class AndroidPackageSessionStager(
+    context: Context,
+    private val packageName: String = UpdateLimits.PACKAGE_NAME,
+) {
+    private val installer = context.packageManager.packageInstaller
+
+    fun stage(apk: File): StagedPackageSession {
         val parameters =
             PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL).apply {
-                setAppPackageName(UpdateLimits.PACKAGE_NAME)
+                setAppPackageName(packageName)
                 setSize(apk.length())
                 if (Build.VERSION.SDK_INT >= 31) {
                     setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_REQUIRED)
@@ -63,17 +72,41 @@ class AndroidInstallPlatform(private val context: Context) : InstallPlatform {
                         session.fsync(output)
                     }
                 }
-                val callback =
-                    Intent(context, UpdateInstallReceiver::class.java)
-                        .setAction(UpdateInstallReceiver.ACTION_STATUS)
-                        .putExtra(PackageInstaller.EXTRA_SESSION_ID, sessionId)
-                val flags = installerPendingIntentFlags(Build.VERSION.SDK_INT)
-                session.commit(
-                    PendingIntent.getBroadcast(context, sessionId, callback, flags).intentSender,
-                )
             }
+            return StagedPackageSession(installer, sessionId)
         } catch (error: Exception) {
             installer.abandonSession(sessionId)
+            throw error
+        }
+    }
+}
+
+class AndroidInstallPlatform(
+    private val context: Context,
+    private val sessionStager: AndroidPackageSessionStager = AndroidPackageSessionStager(context),
+) : InstallPlatform {
+    override fun canRequestPackageInstalls(): Boolean = context.packageManager.canRequestPackageInstalls()
+
+    override fun launchUnknownAppSettings() {
+        context.startActivity(
+            Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, "package:${context.packageName}".toUri())
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+        )
+    }
+
+    override fun stagePackageInstallerSession(apk: File) {
+        val staged = sessionStager.stage(apk)
+        try {
+            val callback =
+                Intent(context, UpdateInstallReceiver::class.java)
+                    .setAction(UpdateInstallReceiver.ACTION_STATUS)
+                    .putExtra(PackageInstaller.EXTRA_SESSION_ID, staged.sessionId)
+            val flags = installerPendingIntentFlags(Build.VERSION.SDK_INT)
+            staged.commit(
+                PendingIntent.getBroadcast(context, staged.sessionId, callback, flags).intentSender,
+            )
+        } catch (error: Exception) {
+            staged.abandon()
             throw error
         }
     }

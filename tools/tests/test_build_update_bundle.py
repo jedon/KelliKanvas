@@ -13,12 +13,20 @@ class BuildUpdateBundleTest(unittest.TestCase):
         workflow = (Path(__file__).resolve().parents[2] / ".github/workflows/release-apk.yml").read_text(
             encoding="utf-8"
         )
+        verify_job = workflow.split("\n  verify:", 1)[1].split("\n  build-unsigned:", 1)[0]
+        build_job = workflow.split("\n  build-unsigned:", 1)[1].split("\n  apk-sign:", 1)[0]
         apk_job = workflow.split("\n  apk-sign:", 1)[1].split("\n  prepare-update:", 1)[0]
         metadata_job = workflow.split("\n  metadata-sign:", 1)[1]
+        self.assertIn(":platform:update:assembleDebugAndroidTest", verify_job)
+        self.assertIn("metadata-pins.txt", build_job)
+        self.assertIn("BuildConfig.java", build_job)
         self.assertIn("KELLIKANVAS_KEYSTORE_BASE64", apk_job)
         self.assertNotIn("METADATA_PRIVATE_KEY", apk_job)
         self.assertNotIn("gradlew", apk_job)
         self.assertIn("KELLIKANVAS_METADATA_PRIVATE_KEY_BASE64", metadata_job)
+        self.assertIn("metadata-pins.txt", metadata_job)
+        self.assertIn("verify_update_envelope.py", metadata_job)
+        self.assertIn('--key-id "$METADATA_KEY_ID"', metadata_job)
         self.assertNotIn("KELLIKANVAS_KEYSTORE", metadata_job)
         self.assertNotIn("gradlew", metadata_job)
 

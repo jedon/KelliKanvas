@@ -40,7 +40,8 @@ jobs:
         run: |
           python -m unittest tools.tests.test_build_update_bundle
           python -m unittest tools.tests.test_qnap_deployment
-          ./gradlew ktlintCheck lintDebug testDebugUnitTest --stacktrace
+          ./gradlew ktlintCheck lintDebug testDebugUnitTest \
+            :platform:update:assembleDebugAndroidTest --stacktrace
 
   build-unsigned:
     needs: verify
@@ -70,13 +71,36 @@ jobs:
       - name: Build unsigned release APK
         env:
           KELLIKANVAS_METADATA_PUBLIC_KEY_BASE64: ${{ vars.KELLIKANVAS_METADATA_PUBLIC_KEY_BASE64 }}
-        run: ./gradlew :app:assembleRelease --stacktrace
+        run: |
+          ./gradlew :app:assembleRelease --stacktrace
+          python - <<'PY'
+          import pathlib
+          source = pathlib.Path(
+              "app/build/generated/source/buildConfig/release/com/jedon/kellikanvas/BuildConfig.java"
+          ).read_text()
+          prefix = "public static final String UPDATE_METADATA_PUBLIC_KEY_BASE64 = \""
+          matches = [line.strip() for line in source.splitlines() if line.strip().startswith(prefix)]
+          if len(matches) != 1 or not matches[0].endswith("\";"):
+              raise SystemExit("release BuildConfig metadata pin is missing or malformed")
+          value = matches[0][len(prefix):-2]
+          if not value:
+              raise SystemExit("release BuildConfig metadata pin is empty")
+          pathlib.Path("metadata-pins.txt").write_text(value)
+          PY
 
       - name: Upload unsigned APK
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: kellikanvas-unsigned-apk
           path: app/build/outputs/apk/release/app-release-unsigned.apk
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Upload compiled metadata pins
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: kellikanvas-metadata-pins
+          path: metadata-pins.txt
           if-no-files-found: error
           retention-days: 1
 
@@ -158,6 +182,8 @@ jobs:
             --apkanalyzer "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/apkanalyzer" \
             --sequence "${{ inputs.release_sequence }}" \
             --prepare-only
+          mkdir -p dist/release-tools
+          cp tools/verify_update_envelope.py dist/release-tools/
 
       - name: Upload prepared update
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -178,6 +204,12 @@ jobs:
           name: kellikanvas-prepared-update
           path: dist
 
+      - name: Download compiled metadata pins
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: kellikanvas-metadata-pins
+          path: build-config
+
       - name: Sign canonical metadata only
         env:
           METADATA_PRIVATE_KEY_BASE64: ${{ secrets.KELLIKANVAS_METADATA_PRIVATE_KEY_BASE64 }}
@@ -186,7 +218,13 @@ jobs:
           set -euo pipefail
           metadata_key="$RUNNER_TEMP/metadata-key.pem"
           signature="$RUNNER_TEMP/metadata-signature"
-          cleanup() { rm -f "$metadata_key" "$signature" dist/manifest.payload.json; }
+          public_der="$RUNNER_TEMP/metadata-public.der"
+          public_pem="$RUNNER_TEMP/metadata-public.pem"
+          cleanup() {
+            rm -f "$metadata_key" "$signature" "$public_der" "$public_pem" \
+              dist/manifest.payload.json
+            rm -rf dist/release-tools
+          }
           trap cleanup EXIT
           [[ "$METADATA_KEY_ID" =~ ^[A-Za-z0-9._-]{1,64}$ ]]
           printf '%s' "$METADATA_PRIVATE_KEY_BASE64" | base64 --decode > "$metadata_key"
@@ -208,6 +246,23 @@ jobs:
               (json.dumps(envelope, sort_keys=True, separators=(",", ":")) + "\n").encode()
           )
           PY
+          python - "$METADATA_KEY_ID" build-config/metadata-pins.txt "$public_der" <<'PY'
+          import base64, pathlib, sys
+          key_id, pins_path, output_path = sys.argv[1:]
+          entries = pathlib.Path(pins_path).read_text().split(",")
+          pairs = [entry.split("=", 1) for entry in entries]
+          if any(len(pair) != 2 for pair in pairs) or len({pair[0] for pair in pairs}) != len(pairs):
+              raise SystemExit("invalid compiled metadata pin set")
+          pins = dict(pairs)
+          if key_id not in pins:
+              raise SystemExit("metadata key ID is not pinned by the release app")
+          pathlib.Path(output_path).write_bytes(base64.b64decode(pins[key_id], validate=True))
+          PY
+          openssl pkey -pubin -inform DER -in "$public_der" -out "$public_pem"
+          python dist/release-tools/verify_update_envelope.py \
+            --envelope dist/update-envelope.json \
+            --public-key "$public_pem" \
+            --key-id "$METADATA_KEY_ID" >/dev/null
           cleanup
           trap - EXIT
 

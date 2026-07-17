@@ -2,7 +2,6 @@ package com.jedon.kellikanvas.platform.update
 
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageInstaller
 import androidx.core.content.FileProvider
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -50,15 +49,22 @@ class AndroidPackageApiTest {
     }
 
     @Test
-    fun package_installer_accepts_and_abandons_real_session() {
-        val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL)
-        params.setAppPackageName(context.packageName)
+    fun production_stager_writes_generated_signed_apk_and_abandons_session() {
+        val sourceApk = File(context.applicationInfo.sourceDir)
         val installer = context.packageManager.packageInstaller
-        val sessionId = installer.createSession(params)
+        val staged = AndroidPackageSessionStager(context, context.packageName).stage(sourceApk)
         try {
-            assertThat(installer.openSession(sessionId)).isNotNull()
+            val session = installer.getSessionInfo(staged.sessionId)
+            assertThat(session).isNotNull()
+            assertThat(session?.appPackageName).isEqualTo(context.packageName)
+            installer.openSession(staged.sessionId).use { openSession ->
+                openSession.openRead("kellikanvas.apk").use { stagedApk ->
+                    assertThat(stagedApk.readBytes()).isEqualTo(sourceApk.readBytes())
+                }
+            }
         } finally {
-            installer.abandonSession(sessionId)
+            staged.abandon()
         }
+        assertThat(installer.getSessionInfo(staged.sessionId)).isNull()
     }
 }
