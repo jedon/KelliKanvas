@@ -59,6 +59,8 @@ class AmbientPolicyIntegrationTest {
             )!!
 
         assertThat(gate.onPresence(false, PlaybackState.PLAYING, 1_000L))
+            .isEqualTo(AmbientAction.NONE)
+        assertThat(gate.onVacancyTimeout(PlaybackState.PLAYING, 1_000L))
             .isEqualTo(AmbientAction.PAUSE)
         assertThat(gate.onPresence(false, PlaybackState.PLAYING, 2_000L))
             .isEqualTo(AmbientAction.NONE)

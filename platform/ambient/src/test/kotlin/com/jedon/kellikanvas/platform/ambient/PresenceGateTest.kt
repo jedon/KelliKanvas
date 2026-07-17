@@ -75,17 +75,25 @@ class PresenceGateTest {
 
         assertThat(gate.onPresence(false, PlaybackState.PLAYING, now)).isEqualTo(AmbientAction.NONE)
         assertThat(
-            gate.onPresence(false, PlaybackState.PLAYING, now + Duration.ofSeconds(119).toNanos()),
+            gate.onVacancyTimeout(
+                PlaybackState.PLAYING,
+                now + Duration.ofSeconds(119).toNanos(),
+            ),
         ).isEqualTo(AmbientAction.NONE)
         assertThat(
-            gate.onPresence(false, PlaybackState.PLAYING, now + Duration.ofSeconds(120).toNanos()),
+            gate.onVacancyTimeout(
+                PlaybackState.PLAYING,
+                now + Duration.ofSeconds(120).toNanos(),
+            ),
         ).isEqualTo(AmbientAction.PAUSE)
     }
 
     @Test
     fun `presence resumes only a presence paused slideshow when enabled`() {
         val gate = gate(vacancyTimeout = Duration.ZERO, resumeOnReturn = true)
-        assertThat(gate.onPresence(false, PlaybackState.PLAYING, now)).isEqualTo(AmbientAction.PAUSE)
+        assertThat(gate.onPresence(false, PlaybackState.PLAYING, now)).isEqualTo(AmbientAction.NONE)
+        assertThat(gate.onVacancyTimeout(PlaybackState.PLAYING, now))
+            .isEqualTo(AmbientAction.PAUSE)
 
         assertThat(
             gate.onPresence(
@@ -107,6 +115,7 @@ class PresenceGateTest {
     fun `disabled return option never resumes`() {
         val gate = gate(vacancyTimeout = Duration.ZERO, resumeOnReturn = false)
         gate.onPresence(false, PlaybackState.PLAYING, now)
+        gate.onVacancyTimeout(PlaybackState.PLAYING, now)
 
         assertThat(
             gate.onPresence(
@@ -115,6 +124,23 @@ class PresenceGateTest {
                 now + Duration.ofSeconds(1).toNanos(),
             ),
         ).isEqualTo(AmbientAction.NONE)
+    }
+
+    @Test
+    fun `occupied state rearms after presence pause was manually resumed`() {
+        val gate = gate(vacancyTimeout = Duration.ZERO, resumeOnReturn = true)
+        assertThat(gate.onPresence(false, PlaybackState.PLAYING, now))
+            .isEqualTo(AmbientAction.NONE)
+        assertThat(gate.onVacancyTimeout(PlaybackState.PLAYING, now))
+            .isEqualTo(AmbientAction.PAUSE)
+
+        assertThat(gate.onPresence(true, PlaybackState.PLAYING, now + 1))
+            .isEqualTo(AmbientAction.NONE)
+
+        assertThat(gate.onPresence(false, PlaybackState.PLAYING, now + 2))
+            .isEqualTo(AmbientAction.NONE)
+        assertThat(gate.onVacancyTimeout(PlaybackState.PLAYING, now + 2))
+            .isEqualTo(AmbientAction.PAUSE)
     }
 
     @Test

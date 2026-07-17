@@ -12,6 +12,8 @@ import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.Shadows.shadowOf
+import java.time.Duration
+import java.util.concurrent.Executor
 
 @RunWith(RobolectricTestRunner::class)
 class AndroidAmbientAdaptersTest {
@@ -110,5 +112,44 @@ class AndroidAmbientAdaptersTest {
         val second = AndroidElapsedTimeSource.nowNanos()
 
         assertThat(second).isAtLeast(first)
+    }
+
+    @Test
+    fun `Android scheduler rounds positive sub-millisecond delay upward`() {
+        assertThat(handlerDelayMillis(Duration.ofNanos(1))).isEqualTo(1L)
+        assertThat(handlerDelayMillis(Duration.ofNanos(1_000_001))).isEqualTo(2L)
+    }
+
+    @Test
+    fun `Android lifecycle exposes owner start and stop seam`() {
+        val activity = Robolectric.buildActivity(Activity::class.java).setup().get()
+        val lifecycle: AmbientLifecycle =
+            AndroidAmbientLifecycle(
+                context = activity,
+                window = activity.window,
+                configRepository = AmbientConfigRepository { AmbientConfig() },
+                playbackHost = object : AmbientPlaybackHost {
+                    override fun playbackState() = PlaybackState.STOPPED
+
+                    override fun pauseForPresence() = Unit
+
+                    override fun resumeFromPresence() = Unit
+                },
+                eventExecutor = Executor { it.run() },
+                sensorSource = object : AmbientSensorSource {
+                    override val inventory = Inventory(emptyList())
+
+                    override fun register(
+                        sensor: SensorDescriptor,
+                        onValue: (Float) -> Unit,
+                    ): AmbientRegistration? = null
+                },
+            )
+
+        lifecycle.start()
+        lifecycle.stop()
+
+        assertThat(activity.window.attributes.screenBrightness)
+            .isEqualTo(WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE)
     }
 }

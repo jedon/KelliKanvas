@@ -19,4 +19,6 @@ data class AmbientConfig(
 
 fun interface AmbientConfigRepository {
     fun currentConfig(): AmbientConfig
+
+    fun registerListener(onChanged: () -> Unit): AmbientRegistration = AmbientRegistration {}
 }

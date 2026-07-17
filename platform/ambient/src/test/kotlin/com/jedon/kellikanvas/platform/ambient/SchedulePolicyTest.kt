@@ -50,6 +50,46 @@ class SchedulePolicyTest {
     }
 
     @Test
+    fun `next boundary resolves spring DST gap in current zone`() {
+        val zone = ZoneId.of("America/New_York")
+        val policy =
+            SchedulePolicy(
+                schedule = DayNightSchedule(
+                    dayStarts = LocalTime.of(2, 30),
+                    nightStarts = LocalTime.of(21, 0),
+                ),
+                clock = Clock.fixed(
+                    Instant.parse("2026-03-08T06:00:00Z"),
+                    ZoneId.of("UTC"),
+                ),
+                zoneIdProvider = { zone },
+            )
+
+        assertThat(policy.nextBoundaryInstant())
+            .isEqualTo(Instant.parse("2026-03-08T07:30:00Z"))
+    }
+
+    @Test
+    fun `next boundary does not repeat fall overlap transition`() {
+        val zone = ZoneId.of("America/New_York")
+        val policy =
+            SchedulePolicy(
+                schedule = DayNightSchedule(
+                    dayStarts = LocalTime.of(1, 30),
+                    nightStarts = LocalTime.of(21, 0),
+                ),
+                clock = Clock.fixed(
+                    Instant.parse("2026-11-01T05:45:00Z"),
+                    ZoneId.of("UTC"),
+                ),
+                zoneIdProvider = { zone },
+            )
+
+        assertThat(policy.nextBoundaryInstant())
+            .isEqualTo(Instant.parse("2026-11-02T02:00:00Z"))
+    }
+
+    @Test
     fun `coordinator precedence is sensor then schedule then follow TV`() {
         val coordinator = AmbientCoordinator()
 

@@ -1,6 +1,7 @@
 package com.jedon.kellikanvas.platform.ambient
 
 import java.time.Clock
+import java.time.Duration
 import java.time.ZoneId
 import java.util.ArrayDeque
 import java.util.concurrent.Executor
@@ -28,6 +29,13 @@ fun interface ElapsedTimeSource {
 
 fun interface TimezoneChangeSource {
     fun register(onChanged: () -> Unit): AmbientRegistration
+}
+
+fun interface AmbientScheduler {
+    fun schedule(
+        delay: Duration,
+        callback: () -> Unit,
+    ): AmbientRegistration
 }
 
 fun interface BrightnessSink {
@@ -66,19 +74,25 @@ class AmbientLifecycleController(
     private val brightnessSink: BrightnessSink,
     private val playbackHost: AmbientPlaybackHost,
     eventExecutor: Executor,
+    private val scheduler: AmbientScheduler,
     private val wallClock: Clock,
     private val zoneIdProvider: () -> ZoneId,
     private val buildFingerprintProvider: () -> String,
 ) {
     private val dispatcher = SerialExecutor(eventExecutor)
-    private val registrations = mutableListOf<AmbientRegistration>()
+    private val runtimeRegistrations = mutableListOf<AmbientRegistration>()
+    private var configRegistration: AmbientRegistration? = null
+    private var presenceTimeout: AmbientRegistration? = null
+    private var presenceTimeoutToken = 0L
+    private var scheduleTimeout: AmbientRegistration? = null
+    private var scheduleTimeoutToken = 0L
     private var generation = 0L
+    private var runtimeGeneration = 0L
     private var started = false
     private var sensorBrightnessActive = false
     private var config = AmbientConfig()
     private var luxPolicy = LuxPolicy()
     private var schedulePolicy = SchedulePolicy(clock = wallClock, zoneIdProvider = zoneIdProvider)
-    private var presenceGate: Gate? = null
 
     var diagnostics = AmbientRuntimeDiagnostics(sensorSource.inventory.diagnostics)
         private set
@@ -89,6 +103,20 @@ class AmbientLifecycleController(
         started = true
         generation++
         val activeGeneration = generation
+        configure(activeGeneration)
+        configRegistration =
+            configRepository.registerListener {
+                dispatcher.execute {
+                    if (!isActive(activeGeneration)) return@execute
+                    cancelRuntime()
+                    configure(activeGeneration)
+                }
+            }
+    }
+
+    @Synchronized
+    private fun configure(activeGeneration: Long) {
+        val activeRuntimeGeneration = ++runtimeGeneration
         config = configRepository.currentConfig()
         luxPolicy = LuxPolicy(calibration = config.luxCalibration)
         schedulePolicy =
@@ -100,9 +128,9 @@ class AmbientLifecycleController(
         sensorBrightnessActive = false
         diagnostics = AmbientRuntimeDiagnostics(sensorSource.inventory.diagnostics)
 
-        registerBrightness(activeGeneration)
-        registerPresence(activeGeneration)
-        registerTimezoneChanges(activeGeneration)
+        registerBrightness(activeGeneration, activeRuntimeGeneration)
+        registerPresence(activeGeneration, activeRuntimeGeneration)
+        registerTimezoneChanges(activeGeneration, activeRuntimeGeneration)
     }
 
     @Synchronized
@@ -110,14 +138,26 @@ class AmbientLifecycleController(
         if (!started) return
         started = false
         generation++
-        registrations.toList().forEach(AmbientRegistration::unregister)
-        registrations.clear()
-        presenceGate = null
-        sensorBrightnessActive = false
+        configRegistration?.unregister()
+        configRegistration = null
+        cancelRuntime()
         brightnessSink.apply(BrightnessDecision.FollowTv)
     }
 
-    private fun registerBrightness(activeGeneration: Long) {
+    @Synchronized
+    private fun cancelRuntime() {
+        runtimeGeneration++
+        runtimeRegistrations.toList().forEach(AmbientRegistration::unregister)
+        runtimeRegistrations.clear()
+        cancelPresenceTimeout()
+        cancelScheduleTimeout()
+        sensorBrightnessActive = false
+    }
+
+    private fun registerBrightness(
+        activeGeneration: Long,
+        activeRuntimeGeneration: Long,
+    ) {
         when (config.brightnessMode) {
             BrightnessMode.FOLLOW_TV -> brightnessSink.apply(BrightnessDecision.FollowTv)
             BrightnessMode.SCHEDULE -> applyScheduleFallback()
@@ -137,7 +177,9 @@ class AmbientLifecycleController(
                     sensorSource.register(sensor) { lux ->
                         val elapsedNanos = elapsedTimeSource.nowNanos()
                         dispatcher.execute {
-                            if (!isActive(activeGeneration)) return@execute
+                            if (!isRuntimeActive(activeGeneration, activeRuntimeGeneration)) {
+                                return@execute
+                            }
                             val brightness =
                                 luxPolicy.onLux(
                                     lux = lux,
@@ -146,6 +188,7 @@ class AmbientLifecycleController(
                                 )
                             if (brightness != null) {
                                 sensorBrightnessActive = true
+                                cancelScheduleTimeout()
                                 brightnessSink.apply(BrightnessDecision.Sensor(brightness))
                             }
                         }
@@ -153,14 +196,17 @@ class AmbientLifecycleController(
                 if (registration == null) {
                     updateLightStatus(RegistrationStatus.REGISTRATION_FAILED)
                 } else {
-                    registrations += registration
+                    runtimeRegistrations += registration
                     updateLightStatus(RegistrationStatus.REGISTERED)
                 }
             }
         }
     }
 
-    private fun registerPresence(activeGeneration: Long) {
+    private fun registerPresence(
+        activeGeneration: Long,
+        activeRuntimeGeneration: Long,
+    ) {
         if (!config.presenceEnabled) return
         val qualification = config.presenceQualification
         val sensor =
@@ -189,42 +235,137 @@ class AmbientLifecycleController(
             updatePresenceStatus(RegistrationStatus.QUALIFICATION_INVALID)
             return
         }
-        presenceGate = gate
         val registration =
             sensorSource.register(sensor) { value ->
                 val elapsedNanos = elapsedTimeSource.nowNanos()
                 dispatcher.execute {
-                    if (!isActive(activeGeneration)) return@execute
-                    when (
+                    if (!isRuntimeActive(activeGeneration, activeRuntimeGeneration)) {
+                        return@execute
+                    }
+                    val action =
                         gate.onSensorValue(
                             value = value,
                             playbackState = playbackHost.playbackState(),
                             elapsedRealtimeNanos = elapsedNanos,
                         )
-                    ) {
-                        AmbientAction.PAUSE -> playbackHost.pauseForPresence()
-                        AmbientAction.RESUME -> playbackHost.resumeFromPresence()
-                        AmbientAction.NONE -> Unit
-                    }
+                    handlePresenceAction(action)
+                    schedulePresenceTimeout(
+                        gate,
+                        activeGeneration,
+                        activeRuntimeGeneration,
+                        elapsedNanos,
+                    )
                 }
             }
         if (registration == null) {
-            presenceGate = null
             updatePresenceStatus(RegistrationStatus.REGISTRATION_FAILED)
         } else {
-            registrations += registration
+            runtimeRegistrations += registration
             updatePresenceStatus(RegistrationStatus.REGISTERED)
         }
     }
 
-    private fun registerTimezoneChanges(activeGeneration: Long) {
+    private fun schedulePresenceTimeout(
+        gate: Gate,
+        activeGeneration: Long,
+        activeRuntimeGeneration: Long,
+        elapsedNanos: Long,
+    ) {
+        cancelPresenceTimeout()
+        val deadline = gate.vacancyDeadlineNanos ?: return
+        val delayNanos = (deadline - elapsedNanos).coerceAtLeast(0L)
+        val timerToken = presenceTimeoutToken
+        presenceTimeout =
+            scheduler.schedule(java.time.Duration.ofNanos(delayNanos)) {
+                val firedAtNanos = elapsedTimeSource.nowNanos()
+                dispatcher.execute {
+                    if (
+                        !isRuntimeActive(activeGeneration, activeRuntimeGeneration) ||
+                        timerToken != presenceTimeoutToken
+                    ) {
+                        return@execute
+                    }
+                    presenceTimeout = null
+                    handlePresenceAction(
+                        gate.onVacancyTimeout(
+                            playbackState = playbackHost.playbackState(),
+                            elapsedRealtimeNanos = firedAtNanos,
+                        ),
+                    )
+                    schedulePresenceTimeout(
+                        gate,
+                        activeGeneration,
+                        activeRuntimeGeneration,
+                        firedAtNanos,
+                    )
+                }
+            }
+    }
+
+    private fun cancelPresenceTimeout() {
+        presenceTimeoutToken++
+        presenceTimeout?.unregister()
+        presenceTimeout = null
+    }
+
+    private fun handlePresenceAction(action: AmbientAction) {
+        when (action) {
+            AmbientAction.PAUSE -> playbackHost.pauseForPresence()
+            AmbientAction.RESUME -> playbackHost.resumeFromPresence()
+            AmbientAction.NONE -> Unit
+        }
+    }
+
+    private fun cancelScheduleTimeout() {
+        scheduleTimeoutToken++
+        scheduleTimeout?.unregister()
+        scheduleTimeout = null
+    }
+
+    private fun registerTimezoneChanges(
+        activeGeneration: Long,
+        activeRuntimeGeneration: Long,
+    ) {
         if (!config.scheduleEnabled || config.brightnessMode == BrightnessMode.FOLLOW_TV) return
-        registrations +=
+        runtimeRegistrations +=
             timezoneChangeSource.register {
                 dispatcher.execute {
-                    if (isActive(activeGeneration) && !sensorBrightnessActive) {
-                        applyScheduleFallback()
+                    if (!isRuntimeActive(activeGeneration, activeRuntimeGeneration)) return@execute
+                    cancelScheduleTimeout()
+                    if (!sensorBrightnessActive) applyScheduleFallback()
+                    scheduleNextBoundary(activeGeneration, activeRuntimeGeneration)
+                }
+            }
+        scheduleNextBoundary(activeGeneration, activeRuntimeGeneration)
+    }
+
+    private fun scheduleNextBoundary(
+        activeGeneration: Long,
+        activeRuntimeGeneration: Long,
+    ) {
+        cancelScheduleTimeout()
+        if (
+            !config.scheduleEnabled ||
+            config.brightnessMode == BrightnessMode.FOLLOW_TV ||
+            sensorBrightnessActive
+        ) {
+            return
+        }
+        val delay = Duration.between(wallClock.instant(), schedulePolicy.nextBoundaryInstant())
+        val safeDelay = if (delay.isNegative) Duration.ZERO else delay
+        val timerToken = scheduleTimeoutToken
+        scheduleTimeout =
+            scheduler.schedule(safeDelay) {
+                dispatcher.execute {
+                    if (
+                        !isRuntimeActive(activeGeneration, activeRuntimeGeneration) ||
+                        timerToken != scheduleTimeoutToken
+                    ) {
+                        return@execute
                     }
+                    scheduleTimeout = null
+                    if (!sensorBrightnessActive) applyScheduleFallback()
+                    scheduleNextBoundary(activeGeneration, activeRuntimeGeneration)
                 }
             }
     }
@@ -244,6 +385,12 @@ class AmbientLifecycleController(
 
     @Synchronized
     private fun isActive(activeGeneration: Long): Boolean = started && generation == activeGeneration
+
+    @Synchronized
+    private fun isRuntimeActive(
+        activeGeneration: Long,
+        activeRuntimeGeneration: Long,
+    ): Boolean = isActive(activeGeneration) && runtimeGeneration == activeRuntimeGeneration
 
     private fun updateLightStatus(status: RegistrationStatus) {
         diagnostics = diagnostics.copy(lightRegistration = status)

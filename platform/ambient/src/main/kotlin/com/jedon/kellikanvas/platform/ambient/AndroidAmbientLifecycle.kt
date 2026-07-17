@@ -10,9 +10,12 @@ import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.os.SystemClock
 import android.view.Window
 import java.time.Clock
+import java.time.Duration
 import java.time.ZoneId
 import java.util.concurrent.Executor
 
@@ -67,6 +70,26 @@ data object AndroidElapsedTimeSource : ElapsedTimeSource {
     override fun nowNanos(): Long = SystemClock.elapsedRealtimeNanos()
 }
 
+class AndroidAmbientScheduler(
+    private val handler: Handler = Handler(Looper.getMainLooper()),
+) : AmbientScheduler {
+    override fun schedule(
+        delay: Duration,
+        callback: () -> Unit,
+    ): AmbientRegistration {
+        require(!delay.isNegative)
+        val runnable = Runnable(callback)
+        handler.postDelayed(runnable, handlerDelayMillis(delay))
+        return AmbientRegistration { handler.removeCallbacks(runnable) }
+    }
+}
+
+internal fun handlerDelayMillis(delay: Duration): Long {
+    require(!delay.isNegative)
+    val wholeMillis = delay.toMillis()
+    return if (delay == Duration.ofMillis(wholeMillis)) wholeMillis else wholeMillis + 1L
+}
+
 class AndroidTimezoneChangeSource(
     context: Context,
 ) : TimezoneChangeSource {
@@ -105,6 +128,21 @@ class AndroidTimezoneChangeSource(
     }
 }
 
+interface AmbientLifecycle {
+    val diagnostics: AmbientRuntimeDiagnostics
+
+    fun start()
+
+    fun stop()
+}
+
+/**
+ * Android owner seam for ambient behavior.
+ *
+ * Task 18's slideshow route/session owns [start] and [stop]. Task 20's AppContainer constructs this
+ * with the persisted config repository and slideshow playback host. The placeholder MainActivity
+ * must not start ambient listeners before those genuinely functional dependencies exist.
+ */
 class AndroidAmbientLifecycle(
     context: Context,
     window: Window,
@@ -114,7 +152,8 @@ class AndroidAmbientLifecycle(
     wallClock: Clock = Clock.systemUTC(),
     zoneIdProvider: () -> ZoneId = { ZoneId.systemDefault() },
     sensorSource: AmbientSensorSource = AndroidAmbientSensorSource(context),
-) {
+    scheduler: AmbientScheduler = AndroidAmbientScheduler(),
+) : AmbientLifecycle {
     private val controller =
         AmbientLifecycleController(
             configRepository = configRepository,
@@ -125,15 +164,16 @@ class AndroidAmbientLifecycle(
             brightnessSink = WindowBrightnessSink(window),
             playbackHost = playbackHost,
             eventExecutor = eventExecutor,
+            scheduler = scheduler,
             wallClock = wallClock,
             zoneIdProvider = zoneIdProvider,
             buildFingerprintProvider = { Build.FINGERPRINT },
         )
 
-    val diagnostics: AmbientRuntimeDiagnostics
+    override val diagnostics: AmbientRuntimeDiagnostics
         get() = controller.diagnostics
 
-    fun start() = controller.start()
+    override fun start() = controller.start()
 
-    fun stop() = controller.stop()
+    override fun stop() = controller.stop()
 }

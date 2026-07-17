@@ -77,7 +77,8 @@ class Gate private constructor(
         require(!vacancyTimeout.isNegative)
     }
 
-    private var vacantSinceNanos: Long? = null
+    var vacancyDeadlineNanos: Long? = null
+        private set
     private var pauseIssued = false
 
     companion object {
@@ -107,26 +108,42 @@ class Gate private constructor(
     ): AmbientAction {
         require(elapsedRealtimeNanos >= 0L)
         if (occupied) {
-            vacantSinceNanos = null
+            vacancyDeadlineNanos = null
             val shouldResume =
                 pauseIssued &&
                     resumeOnReturn &&
                     playbackState == PlaybackState.PAUSED_BY_PRESENCE
-            if (playbackState != PlaybackState.PLAYING) pauseIssued = false
+            pauseIssued = false
             return if (shouldResume) AmbientAction.RESUME else AmbientAction.NONE
         }
 
         if (pauseIssued) return AmbientAction.NONE
         if (playbackState != PlaybackState.PLAYING) {
-            vacantSinceNanos = null
+            vacancyDeadlineNanos = null
             return AmbientAction.NONE
         }
-        val started = vacantSinceNanos ?: elapsedRealtimeNanos.also { vacantSinceNanos = it }
-        val elapsed = (elapsedRealtimeNanos - started).coerceAtLeast(0L)
-        if (elapsed < vacancyTimeout.toNanos()) return AmbientAction.NONE
+        if (vacancyDeadlineNanos == null) {
+            vacancyDeadlineNanos = saturatingAdd(elapsedRealtimeNanos, vacancyTimeout.toNanos())
+        }
+        return AmbientAction.NONE
+    }
+
+    fun onVacancyTimeout(
+        playbackState: PlaybackState,
+        elapsedRealtimeNanos: Long,
+    ): AmbientAction {
+        require(elapsedRealtimeNanos >= 0L)
+        val deadline = vacancyDeadlineNanos ?: return AmbientAction.NONE
+        if (elapsedRealtimeNanos < deadline) return AmbientAction.NONE
+        vacancyDeadlineNanos = null
+        if (pauseIssued || playbackState != PlaybackState.PLAYING) return AmbientAction.NONE
 
         pauseIssued = true
-        vacantSinceNanos = null
         return AmbientAction.PAUSE
     }
+
+    private fun saturatingAdd(
+        left: Long,
+        right: Long,
+    ): Long = if (Long.MAX_VALUE - left < right) Long.MAX_VALUE else left + right
 }

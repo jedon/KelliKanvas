@@ -1,6 +1,7 @@
 package com.jedon.kellikanvas.platform.ambient
 
 import java.time.Clock
+import java.time.Instant
 import java.time.LocalTime
 import java.time.ZoneId
 
@@ -25,6 +26,21 @@ class SchedulePolicy(
     fun brightness(): Float {
         val localTime = clock.instant().atZone(zoneIdProvider()).toLocalTime()
         return if (isDay(localTime)) schedule.dayBrightness else schedule.nightBrightness
+    }
+
+    fun nextBoundaryInstant(): Instant {
+        val now = clock.instant()
+        val zone = zoneIdProvider()
+        val localDate = now.atZone(zone).toLocalDate()
+        return (0L..2L)
+            .flatMap { dayOffset ->
+                val date = localDate.plusDays(dayOffset)
+                listOf(schedule.dayStarts, schedule.nightStarts)
+                    .map { boundary -> date.atTime(boundary).atZone(zone).toInstant() }
+            }
+            .filter { it > now }
+            .minOrNull()
+            ?: error("A future schedule boundary must exist")
     }
 
     private fun isDay(time: LocalTime): Boolean = if (schedule.dayStarts < schedule.nightStarts) {
