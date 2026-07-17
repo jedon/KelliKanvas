@@ -3,8 +3,12 @@ package com.jedon.kellikanvas.platform.update
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
+import java.io.FilterInputStream
 import java.io.InputStream
+import java.io.InterruptedIOException
 import java.net.URI
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 import java.security.MessageDigest
 
 data class UpdateResponse(
@@ -20,6 +24,7 @@ fun interface UpdateTransport {
 }
 
 class OkHttpUpdateTransport(
+    private val originPolicy: UpdateOriginPolicy = UpdateOriginPolicy.QNAP_LAN,
     private val client: OkHttpClient =
         OkHttpClient.Builder()
             .followRedirects(false)
@@ -27,7 +32,7 @@ class OkHttpUpdateTransport(
             .build(),
 ) : UpdateTransport {
     override fun open(url: URI, maxBytes: Long): UpdateResponse {
-        UpdateUrlPolicy.requireAllowed(url)
+        originPolicy.requireAllowed(url)
         val response = client.newCall(Request.Builder().url(url.toString()).get().build()).execute()
         val body = response.body
         val length = body.contentLength().takeIf { it >= 0 }
@@ -40,8 +45,35 @@ class OkHttpUpdateTransport(
             finalUrl = response.request.url.toUri(),
             redirected = response.isRedirect,
             contentLength = length,
-            body = body.byteStream(),
+            body = BoundedInputStream(body.byteStream(), maxBytes),
         )
+    }
+}
+
+private class BoundedInputStream(input: InputStream, private val maxBytes: Long) : FilterInputStream(input) {
+    private var total = 0L
+
+    override fun read(): Int {
+        checkCancellation()
+        val value = super.read()
+        if (value >= 0) addBytes(1)
+        return value
+    }
+
+    override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
+        checkCancellation()
+        val count = super.read(buffer, offset, length)
+        if (count > 0) addBytes(count.toLong())
+        return count
+    }
+
+    private fun addBytes(count: Long) {
+        total += count
+        if (total > maxBytes) throw UpdateRejected("response exceeds size limit")
+    }
+
+    private fun checkCancellation() {
+        if (Thread.currentThread().isInterrupted) throw InterruptedIOException("update download cancelled")
     }
 }
 
@@ -55,25 +87,16 @@ class UpdateRepository(
     private val transport: UpdateTransport,
     private val verifier: ApkVerifier,
     private val updateCacheDir: File,
-    private val timestampStore: CheckTimestampStore? = null,
-    private val nowMillis: () -> Long = System::currentTimeMillis,
+    private val originPolicy: UpdateOriginPolicy = UpdateOriginPolicy.QNAP_LAN,
 ) {
-    fun check(manual: Boolean, installedVersionCode: Long): UpdateManifest? {
-        val now = nowMillis()
-        val previous = timestampStore?.lastCheckMillis()
-        if (!UpdateCheckPolicy.shouldCheck(manual, now, previous)) return null
-        timestampStore?.recordCheck(now)
-        val response = checkedOpen(UpdateUrlPolicy.MANIFEST_URI, UpdateLimits.METADATA_MAX_BYTES.toLong())
-        val bytes = response.body.use { it.readBounded(UpdateLimits.METADATA_MAX_BYTES.toLong()) }
-        return UpdateManifest.parse(bytes).also { UpdateUrlPolicy.validateManifest(it, installedVersionCode) }
-    }
-
     fun downloadAndVerify(manifest: UpdateManifest, installed: InstalledPackage): File {
-        UpdateUrlPolicy.validateManifest(manifest, installed.versionCode)
+        originPolicy.validateManifest(manifest, installed.versionCode)
         updateCacheDir.mkdirs()
-        deleteStaleFiles()
         val partial = File(updateCacheDir, "kellikanvas-${manifest.versionCode}.apk.part")
         val destination = File(updateCacheDir, "kellikanvas-${manifest.versionCode}.apk")
+        updateCacheDir.listFiles()
+            ?.filter { it.isFile && it.name.endsWith(".part") }
+            ?.forEach(File::delete)
         try {
             val checksumResponse = checkedOpen(manifest.checksumUrl, UpdateLimits.METADATA_MAX_BYTES.toLong())
             val checksumText =
@@ -109,11 +132,19 @@ class UpdateRepository(
             val actualHash = digest.digest().hex()
             if (actualHash != manifest.sha256) throw UpdateRejected("APK hash mismatch")
             verifier.verify(partial, manifest, installed)
-            if (!partial.renameTo(destination)) throw UpdateRejected("could not finalize APK")
+            try {
+                Files.move(
+                    partial.toPath(),
+                    destination.toPath(),
+                    StandardCopyOption.ATOMIC_MOVE,
+                    StandardCopyOption.REPLACE_EXISTING,
+                )
+            } catch (error: Exception) {
+                throw UpdateRejected("could not atomically finalize APK", error)
+            }
             return destination
         } catch (error: Exception) {
             partial.delete()
-            destination.delete()
             if (error is UpdateRejected) throw error
             throw UpdateRejected("update download failed", error)
         }
@@ -126,7 +157,7 @@ class UpdateRepository(
     }
 
     private fun checkedOpen(url: URI, maxBytes: Long): UpdateResponse {
-        UpdateUrlPolicy.requireAllowed(url)
+        originPolicy.requireAllowed(url)
         val response = transport.open(url, maxBytes)
         if (response.redirected || response.statusCode in 300..399 || response.finalUrl != url) {
             response.body.close()
@@ -141,6 +172,41 @@ class UpdateRepository(
             throw UpdateRejected("response exceeds size limit")
         }
         return response
+    }
+}
+
+class AuthenticatedManifestRepository(
+    private val transport: UpdateTransport,
+    private val authenticator: ManifestAuthenticator,
+    private val replayGuard: ReleaseReplayGuard,
+    private val timestampStore: CheckTimestampStore,
+    private val originPolicy: UpdateOriginPolicy = UpdateOriginPolicy.QNAP_LAN,
+    private val manifestUri: URI = UpdateOriginPolicy.MANIFEST_URI,
+    private val signatureUri: URI = UpdateOriginPolicy.SIGNATURE_URI,
+    private val nowMillis: () -> Long = System::currentTimeMillis,
+) {
+    fun check(manual: Boolean, installedVersionCode: Long): UpdateManifest? {
+        val now = nowMillis()
+        if (!UpdateCheckPolicy.shouldCheck(manual, now, timestampStore.lastCheckMillis())) return null
+        timestampStore.recordCheck(now)
+        val manifestBytes = fetchKnown(manifestUri, UpdateLimits.METADATA_MAX_BYTES.toLong())
+        val signatureBytes = fetchKnown(signatureUri, 1024)
+        val manifest = authenticator.authenticate(manifestBytes, signatureBytes)
+        originPolicy.validateManifest(manifest, installedVersionCode)
+        replayGuard.accept(manifest)
+        return manifest
+    }
+
+    private fun fetchKnown(uri: URI, maxBytes: Long): ByteArray {
+        originPolicy.requireAllowed(uri)
+        val response = transport.open(uri, maxBytes)
+        response.body.use { body ->
+            if (response.redirected || response.statusCode in 300..399 || response.finalUrl != uri) {
+                throw UpdateRejected("redirects are forbidden")
+            }
+            if (response.statusCode != 200) throw UpdateRejected("unexpected HTTP status ${response.statusCode}")
+            return body.readBounded(maxBytes)
+        }
     }
 }
 

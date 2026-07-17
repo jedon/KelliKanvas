@@ -7,13 +7,22 @@ import java.net.URI
 
 class UpdateManifestPolicyTest {
     private val validJson =
-        """
-        {"schema":1,"packageName":"com.jedon.kellikanvas","versionCode":2,"versionName":"0.2.0","apkUrl":"http://darklingnas:8088/kellikanvas-2.apk","checksumUrl":"http://darklingnas:8088/kellikanvas-2.apk.sha256","sizeBytes":1234,"sha256":"${"a".repeat(64)}"}
-        """.trimIndent()
+        UpdateManifest(
+            schema = 1,
+            sequence = 2,
+            packageName = UpdateLimits.PACKAGE_NAME,
+            versionCode = 2,
+            versionName = "0.2.0",
+            apkUrl = URI("http://darklingnas:8088/kellikanvas-2.apk"),
+            checksumUrl = URI("http://darklingnas:8088/kellikanvas-2.apk.sha256"),
+            sizeBytes = 1234,
+            sha256 = "a".repeat(64),
+            signerSha256 = "A".repeat(64),
+        ).canonicalBytes()
 
     @Test
     fun `parses schema one manifest`() {
-        val manifest = UpdateManifest.parse(validJson.toByteArray())
+        val manifest = UpdateManifest.parse(validJson)
         assertThat(manifest.versionCode).isEqualTo(2)
         assertThat(manifest.sha256).hasLength(64)
     }
@@ -28,7 +37,7 @@ class UpdateManifestPolicyTest {
 
     @Test
     fun `requires exact package newer version and bounded apk`() {
-        val manifest = UpdateManifest.parse(validJson.toByteArray())
+        val manifest = UpdateManifest.parse(validJson)
         UpdateUrlPolicy.validateManifest(manifest, installedVersionCode = 1)
         assertThrows(UpdateRejected::class.java) {
             UpdateUrlPolicy.validateManifest(manifest.copy(packageName = "other"), 1)
@@ -54,6 +63,18 @@ class UpdateManifestPolicyTest {
             assertThrows(url, UpdateRejected::class.java) {
                 UpdateUrlPolicy.requireAllowed(URI(url))
             }
+        }
+    }
+
+    @Test
+    fun `remote origins require explicit https host`() {
+        val policy = UpdateOriginPolicy.remoteHttps("updates.example.test")
+        policy.requireAllowed(URI("https://updates.example.test/release.apk"))
+        assertThrows(UpdateRejected::class.java) {
+            policy.requireAllowed(URI("http://updates.example.test/release.apk"))
+        }
+        assertThrows(UpdateRejected::class.java) {
+            policy.requireAllowed(URI("https://other.example.test/release.apk"))
         }
     }
 

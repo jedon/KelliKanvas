@@ -22,6 +22,7 @@ class UpdateRepositoryTest {
             checksumUrl = URI("http://darklingnas:8088/kellikanvas-2.apk.sha256"),
             sizeBytes = bytes.size.toLong(),
             sha256 = hash,
+            signerSha256 = "A".repeat(64),
         )
 
     @Test
@@ -62,7 +63,7 @@ class UpdateRepositoryTest {
                 Case("hash", "tampered!".toByteArray(), null, manifest, FakeInspector()),
                 Case("package", bytes, null, manifest, FakeInspector(packageName = "other")),
                 Case("version", bytes, null, manifest, FakeInspector(versionCode = 3)),
-                Case("signer", bytes, null, manifest, FakeInspector(signer = "BB")),
+                Case("signer", bytes, null, manifest, FakeInspector(signer = "B".repeat(64))),
             )
         cases.forEach { case ->
             val dir = Files.createTempDirectory("update-${case.name}").toFile()
@@ -89,7 +90,44 @@ class UpdateRepositoryTest {
         assertThat(dir.listFiles().orEmpty().toList()).isEmpty()
     }
 
-    private fun installed() = InstalledPackage(UpdateLimits.PACKAGE_NAME, 1, setOf("AA"))
+    @Test
+    fun `atomically replaces existing destination only after verification`() {
+        val dir = Files.createTempDirectory("update-test").toFile()
+        val destination = File(dir, "kellikanvas-2.apk")
+        destination.writeText("previous")
+        val repository =
+            UpdateRepository(
+                FakeTransport(bytes, "$hash\n".toByteArray()),
+                ApkVerifier(FakeInspector()),
+                dir,
+            )
+
+        val installed = repository.downloadAndVerify(manifest, installed())
+
+        assertThat(installed).isEqualTo(destination)
+        assertThat(installed.readBytes()).isEqualTo(bytes)
+        assertThat(dir.resolve("kellikanvas-2.apk.part").exists()).isFalse()
+    }
+
+    @Test
+    fun `failed replacement preserves last verified apk`() {
+        val dir = Files.createTempDirectory("update-test").toFile()
+        val destination = File(dir, "kellikanvas-2.apk")
+        destination.writeText("previous")
+        val repository =
+            UpdateRepository(
+                FakeTransport("tampered!".toByteArray(), "$hash\n".toByteArray()),
+                ApkVerifier(FakeInspector()),
+                dir,
+            )
+
+        assertThrows(UpdateRejected::class.java) {
+            repository.downloadAndVerify(manifest, installed())
+        }
+        assertThat(destination.readText()).isEqualTo("previous")
+    }
+
+    private fun installed() = InstalledPackage(UpdateLimits.PACKAGE_NAME, 1, setOf("A".repeat(64)))
 
     private data class Case(
         val name: String,
@@ -116,7 +154,7 @@ class UpdateRepositoryTest {
     private class FakeInspector(
         private val packageName: String = UpdateLimits.PACKAGE_NAME,
         private val versionCode: Long = 2,
-        private val signer: String = "AA",
+        private val signer: String = "A".repeat(64),
     ) : ArchiveInspector {
         override fun inspect(apk: File) = ArchivePackage(packageName, versionCode, setOf(signer))
     }

@@ -4,6 +4,9 @@ plugins {
 
 android {
     namespace = "com.jedon.kellikanvas.platform.update"
+    testOptions {
+        unitTests.isIncludeAndroidResources = true
+    }
 }
 
 dependencies {
@@ -13,5 +16,7 @@ dependencies {
     implementation(libs.okhttp)
 
     testImplementation(libs.junit4)
+    testImplementation(libs.okhttp.mockwebserver)
+    testImplementation(libs.robolectric)
     testImplementation(libs.truth)
 }

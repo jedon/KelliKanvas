@@ -10,14 +10,23 @@ val releaseSigningEnvironment =
         "alias" to providers.environmentVariable("KELLIKANVAS_KEY_ALIAS").orNull,
         "keyPassword" to providers.environmentVariable("KELLIKANVAS_KEY_PASSWORD").orNull,
     )
+val metadataPublicKeyBase64 = providers.environmentVariable("KELLIKANVAS_METADATA_PUBLIC_KEY_BASE64").orNull
 
 android {
     namespace = "com.jedon.kellikanvas"
+    buildFeatures {
+        buildConfig = true
+    }
 
     defaultConfig {
         applicationId = "com.jedon.kellikanvas"
         versionCode = 1
         versionName = "0.1.0"
+        buildConfigField(
+            "String",
+            "UPDATE_METADATA_PUBLIC_KEY_BASE64",
+            "\"${metadataPublicKeyBase64.orEmpty()}\"",
+        )
     }
 
     if (releaseSigningEnvironment.values.all { !it.isNullOrBlank() }) {
@@ -41,6 +50,7 @@ val missingReleaseSigningVariables =
     releaseSigningEnvironment
         .filterValues { it.isNullOrBlank() }
         .keys
+        .plus(listOfNotNull("metadataPublicKey".takeIf { metadataPublicKeyBase64.isNullOrBlank() }))
         .joinToString(",")
 
 tasks.register("validateReleaseSigning") {

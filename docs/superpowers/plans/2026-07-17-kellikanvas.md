@@ -815,7 +815,7 @@ git commit -m "feat: integrate slideshow controls and diagnostics"
 
 - [ ] **Step 1: Write failing manifest/URL tests**
 
-Manifest origin is exactly `http://darklingnas:8088`, maximum 64 KiB, no redirects, package `com.jedon.kellikanvas`, newer version only, APK maximum 500 MiB.
+Authenticate strict canonical manifest bytes with the app-pinned offline metadata public key before trusting any field. The QNAP origin is exactly `http://darklingnas:8088`; explicitly configured remote origins require HTTPS. Metadata is maximum 64 KiB, redirects are forbidden, package is `com.jedon.kellikanvas`, release sequence and version are anti-replay monotonic, and APK size is maximum 500 MiB.
 
 - [ ] **Step 2: Write failing APK verification tests**
 
@@ -823,15 +823,15 @@ Require exact size, manifest and independent checksum agreement, package identit
 
 - [ ] **Step 3: Implement user-confirmed installer**
 
-Use app cache plus FileProvider and `ACTION_INSTALL_PACKAGE`/package installer flow. Request “Install unknown apps” when necessary. Never silently install.
+Use an Android `PackageInstaller` full-install session with mutable status callback only on API 31+, a non-exported completion receiver, and explicit system user confirmation. Request “Install unknown apps” when necessary. Never silently install.
 
 - [ ] **Step 4: Implement signed release bundle**
 
-Release signing comes only from four environment variables. The Python tool verifies signing, calculates metadata/hash, writes versioned APK and checksum, then writes manifest last.
+Release APK signing comes only from four environment variables. An isolated workflow step obtains the offline metadata private key from a separate secret, signs canonical metadata, deletes all key material, and writes the versioned APK, checksum, metadata signature, then manifest last.
 
 - [ ] **Step 5: Implement QNAP publisher**
 
-Copy to `\\DarklingNAS\Public\KelliKanvas`, verify copied SHA-256, and atomically rename manifest last. nginx binds port 8088, read-only mounts `/share/Public/KelliKanvas`, disables listing, and serves only GET/HEAD.
+Copy to `\\DarklingNAS\Public\KelliKanvas`, verify copied SHA-256, and atomically rename manifest last. nginx binds port 8088 only on a configured trusted-LAN address, uses a pinned multi-architecture digest, read-only mounts `/share/Public/KelliKanvas`, disables listing, and serves only GET/HEAD.
 
 - [ ] **Step 6: Verify**
 

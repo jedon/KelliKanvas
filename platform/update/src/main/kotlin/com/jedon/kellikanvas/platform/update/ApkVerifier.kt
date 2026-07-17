@@ -37,5 +37,8 @@ class ApkVerifier(private val inspector: ArchiveInspector) {
         ) {
             throw UpdateRejected("APK signer does not match installed app")
         }
+        if (manifest.signerSha256.uppercase() !in archive.signerSha256.map(String::uppercase)) {
+            throw UpdateRejected("authenticated metadata signer does not match APK")
+        }
     }
 }

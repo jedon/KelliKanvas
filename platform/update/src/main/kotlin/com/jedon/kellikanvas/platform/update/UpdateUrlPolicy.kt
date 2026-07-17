@@ -2,19 +2,25 @@ package com.jedon.kellikanvas.platform.update
 
 import java.net.URI
 
-object UpdateUrlPolicy {
-    val MANIFEST_URI: URI = URI("http://darklingnas:8088/manifest.json")
+data class UpdateOrigin(val scheme: String, val host: String, val port: Int)
 
+class UpdateOriginPolicy private constructor(private val allowed: Set<UpdateOrigin>) {
     fun requireAllowed(uri: URI) {
-        val allowed =
-            uri.scheme == "http" &&
-                uri.host?.equals("darklingnas", ignoreCase = true) == true &&
-                uri.port == 8088 &&
+        val effectivePort =
+            when {
+                uri.port >= 0 -> uri.port
+                uri.scheme == "https" -> 443
+                uri.scheme == "http" -> 80
+                else -> -1
+            }
+        val origin = UpdateOrigin(uri.scheme?.lowercase().orEmpty(), uri.host?.lowercase().orEmpty(), effectivePort)
+        val accepted =
+            origin in allowed &&
                 uri.rawUserInfo == null &&
                 uri.rawQuery == null &&
                 uri.rawFragment == null &&
                 uri.rawPath.startsWith("/")
-        if (!allowed) throw UpdateRejected("update URL is outside the allowed origin")
+        if (!accepted) throw UpdateRejected("update URL is outside the allowed origin")
     }
 
     fun validateManifest(manifest: UpdateManifest, installedVersionCode: Long) {
@@ -25,8 +31,41 @@ object UpdateUrlPolicy {
             throw UpdateRejected("APK size is outside limits")
         }
         if (!manifest.sha256.matches(Regex("[0-9a-f]{64}"))) throw UpdateRejected("invalid SHA-256")
+        if (!manifest.signerSha256.matches(Regex("[0-9A-F]{64}"))) throw UpdateRejected("invalid signer SHA-256")
         requireAllowed(manifest.apkUrl)
         requireAllowed(manifest.checksumUrl)
+    }
+
+    companion object {
+        val QNAP_LAN = UpdateOriginPolicy(setOf(UpdateOrigin("http", "darklingnas", 8088)))
+        val MANIFEST_URI: URI = URI("http://darklingnas:8088/manifest.json")
+        val SIGNATURE_URI: URI = URI("http://darklingnas:8088/manifest.json.sig")
+
+        fun remoteHttps(host: String, port: Int = 443): UpdateOriginPolicy = UpdateOriginPolicy(
+            setOf(UpdateOrigin("https", host.lowercase(), port)),
+        )
+
+        fun forTest(uri: URI): UpdateOriginPolicy {
+            val port =
+                if (uri.port >= 0) {
+                    uri.port
+                } else if (uri.scheme == "https") {
+                    443
+                } else {
+                    80
+                }
+            return UpdateOriginPolicy(setOf(UpdateOrigin(uri.scheme, requireNotNull(uri.host), port)))
+        }
+    }
+}
+
+object UpdateUrlPolicy {
+    val MANIFEST_URI = UpdateOriginPolicy.MANIFEST_URI
+
+    fun requireAllowed(uri: URI) = UpdateOriginPolicy.QNAP_LAN.requireAllowed(uri)
+
+    fun validateManifest(manifest: UpdateManifest, installedVersionCode: Long) {
+        UpdateOriginPolicy.QNAP_LAN.validateManifest(manifest, installedVersionCode)
     }
 }
 
