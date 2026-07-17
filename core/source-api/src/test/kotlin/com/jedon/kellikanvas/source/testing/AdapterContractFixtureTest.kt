@@ -18,10 +18,17 @@ import com.jedon.kellikanvas.source.SourceAdapter
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.awaitCancellation
+import org.junit.Test
 import java.io.Closeable
 
 class AdapterContractFixtureTest : AdapterContract() {
-    private var sharedDataset: ContractDataset? = null
+    @Test
+    fun `fake harness builds a separate dataset each time`() {
+        val first = createHarness()
+        val second = createHarness()
+
+        assertThat(second.dataset).isNotSameInstanceAs(first.dataset)
+    }
 
     override fun createHarness(): AdapterHarness {
         val profileId = SourceProfileId("fixture-profile")
@@ -55,27 +62,24 @@ class AdapterContractFixtureTest : AdapterContract() {
                 height = 768,
             )
         val dataset =
-            sharedDataset
-                ?: ContractDataset(
-                    root = root,
-                    childrenByFolder =
-                    mapOf(
-                        root to
-                            listOf(
-                                first.entry,
-                                SourceEntry.Folder(nested, "sensitive-folder"),
-                                second.entry,
-                            ),
-                        nested to
-                            listOf(
-                                nestedPhoto.entry,
-                                SourceEntry.Folder(root, "cycle-to-root"),
-                            ),
-                    ),
-                    photos = listOf(first, second, nestedPhoto),
-                ).also {
-                    sharedDataset = it
-                }
+            ContractDataset(
+                root = root,
+                childrenByFolder =
+                mapOf(
+                    root to
+                        listOf(
+                            first.entry,
+                            SourceEntry.Folder(nested, "sensitive-folder"),
+                            second.entry,
+                        ),
+                    nested to
+                        listOf(
+                            nestedPhoto.entry,
+                            SourceEntry.Folder(root, "cycle-to-root"),
+                        ),
+                ),
+                photos = listOf(first, second, nestedPhoto),
+            )
         val sensitiveValues =
             setOf(
                 "credential-value-123",

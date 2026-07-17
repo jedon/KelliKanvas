@@ -21,10 +21,10 @@ import org.junit.Test
 /**
  * JUnit 4 contract suite for every source adapter.
  *
- * Concrete suites subclass this type and return a fresh adapter in each [AdapterHarness] while
- * reusing one immutable [ContractDataset] instance. Nullable scenario capabilities let sources
- * such as SAF omit credential behavior they do not possess while still requiring all declared
- * credential and grant scenarios.
+ * Concrete suites subclass this type and return a fresh adapter in each [AdapterHarness] with
+ * structurally equivalent deterministic datasets. Nullable scenario capabilities let sources such
+ * as SAF omit credential behavior they do not possess while still requiring all declared credential
+ * and grant scenarios.
  */
 abstract class AdapterContract {
     protected abstract fun createHarness(): AdapterHarness
@@ -78,7 +78,7 @@ abstract class AdapterContract {
         val harness = createHarness()
         val freshHarness = createHarness()
         assertThat(freshHarness.adapter).isNotSameInstanceAs(harness.adapter)
-        assertThat(freshHarness.dataset).isSameInstanceAs(harness.dataset)
+        assertEquivalentDatasets(harness.dataset, freshHarness.dataset)
         val scan = traverse(harness)
         val listedPhotos = scan.values.flatten().filterIsInstance<SourceEntry.Photo>()
 
@@ -251,7 +251,7 @@ abstract class AdapterContract {
         val harness = createHarness()
         val freshHarness = createHarness()
         assertThat(freshHarness.adapter).isNotSameInstanceAs(harness.adapter)
-        assertThat(freshHarness.dataset).isSameInstanceAs(harness.dataset)
+        assertEquivalentDatasets(harness.dataset, freshHarness.dataset)
 
         harness.dataset.photos.forEach { expected ->
             val payload = expected.bytes
@@ -366,6 +366,31 @@ abstract class AdapterContract {
             }
         }
         return sink.readByteArray()
+    }
+
+    private fun assertEquivalentDatasets(
+        expected: ContractDataset,
+        actual: ContractDataset,
+    ) {
+        assertThat(actual.root).isEqualTo(expected.root)
+        assertThat(actual.folders).containsExactlyElementsIn(expected.folders)
+        expected.folders.forEach { folder ->
+            assertThat(actual.children(folder))
+                .containsExactlyElementsIn(expected.children(folder))
+                .inOrder()
+        }
+        assertThat(actual.photos).hasSize(expected.photos.size)
+        expected.photos.forEach { expectedPhoto ->
+            val actualPhoto = requireNotNull(actual.photo(expectedPhoto.entry.asset))
+            assertThat(actualPhoto.entry).isEqualTo(expectedPhoto.entry)
+            assertThat(actualPhoto.metadata).isEqualTo(expectedPhoto.metadata)
+
+            val expectedBytes = expectedPhoto.bytes
+            val actualBytes = actualPhoto.bytes
+            assertThat(actualBytes).isEqualTo(expectedBytes)
+            assertThat(expectedPhoto.bytes === expectedBytes).isFalse()
+            assertThat(actualPhoto.bytes === actualBytes).isFalse()
+        }
     }
 
     private suspend fun traverse(harness: AdapterHarness): Map<FolderRef, List<SourceEntry>> {
