@@ -1,6 +1,6 @@
 # Development
 
-KelliKanvas builds with JDK 17, Gradle 9.4.1, and Android SDK 37. Newer
+KelliKanvas builds with JDK 17, Gradle 9.6.1, and Android SDK 37. Newer
 JDKs may be installed on the host, but Gradle and Android builds must run
 with JDK 17.
 
@@ -44,7 +44,7 @@ Run these commands from the repository root:
 .\gradlew.bat ktlintCheck lintDebug testDebugUnitTest assembleDebug --stacktrace
 ```
 
-The wrapper version must be Gradle 9.4.1. The final command performs the same
+The wrapper version must be Gradle 9.6.1. The final command performs the same
 smoke checks as continuous integration. Android compilation requires JDK 17
 and SDK Platform 37.0; GitHub Actions is the reproducible fallback when either
 is unavailable locally.

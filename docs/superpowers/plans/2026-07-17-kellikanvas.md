@@ -6,7 +6,7 @@
 
 **Architecture:** Compose for TV provides setup, browsing, settings, diagnostics, and overlays. Protocol-specific adapters implement one source contract, a metadata-only Room catalog builds immutable playlist cycles, and a bounded image pipeline renders through a native-resolution `SurfaceView`. Ambient and update behavior use pure policies behind Android adapters so unsupported hardware and private distribution degrade safely.
 
-**Tech Stack:** Kotlin 2.3.21, Android Gradle Plugin 9.2.0, Gradle 9.4.1, JDK 17, compile/target SDK 37, min SDK 28, Compose BOM 2026.06.00, Compose for TV 1.1.0, coroutines, Room 2.8.4, DataStore 1.2.1, OkHttp 5, SMBJ 0.14.0, AndroidX ExifInterface, Android Keystore, JUnit, Robolectric, Compose UI tests, MockWebServer, Testcontainers/Samba, GitHub Actions, nginx on QNAP.
+**Tech Stack:** Kotlin 2.4.10, Android Gradle Plugin 9.3.0, Gradle 9.6.1, JDK 17, compile/target SDK 37, min SDK 28, Compose BOM 2026.06.01, Compose for TV 1.1.0, coroutines, Room 2.8.4, DataStore 1.2.1, OkHttp 5, SMBJ 0.14.0, AndroidX ExifInterface, Android Keystore, JUnit, Robolectric, Compose UI tests, MockWebServer, Testcontainers/Samba, GitHub Actions, nginx on QNAP.
 
 ---
 
@@ -78,15 +78,15 @@ $env:PATH += ";$env:ANDROID_HOME\platform-tools"
 
 The current machine has JDK 25 but no Android SDK, ADB, or Gradle. Install Android Studio or command-line tools, SDK Platform 37, Build Tools 36.0.0+, and platform-tools before local compilation. CI remains the reproducible fallback.
 
-- [ ] **Step 2: Generate the Gradle 9.4.1 wrapper**
+- [ ] **Step 2: Generate the Gradle 9.6.1 wrapper**
 
 ```powershell
-Invoke-WebRequest https://services.gradle.org/distributions/gradle-9.4.1-bin.zip -OutFile "$env:TEMP\gradle-9.4.1-bin.zip"
-Expand-Archive "$env:TEMP\gradle-9.4.1-bin.zip" "$env:TEMP\gradle-9.4.1" -Force
-& "$env:TEMP\gradle-9.4.1\gradle-9.4.1\bin\gradle.bat" wrapper --gradle-version 9.4.1 --distribution-type bin
+Invoke-WebRequest https://services.gradle.org/distributions/gradle-9.6.1-bin.zip -OutFile "$env:TEMP\gradle-9.6.1-bin.zip"
+Expand-Archive "$env:TEMP\gradle-9.6.1-bin.zip" "$env:TEMP\gradle-9.6.1" -Force
+& "$env:TEMP\gradle-9.6.1\gradle-9.6.1\bin\gradle.bat" wrapper --gradle-version 9.6.1 --distribution-type bin
 ```
 
-Expected: `gradlew.bat --version` reports Gradle 9.4.1.
+Expected: `gradlew.bat --version` reports Gradle 9.6.1.
 
 - [ ] **Step 3: Pin the dependency catalog**
 
@@ -94,10 +94,10 @@ Create `gradle/libs.versions.toml` with at least:
 
 ```toml
 [versions]
-agp = "9.2.0"
-kotlin = "2.3.21"
+agp = "9.3.0"
+kotlin = "2.4.10"
 ksp = "2.3.10"
-compose-bom = "2026.06.00"
+compose-bom = "2026.06.01"
 tv-material = "1.1.0"
 activity = "1.13.0"
 core = "1.19.0"
@@ -116,7 +116,7 @@ robolectric = "4.16.1"
 turbine = "1.2.1"
 ```
 
-Use AGP built-in Kotlin for Android modules; do not apply `org.jetbrains.kotlin.android` or kapt. Apply KSP for Room and the Compose compiler plugin matching Kotlin 2.3.21.
+Use AGP built-in Kotlin for Android modules; do not apply `org.jetbrains.kotlin.android` or kapt. Apply KSP for Room and the Compose compiler plugin matching Kotlin 2.4.10.
 
 - [ ] **Step 4: Add root configuration**
 
