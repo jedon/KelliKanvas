@@ -36,7 +36,9 @@ class ContractPhoto(
  * An immutable, source-neutral tree used by [AdapterContract].
  *
  * Folder cycles are allowed so traversal behavior can be exercised; every referenced folder and
- * photo must still have a matching expectation.
+ * photo must still have a matching expectation. Entry names and raw provider/profile identifiers
+ * are also privacy canaries; choose distinctive deterministic test values rather than production
+ * data.
  */
 class ContractDataset(
     val root: FolderRef,
@@ -51,6 +53,26 @@ class ContractDataset(
         )
     private val expectedPhotos: Map<AssetRef, ContractPhoto> =
         Collections.unmodifiableMap(photos.associateBy(ContractPhoto::entry).mapKeys { it.key.asset })
+    internal val sensitiveCanaries: Set<String> =
+        Collections.unmodifiableSet(
+            buildSet {
+                add(root.profileId.value)
+                expectedChildren.forEach { (folder, children) ->
+                    add(folder.objectId.value)
+                    children.forEach { entry ->
+                        add(entry.name)
+                        when (entry) {
+                            is SourceEntry.Folder -> add(entry.ref.objectId.value)
+                            is SourceEntry.Photo -> {
+                                add(entry.asset.objectId.value)
+                                entry.asset.eTag?.let(::add)
+                                entry.asset.versionToken?.let(::add)
+                            }
+                        }
+                    }
+                }
+            },
+        )
 
     init {
         require(root in expectedChildren) { "Contract dataset must include its root folder" }

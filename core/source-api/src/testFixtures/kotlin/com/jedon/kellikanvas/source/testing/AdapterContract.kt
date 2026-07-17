@@ -12,8 +12,11 @@ import com.jedon.kellikanvas.source.MAX_PAGE_LIMIT
 import com.jedon.kellikanvas.source.PhotoByteStream
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withTimeout
 import okio.Buffer
 import org.junit.Assert.fail
 import org.junit.Test
@@ -22,9 +25,12 @@ import org.junit.Test
  * JUnit 4 contract suite for every source adapter.
  *
  * Concrete suites subclass this type and return a fresh adapter in each [AdapterHarness] with
- * structurally equivalent deterministic datasets. Nullable scenario capabilities let sources such
- * as SAF omit credential behavior they do not possess while still requiring all declared credential
- * and grant scenarios.
+ * structurally equivalent deterministic datasets. Every scenario is explicitly supported or
+ * declared not applicable, with source-specific applicability validated by [AdapterHarness].
+ *
+ * Unsupported-format and corrupt-content failures intentionally remain outside this contract.
+ * Byte-source adapters stream opaque bytes; the downstream image decoder owns format and content
+ * validation.
  */
 abstract class AdapterContract {
     protected abstract fun createHarness(): AdapterHarness
@@ -138,14 +144,14 @@ abstract class AdapterContract {
                 }
             }
 
-        stall.started.await()
+        awaitSignal(stall.started, "listing resource to start")
         val cancellation = CancellationException("contract-listing-cancelled")
         job.cancel(cancellation)
         job.join()
 
         assertThat(caught.isCompleted).isTrue()
-        assertThat(caught.await()).isSameInstanceAs(cancellation)
-        assertThat(stall.closed.isCompleted).isTrue()
+        assertCancellationContains(caught.await(), cancellation)
+        awaitSignal(stall.closed, "listing resource to close")
     }
 
     @Test
@@ -168,15 +174,15 @@ abstract class AdapterContract {
                 }
             }
 
-        stall.started.await()
+        awaitSignal(stall.started, "read resource to start")
         assertThat(opened.isCompleted).isTrue()
         val cancellation = CancellationException("contract-read-cancelled")
         job.cancel(cancellation)
         job.join()
 
         assertThat(caught.isCompleted).isTrue()
-        assertThat(caught.await()).isSameInstanceAs(cancellation)
-        assertThat(stall.closed.isCompleted).isTrue()
+        assertCancellationContains(caught.await(), cancellation)
+        awaitSignal(stall.closed, "read resource to close")
     }
 
     @Test
@@ -219,33 +225,47 @@ abstract class AdapterContract {
     @Test
     fun `configured invalid credentials normalize to authentication required`() = runTest {
         val harness = createHarness()
-        val scenario = harness.scenarios.invalidCredential ?: return@runTest
-        scenario.arrange()
-
-        val failure =
-            expectFailure<SourceFailure.AuthenticationRequired> {
-                scenario.exercise(harness)
-            }
-
-        assertThat(failure.profileId).isEqualTo(harness.adapter.profileId)
-        scenario.adapterSpecificAssertions(failure)
+        assertDeclaredScenario(
+            harness = harness,
+            declaration = harness.scenarios.invalidCredential,
+            expected = SourceFailure.AuthenticationRequired::class.java,
+        )
     }
 
     @Test
     fun `configured revoked grants normalize to permission revoked`() = runTest {
         val harness = createHarness()
-        val scenario = harness.scenarios.revokedGrant ?: return@runTest
-        scenario.arrange()
-
-        val failure =
-            expectFailure<SourceFailure.PermissionRevoked> {
-                scenario.exercise(harness)
-            }
-
-        assertThat(failure.profileId).isEqualTo(harness.adapter.profileId)
-        scenario.adapterSpecificAssertions(failure)
+        assertDeclaredScenario(
+            harness = harness,
+            declaration = harness.scenarios.revokedGrant,
+            expected = SourceFailure.PermissionRevoked::class.java,
+        )
     }
 
+    @Test
+    fun `configured timeouts normalize to timeout`() = runTest {
+        val harness = createHarness()
+        assertDeclaredScenario(
+            harness = harness,
+            declaration = harness.scenarios.timeout,
+            expected = SourceFailure.Timeout::class.java,
+        )
+    }
+
+    @Test
+    fun `configured protocol errors normalize to protocol failure`() = runTest {
+        val harness = createHarness()
+        assertDeclaredScenario(
+            harness = harness,
+            declaration = harness.scenarios.protocolFailure,
+            expected = SourceFailure.ProtocolFailure::class.java,
+        )
+    }
+
+    /**
+     * Fixture payloads are intentionally opaque and need not decode as their declared MIME type.
+     * Unsupported-format and corrupt-content classification belongs to the image decoder contract.
+     */
     @Test
     fun `photo bytes stay stable across bounded fresh streams and adapters`() = runTest {
         val harness = createHarness()
@@ -267,6 +287,29 @@ abstract class AdapterContract {
             assertThat(repeated).isEqualTo(first)
             assertThat(fromFreshAdapter).isEqualTo(first)
         }
+    }
+
+    @Test
+    fun `photo stream closes after an early consumer close`() = runTest {
+        val harness = createHarness()
+        val expected = harness.dataset.photos.first()
+        val asset = expected.entry.asset
+        val before = harness.streamObservation(asset)
+        val stream = harness.adapter.open(asset)
+        val afterOpen = harness.streamObservation(asset)
+
+        assertThat(afterOpen.openedStreams).isEqualTo(before.openedStreams + 1)
+        assertThat(afterOpen.bytesRead).isEqualTo(before.bytesRead)
+        try {
+            val read = stream.read(Buffer(), 1)
+            assertThat(read).isEqualTo(1)
+            assertThat(read).isLessThan(expected.bytes.size.toLong())
+        } finally {
+            stream.close()
+        }
+
+        val afterClose = harness.streamObservation(asset)
+        assertThat(afterClose.closedStreams).isEqualTo(before.closedStreams + 1)
     }
 
     @Test
@@ -296,20 +339,29 @@ abstract class AdapterContract {
         diagnostics += harness
         diagnostics += harness.adapter
         diagnostics += harness.dataset
+        diagnostics += harness.scenarios
         diagnostics += harness.adapter.probe()
         diagnostics.addAll(harness.dataset.folders.flatMap(harness.dataset::children))
         diagnostics.addAll(harness.dataset.photos.map(ContractPhoto::metadata))
         diagnostics.addAll(harness.diagnostics())
         diagnostics += missingFailure()
         diagnostics += removedFailure()
-        configuredAccessFailure(
+        configuredScenarioDiagnostic(
             select = { it.scenarios.invalidCredential },
             expected = SourceFailure.AuthenticationRequired::class.java,
-        )?.let(diagnostics::add)
-        configuredAccessFailure(
+        ).let(diagnostics::add)
+        configuredScenarioDiagnostic(
             select = { it.scenarios.revokedGrant },
             expected = SourceFailure.PermissionRevoked::class.java,
-        )?.let(diagnostics::add)
+        ).let(diagnostics::add)
+        configuredScenarioDiagnostic(
+            select = { it.scenarios.timeout },
+            expected = SourceFailure.Timeout::class.java,
+        ).let(diagnostics::add)
+        configuredScenarioDiagnostic(
+            select = { it.scenarios.protocolFailure },
+            expected = SourceFailure.ProtocolFailure::class.java,
+        ).let(diagnostics::add)
 
         diagnostics.forEach { diagnostic ->
             val rendered = diagnostic.toString()
@@ -352,7 +404,13 @@ abstract class AdapterContract {
     ): ByteArray {
         val payload = expected.bytes
         val sink = Buffer()
-        harness.adapter.open(expected.entry.asset).use { stream ->
+        val asset = expected.entry.asset
+        val before = harness.streamObservation(asset)
+        val stream = harness.adapter.open(asset)
+        val afterOpen = harness.streamObservation(asset)
+        assertThat(afterOpen.openedStreams).isEqualTo(before.openedStreams + 1)
+        assertThat(afterOpen.bytesRead).isEqualTo(before.bytesRead)
+        try {
             stream.contentLength?.let { assertThat(it).isEqualTo(payload.size.toLong()) }
             val firstRead = stream.read(sink, requestedChunkSize)
             assertThat(firstRead).isGreaterThan(0)
@@ -364,7 +422,11 @@ abstract class AdapterContract {
                 if (read == -1L) break
                 assertThat(read).isAtMost(requestedChunkSize)
             }
+        } finally {
+            stream.close()
         }
+        val afterClose = harness.streamObservation(asset)
+        assertThat(afterClose.closedStreams).isEqualTo(before.closedStreams + 1)
         return sink.readByteArray()
     }
 
@@ -431,16 +493,66 @@ abstract class AdapterContract {
         return expectFailure { harness.adapter.probe() }
     }
 
-    private suspend fun configuredAccessFailure(
-        select: (AdapterHarness) -> AccessFailureScenario?,
+    private suspend fun configuredScenarioDiagnostic(
+        select: (AdapterHarness) -> ScenarioDeclaration,
         expected: Class<out SourceFailure>,
-    ): SourceFailure? {
+    ): Any {
         val harness = createHarness()
-        val scenario = select(harness) ?: return null
-        scenario.arrange()
-        val failure = expectFailure<SourceFailure> { scenario.exercise(harness) }
-        assertThat(failure).isInstanceOf(expected)
-        return failure
+        return when (val declaration = select(harness)) {
+            is ScenarioDeclaration.NotApplicable -> declaration
+            is ScenarioDeclaration.Supported -> {
+                val scenario = declaration.scenario
+                scenario.arrange()
+                val failure = expectFailure<SourceFailure> { scenario.exercise(harness) }
+                assertThat(failure).isInstanceOf(expected)
+                failure
+            }
+        }
+    }
+
+    private suspend fun assertDeclaredScenario(
+        harness: AdapterHarness,
+        declaration: ScenarioDeclaration,
+        expected: Class<out SourceFailure>,
+    ) {
+        when (declaration) {
+            is ScenarioDeclaration.NotApplicable ->
+                assertThat(declaration.reason).isNotEmpty()
+            is ScenarioDeclaration.Supported -> {
+                val scenario = declaration.scenario
+                scenario.arrange()
+                val failure = expectFailure<SourceFailure> { scenario.exercise(harness) }
+                assertThat(failure).isInstanceOf(expected)
+                assertThat(failure.profileId).isEqualTo(harness.adapter.profileId)
+                scenario.adapterSpecificAssertions(failure)
+            }
+        }
+    }
+
+    private suspend fun awaitSignal(
+        signal: Deferred<Unit>,
+        description: String,
+    ) {
+        try {
+            withTimeout(STALL_TIMEOUT_MILLIS) {
+                signal.await()
+            }
+        } catch (failure: TimeoutCancellationException) {
+            throw AssertionError("Timed out waiting for $description", failure)
+        }
+    }
+
+    private fun assertCancellationContains(
+        caught: CancellationException,
+        original: CancellationException,
+    ) {
+        val visited = mutableSetOf<Throwable>()
+        var current: Throwable? = caught
+        while (current != null && visited.add(current)) {
+            if (current === original) return
+            current = current.cause
+        }
+        throw AssertionError("Cancellation was replaced instead of propagated")
     }
 
     private suspend inline fun <reified T : Throwable> expectFailure(
@@ -462,6 +574,8 @@ abstract class AdapterContract {
     )
 
     private companion object {
+        const val STALL_TIMEOUT_MILLIS = 1_000L
+
         val FORBIDDEN_DIAGNOSTIC_PATTERNS =
             listOf(
                 Regex("""(?i)\bbearer\s+\S+"""),

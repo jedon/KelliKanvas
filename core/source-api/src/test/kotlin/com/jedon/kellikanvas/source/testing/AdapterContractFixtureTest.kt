@@ -18,6 +18,7 @@ import com.jedon.kellikanvas.source.SourceAdapter
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.awaitCancellation
+import org.junit.Assert.assertThrows
 import org.junit.Test
 import java.io.Closeable
 
@@ -30,7 +31,204 @@ class AdapterContractFixtureTest : AdapterContract() {
         assertThat(second.dataset).isNotSameInstanceAs(first.dataset)
     }
 
-    override fun createHarness(): AdapterHarness {
+    @Test
+    fun `derived dataset canaries catch leaked folder names and provider IDs`() {
+        listOf("sensitive-folder", "nested-stable-id").forEach { leak ->
+            val contract =
+                object : AdapterContract() {
+                    override fun createHarness(): AdapterHarness = this@AdapterContractFixtureTest.newHarness(
+                        diagnosticLeak = leak,
+                    )
+                }
+
+            assertThrows(AssertionError::class.java) {
+                contract.`diagnostics do not disclose source secrets or sensitive paths`()
+            }
+        }
+    }
+
+    @Test
+    fun `adapter-created cancellation is rejected`() {
+        val contract =
+            object : AdapterContract() {
+                override fun createHarness(): AdapterHarness = this@AdapterContractFixtureTest.newHarness(
+                    translateCancellation = true,
+                )
+            }
+
+        assertThrows(AssertionError::class.java) {
+            contract.`listing cancellation propagates and closes its resource`()
+        }
+    }
+
+    @Test
+    fun `recovered cancellation wrapper is accepted`() {
+        val contract =
+            object : AdapterContract() {
+                override fun createHarness(): AdapterHarness = this@AdapterContractFixtureTest.newHarness(
+                    wrapCancellation = true,
+                )
+            }
+
+        contract.`listing cancellation propagates and closes its resource`()
+    }
+
+    @Test
+    fun `stalled listing has a bounded diagnostic timeout`() {
+        val contract =
+            object : AdapterContract() {
+                override fun createHarness(): AdapterHarness = this@AdapterContractFixtureTest.newHarness(
+                    signalListingStart = false,
+                )
+            }
+
+        val failure =
+            assertThrows(AssertionError::class.java) {
+                contract.`listing cancellation propagates and closes its resource`()
+            }
+
+        assertThat(failure).hasMessageThat().contains("listing resource to start")
+    }
+
+    @Test
+    fun `unclosed listing has a bounded diagnostic timeout`() {
+        val contract =
+            object : AdapterContract() {
+                override fun createHarness(): AdapterHarness = this@AdapterContractFixtureTest.newHarness(
+                    signalListingClose = false,
+                )
+            }
+
+        val failure =
+            assertThrows(AssertionError::class.java) {
+                contract.`listing cancellation propagates and closes its resource`()
+            }
+
+        assertThat(failure).hasMessageThat().contains("listing resource to close")
+    }
+
+    @Test
+    fun `SAF revoked grant declaration executes its normalized scenario`() {
+        val contract =
+            object : AdapterContract() {
+                override fun createHarness(): AdapterHarness = this@AdapterContractFixtureTest.newHarness(
+                    kind = SourceKind.SAF,
+                    credentialApplicability = CredentialApplicability.NOT_USED,
+                )
+            }
+
+        contract.`configured revoked grants normalize to permission revoked`()
+    }
+
+    @Test
+    fun `required source scenarios reject not-applicable declarations`() {
+        val invalidHarnesses =
+            listOf<() -> AdapterHarness>(
+                {
+                    newHarness(
+                        kind = SourceKind.SAF,
+                        credentialApplicability = CredentialApplicability.NOT_USED,
+                        transformScenarios = {
+                            it.copy(
+                                revokedGrant =
+                                ScenarioDeclaration.NotApplicable(
+                                    "Test omission",
+                                ),
+                            )
+                        },
+                    )
+                },
+                {
+                    newHarness(
+                        kind = SourceKind.SMB,
+                        credentialApplicability = CredentialApplicability.REQUIRED,
+                        transformScenarios = {
+                            it.copy(
+                                invalidCredential =
+                                ScenarioDeclaration.NotApplicable(
+                                    "Test omission",
+                                ),
+                            )
+                        },
+                    )
+                },
+                {
+                    newHarness(
+                        kind = SourceKind.HTTP,
+                        credentialApplicability = CredentialApplicability.REQUIRED,
+                        transformScenarios = {
+                            it.copy(
+                                invalidCredential =
+                                ScenarioDeclaration.NotApplicable(
+                                    "Test omission",
+                                ),
+                            )
+                        },
+                    )
+                },
+            ) +
+                listOf(SourceKind.HTTP, SourceKind.SMB, SourceKind.DLNA).flatMap { kind ->
+                    listOf<() -> AdapterHarness>(
+                        {
+                            newHarness(
+                                kind = kind,
+                                credentialApplicability =
+                                if (kind == SourceKind.SMB) {
+                                    CredentialApplicability.REQUIRED
+                                } else {
+                                    CredentialApplicability.NOT_USED
+                                },
+                                transformScenarios = {
+                                    it.copy(
+                                        timeout =
+                                        ScenarioDeclaration.NotApplicable(
+                                            "Test omission",
+                                        ),
+                                    )
+                                },
+                            )
+                        },
+                        {
+                            newHarness(
+                                kind = kind,
+                                credentialApplicability =
+                                if (kind == SourceKind.SMB) {
+                                    CredentialApplicability.REQUIRED
+                                } else {
+                                    CredentialApplicability.NOT_USED
+                                },
+                                transformScenarios = {
+                                    it.copy(
+                                        protocolFailure =
+                                        ScenarioDeclaration.NotApplicable(
+                                            "Test omission",
+                                        ),
+                                    )
+                                },
+                            )
+                        },
+                    )
+                }
+
+        invalidHarnesses.forEach { createInvalidHarness ->
+            assertThrows(IllegalArgumentException::class.java) {
+                createInvalidHarness()
+            }
+        }
+    }
+
+    override fun createHarness(): AdapterHarness = newHarness()
+
+    private fun newHarness(
+        kind: SourceKind = SourceKind.HTTP,
+        credentialApplicability: CredentialApplicability = CredentialApplicability.REQUIRED,
+        diagnosticLeak: String? = null,
+        translateCancellation: Boolean = false,
+        wrapCancellation: Boolean = false,
+        signalListingStart: Boolean = true,
+        signalListingClose: Boolean = true,
+        transformScenarios: (AdapterScenarioCapabilities) -> AdapterScenarioCapabilities = { it },
+    ): AdapterHarness {
         val profileId = SourceProfileId("fixture-profile")
         val root = FolderRef(profileId, ProviderObjectId("root-stable-id"))
         val nested = FolderRef(profileId, ProviderObjectId("nested-stable-id"))
@@ -85,12 +283,21 @@ class AdapterContractFixtureTest : AdapterContract() {
                 "credential-value-123",
                 "bearer-value-456",
                 "https://user:pass@private.example/photos?token=secret",
-                "private-family-photo.jpg",
                 """\\private-server\family\photos""",
                 "/private/catalog.xml",
                 """C:\private\catalog.json""",
             )
-        val adapter = InMemoryAdapter(profileId, dataset, sensitiveValues)
+        val adapter =
+            InMemoryAdapter(
+                profileId = profileId,
+                dataset = dataset,
+                privateConfiguration = sensitiveValues,
+                kind = kind,
+                translateCancellation = translateCancellation,
+                wrapCancellation = wrapCancellation,
+                signalListingStart = signalListingStart,
+                signalListingClose = signalListingClose,
+            )
 
         return AdapterHarness(
             adapter = adapter,
@@ -101,26 +308,10 @@ class AdapterContractFixtureTest : AdapterContract() {
             removeSource = adapter::removeSource,
             stallNextListing = adapter::stallNextListing,
             stallNextRead = adapter::stallNextRead,
+            streamObservation = adapter::streamObservation,
             scenarios =
-            AdapterScenarioCapabilities(
-                invalidCredential =
-                AccessFailureScenario(
-                    arrange = adapter::invalidateCredential,
-                    exercise = { it.adapter.probe() },
-                    adapterSpecificAssertions = { failure ->
-                        assertThat(failure.operation).isEqualTo("probe")
-                        assertThat(adapter.credentialWasInvalidated).isTrue()
-                    },
-                ),
-                revokedGrant =
-                AccessFailureScenario(
-                    arrange = adapter::revokePermission,
-                    exercise = { it.adapter.listChildren(it.root, null) },
-                    adapterSpecificAssertions = { failure ->
-                        assertThat(failure.operation).isEqualTo("list_children")
-                        assertThat(adapter.permissionWasRevoked).isTrue()
-                    },
-                ),
+            transformScenarios(
+                adapter.scenarios(credentialApplicability),
             ),
             diagnostics = {
                 listOf(
@@ -129,7 +320,7 @@ class AdapterContractFixtureTest : AdapterContract() {
                     root,
                     dataset,
                     dataset.children(root),
-                )
+                ) + listOfNotNull(diagnosticLeak)
             },
             sensitiveValues = sensitiveValues,
         )
@@ -171,8 +362,12 @@ private class InMemoryAdapter(
     override val profileId: SourceProfileId,
     private val dataset: ContractDataset,
     private val privateConfiguration: Set<String>,
+    override val kind: SourceKind,
+    private val translateCancellation: Boolean,
+    private val wrapCancellation: Boolean,
+    private val signalListingStart: Boolean,
+    private val signalListingClose: Boolean,
 ) : SourceAdapter() {
-    override val kind = SourceKind.HTTP
     override val capabilities =
         SourceCapabilities(
             supportsPaging = true,
@@ -186,6 +381,7 @@ private class InMemoryAdapter(
     private var operations = 0
     private var listingStall: TestResourceStall? = null
     private var readStall: TestResourceStall? = null
+    private val streams = mutableMapOf<AssetRef, MutableList<FakePhotoByteStream>>()
     var credentialWasInvalidated = false
         private set
     var permissionWasRevoked = false
@@ -211,9 +407,80 @@ private class InMemoryAdapter(
         state = State.REVOKED_PERMISSION
     }
 
+    fun timeOut() {
+        state = State.TIMED_OUT
+    }
+
+    fun failProtocol() {
+        state = State.PROTOCOL_FAILURE
+    }
+
+    fun streamObservation(asset: AssetRef): StreamResourceObservation {
+        val opened = streams[asset].orEmpty()
+        return StreamResourceObservation(
+            openedStreams = opened.size,
+            bytesRead = opened.sumOf(FakePhotoByteStream::bytesRead),
+            closedStreams = opened.count(FakePhotoByteStream::closed),
+        )
+    }
+
+    fun scenarios(
+        credentialApplicability: CredentialApplicability,
+    ): AdapterScenarioCapabilities {
+        val invalidCredential =
+            if (credentialApplicability == CredentialApplicability.REQUIRED) {
+                supportedScenario(
+                    arrange = ::invalidateCredential,
+                    exercise = { it.adapter.probe() },
+                    expectedOperation = "probe",
+                    adapterAssertion = { credentialWasInvalidated },
+                )
+            } else {
+                ScenarioDeclaration.NotApplicable("Profile does not use credentials")
+            }
+        val revokedGrant =
+            if (kind == SourceKind.SAF) {
+                supportedScenario(
+                    arrange = ::revokePermission,
+                    exercise = { it.adapter.listChildren(it.root, null) },
+                    expectedOperation = "list_children",
+                    adapterAssertion = { permissionWasRevoked },
+                )
+            } else {
+                ScenarioDeclaration.NotApplicable("Source has no persisted permission grant")
+            }
+        val timeout =
+            if (kind != SourceKind.SAF) {
+                supportedScenario(
+                    arrange = ::timeOut,
+                    exercise = { it.adapter.probe() },
+                    expectedOperation = "probe",
+                )
+            } else {
+                ScenarioDeclaration.NotApplicable("Local document access has no network timeout")
+            }
+        val protocolFailure =
+            if (kind != SourceKind.SAF) {
+                supportedScenario(
+                    arrange = ::failProtocol,
+                    exercise = { it.adapter.probe() },
+                    expectedOperation = "probe",
+                )
+            } else {
+                ScenarioDeclaration.NotApplicable("Local document access has no network protocol")
+            }
+        return AdapterScenarioCapabilities(
+            credentialApplicability = credentialApplicability,
+            invalidCredential = invalidCredential,
+            revokedGrant = revokedGrant,
+            timeout = timeout,
+            protocolFailure = protocolFailure,
+        )
+    }
+
     fun stallNextListing(): ResourceStall {
         check(listingStall == null)
-        return TestResourceStall().also { listingStall = it }.probe
+        return TestResourceStall(signalListingClose).also { listingStall = it }.probe
     }
 
     fun stallNextRead(asset: AssetRef): ResourceStall {
@@ -236,8 +503,8 @@ private class InMemoryAdapter(
         operations += 1
         checkAvailable("list_children")
         listingStall?.also { listingStall = null }?.use {
-            it.started.complete(Unit)
-            awaitOriginalCancellation()
+            if (signalListingStart) it.started.complete(Unit)
+            awaitConfiguredCancellation()
         }
         val children = dataset.children(folder)
         val offset = cursor?.value?.toInt() ?: 0
@@ -269,10 +536,12 @@ private class InMemoryAdapter(
             maxChunkSize = 3,
             beforeRead = {
                 stall?.started?.complete(Unit)
-                if (stall != null) awaitOriginalCancellation()
+                if (stall != null) awaitConfiguredCancellation()
             },
             onClose = { stall?.close() },
-        )
+        ).also { stream ->
+            streams.getOrPut(asset, ::mutableListOf).add(stream)
+        }
     }
 
     private fun checkAvailable(operation: String) {
@@ -283,6 +552,40 @@ private class InMemoryAdapter(
             State.REMOVED -> throw SourceFailure.SourceUnavailable(profileId, operation)
             State.REVOKED_PERMISSION ->
                 throw SourceFailure.PermissionRevoked(profileId, operation)
+            State.TIMED_OUT -> throw SourceFailure.Timeout(profileId, operation)
+            State.PROTOCOL_FAILURE -> throw SourceFailure.ProtocolFailure(profileId, operation)
+        }
+    }
+
+    private fun supportedScenario(
+        arrange: suspend () -> Unit,
+        exercise: suspend (AdapterHarness) -> Unit,
+        expectedOperation: String,
+        adapterAssertion: () -> Boolean = { true },
+    ): ScenarioDeclaration.Supported = ScenarioDeclaration.Supported(
+        AccessFailureScenario(
+            arrange = arrange,
+            exercise = exercise,
+            adapterSpecificAssertions = { failure ->
+                assertThat(failure.operation).isEqualTo(expectedOperation)
+                assertThat(adapterAssertion()).isTrue()
+            },
+        ),
+    )
+
+    private suspend fun awaitConfiguredCancellation(): Nothing {
+        try {
+            awaitCancellation()
+        } catch (failure: CancellationException) {
+            if (translateCancellation) {
+                throw CancellationException("adapter-created-cancellation")
+            }
+            if (wrapCancellation) {
+                throw CancellationException("recovered-cancellation").also {
+                    it.initCause(failure)
+                }
+            }
+            throw failure
         }
     }
 
@@ -293,29 +596,19 @@ private class InMemoryAdapter(
         INVALID_CREDENTIAL,
         REMOVED,
         REVOKED_PERMISSION,
+        TIMED_OUT,
+        PROTOCOL_FAILURE,
     }
 }
 
-private suspend fun awaitOriginalCancellation(): Nothing {
-    try {
-        awaitCancellation()
-    } catch (failure: CancellationException) {
-        // Coroutine stack-trace recovery links its copy to the cancellation supplied to Job.cancel.
-        throw failure.originalCancellation()
-    }
-}
-
-private tailrec fun CancellationException.originalCancellation(): CancellationException {
-    val wrapped = cause as? CancellationException
-    return if (wrapped == null || wrapped === this) this else wrapped.originalCancellation()
-}
-
-private class TestResourceStall : Closeable {
+private class TestResourceStall(
+    private val signalClose: Boolean = true,
+) : Closeable {
     val started = CompletableDeferred<Unit>()
     private val closed = CompletableDeferred<Unit>()
     val probe = ResourceStall(started = started, closed = closed)
 
     override fun close() {
-        closed.complete(Unit)
+        if (signalClose) closed.complete(Unit)
     }
 }
