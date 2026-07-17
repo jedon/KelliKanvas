@@ -1,4 +1,5 @@
 import hashlib
+import base64
 import json
 import os
 import shutil
@@ -19,16 +20,32 @@ class QnapDeploymentTest(unittest.TestCase):
         nginx = (ROOT / "deploy/qnap/nginx.conf").read_text(encoding="utf-8")
         self.assertIn("if ($request_method !~ ^(GET|HEAD)$)", nginx)
         self.assertIn("X-Content-Type-Options nosniff", nginx)
+        self.assertIn("location = /update-envelope.json", nginx)
+        self.assertNotIn("location = /manifest.json", nginx)
 
-    @unittest.skipUnless(shutil.which("powershell") or shutil.which("pwsh"), "PowerShell unavailable")
-    def test_publisher_requires_signature_and_preserves_old_manifest_on_failure(self):
+    @unittest.skipUnless(
+        (shutil.which("powershell") or shutil.which("pwsh")) and shutil.which("openssl"),
+        "PowerShell or OpenSSL unavailable",
+    )
+    def test_publisher_verifies_envelope_monotonicity_and_preserves_control_on_failure(self):
         shell = shutil.which("pwsh") or shutil.which("powershell")
+        openssl = shutil.which("openssl")
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             bundle = root / "bundle"
             destination = root / "destination"
             bundle.mkdir()
             destination.mkdir()
+            private_key = root / "metadata-private.pem"
+            public_key = root / "metadata-public.pem"
+            subprocess.run(
+                [openssl, "ecparam", "-name", "prime256v1", "-genkey", "-noout", "-out", private_key],
+                check=True,
+            )
+            subprocess.run(
+                [openssl, "pkey", "-in", private_key, "-pubout", "-out", public_key],
+                check=True,
+            )
             apk = b"apk"
             digest = hashlib.sha256(apk).hexdigest()
             (bundle / "kellikanvas-2.apk").write_bytes(apk)
@@ -47,11 +64,39 @@ class QnapDeploymentTest(unittest.TestCase):
                 "versionCode": 2,
                 "versionName": "2",
             }
-            (bundle / "manifest.json").write_text(
-                json.dumps(manifest, sort_keys=True, separators=(",", ":")) + "\n",
-                encoding="utf-8",
-            )
-            (destination / "manifest.json").write_text("old\n", encoding="ascii")
+            payload = (json.dumps(manifest, sort_keys=True, separators=(",", ":")) + "\n").encode()
+
+            def write_envelope(path, payload_bytes, key_id="release-v1"):
+                payload_path = root / "payload.tmp"
+                signature_path = root / "signature.tmp"
+                payload_path.write_bytes(payload_bytes)
+                subprocess.run(
+                    [
+                        openssl,
+                        "dgst",
+                        "-sha256",
+                        "-sign",
+                        private_key,
+                        "-out",
+                        signature_path,
+                        payload_path,
+                    ],
+                    check=True,
+                )
+                envelope = {
+                    "envelopeSchema": 1,
+                    "keyId": key_id,
+                    "payload": base64.b64encode(payload_bytes).decode("ascii"),
+                    "signature": base64.b64encode(signature_path.read_bytes()).decode("ascii"),
+                }
+                path.write_bytes(
+                    (json.dumps(envelope, sort_keys=True, separators=(",", ":")) + "\n").encode(
+                        "utf-8"
+                    )
+                )
+
+            write_envelope(bundle / "update-envelope.json", payload)
+            (bundle / "kellikanvas-2.apk.sha256").write_text("bad\n", encoding="ascii")
             result = subprocess.run(
                 [
                     shell,
@@ -62,14 +107,18 @@ class QnapDeploymentTest(unittest.TestCase):
                     str(bundle),
                     "-Destination",
                     str(destination),
+                    "-MetadataPublicKeyFile",
+                    str(public_key),
                 ],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
             )
             self.assertNotEqual(0, result.returncode)
-            self.assertEqual("old\n", (destination / "manifest.json").read_text(encoding="ascii"))
-            (bundle / "manifest.json.sig").write_bytes(b"signed-metadata")
+            self.assertFalse((destination / "update-envelope.json").exists())
+            (bundle / "kellikanvas-2.apk.sha256").write_text(
+                f"{digest}  kellikanvas-2.apk\n", encoding="ascii"
+            )
             success = subprocess.run(
                 [
                     shell,
@@ -80,6 +129,8 @@ class QnapDeploymentTest(unittest.TestCase):
                     str(bundle),
                     "-Destination",
                     str(destination),
+                    "-MetadataPublicKeyFile",
+                    str(public_key),
                 ],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
@@ -87,11 +138,65 @@ class QnapDeploymentTest(unittest.TestCase):
             )
             self.assertEqual(0, success.returncode, success.stdout)
             self.assertEqual(
-                (bundle / "manifest.json").read_bytes(),
-                (destination / "manifest.json").read_bytes(),
+                (bundle / "update-envelope.json").read_bytes(),
+                (destination / "update-envelope.json").read_bytes(),
             )
+            successful_control = (destination / "update-envelope.json").read_bytes()
+            older_manifest = dict(manifest)
+            older_manifest["sequence"] = 1
+            older_payload = (
+                json.dumps(older_manifest, sort_keys=True, separators=(",", ":")) + "\n"
+            ).encode()
+            write_envelope(bundle / "update-envelope.json", older_payload)
+            rollback = subprocess.run(
+                [
+                    shell,
+                    "-NoProfile",
+                    "-File",
+                    str(ROOT / "tools/publish-to-qnap.ps1"),
+                    "-BundlePath",
+                    str(bundle),
+                    "-Destination",
+                    str(destination),
+                    "-MetadataPublicKeyFile",
+                    str(public_key),
+                ],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+            )
+            self.assertNotEqual(0, rollback.returncode)
+            self.assertIn("not monotonic", rollback.stdout)
+            self.assertEqual(successful_control, (destination / "update-envelope.json").read_bytes())
+            (bundle / "update-envelope.json").write_bytes(successful_control)
+            tampered = json.loads((bundle / "update-envelope.json").read_text(encoding="utf-8"))
+            tampered["signature"] = base64.b64encode(b"bad-der").decode("ascii")
+            (bundle / "update-envelope.json").write_bytes(
+                (json.dumps(tampered, sort_keys=True, separators=(",", ":")) + "\n").encode(
+                    "utf-8"
+                )
+            )
+            rejected = subprocess.run(
+                [
+                    shell,
+                    "-NoProfile",
+                    "-File",
+                    str(ROOT / "tools/publish-to-qnap.ps1"),
+                    "-BundlePath",
+                    str(bundle),
+                    "-Destination",
+                    str(destination),
+                    "-MetadataPublicKeyFile",
+                    str(public_key),
+                ],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+            )
+            self.assertNotEqual(0, rejected.returncode)
             self.assertEqual(
-                b"signed-metadata", (destination / "manifest.json.sig").read_bytes()
+                successful_control,
+                (destination / "update-envelope.json").read_bytes(),
             )
 
 

@@ -9,6 +9,19 @@ from tools import build_update_bundle
 
 
 class BuildUpdateBundleTest(unittest.TestCase):
+    def test_release_workflow_separates_apk_and_metadata_secrets(self):
+        workflow = (Path(__file__).resolve().parents[2] / ".github/workflows/release-apk.yml").read_text(
+            encoding="utf-8"
+        )
+        apk_job = workflow.split("\n  apk-sign:", 1)[1].split("\n  prepare-update:", 1)[0]
+        metadata_job = workflow.split("\n  metadata-sign:", 1)[1]
+        self.assertIn("KELLIKANVAS_KEYSTORE_BASE64", apk_job)
+        self.assertNotIn("METADATA_PRIVATE_KEY", apk_job)
+        self.assertNotIn("gradlew", apk_job)
+        self.assertIn("KELLIKANVAS_METADATA_PRIVATE_KEY_BASE64", metadata_job)
+        self.assertNotIn("KELLIKANVAS_KEYSTORE", metadata_job)
+        self.assertNotIn("gradlew", metadata_job)
+
     def test_verifies_tools_and_writes_deterministic_versioned_bundle(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -41,6 +54,7 @@ class BuildUpdateBundleTest(unittest.TestCase):
                     "apkanalyzer",
                     metadata_key,
                     sequence=9,
+                    key_id="release-v1",
                 )
 
             copied = dist / "kellikanvas-42.apk"
@@ -50,11 +64,16 @@ class BuildUpdateBundleTest(unittest.TestCase):
             self.assertEqual(f"{digest}  kellikanvas-42.apk\n", checksum.read_text(encoding="ascii"))
             self.assertEqual(signer, manifest["signerSha256"])
             self.assertEqual(9, manifest["sequence"])
-            self.assertEqual(b"metadata-signature", (dist / "manifest.json.sig").read_bytes())
+            envelope = json.loads((dist / "update-envelope.json").read_text(encoding="utf-8"))
+            self.assertEqual(1, envelope["envelopeSchema"])
+            self.assertEqual("release-v1", envelope["keyId"])
+            self.assertEqual(b"metadata-signature", __import__("base64").b64decode(envelope["signature"]))
             self.assertEqual(
                 json.dumps(manifest, sort_keys=True, separators=(",", ":")) + "\n",
-                (dist / "manifest.json").read_text(encoding="utf-8"),
+                __import__("base64").b64decode(envelope["payload"]).decode("utf-8"),
             )
+            self.assertFalse((dist / "manifest.json").exists())
+            self.assertFalse((dist / "manifest.json.sig").exists())
             self.assertEqual("apksigner", run.call_args_list[0].args[0][0])
             self.assertEqual(5, run.call_count)
 
@@ -69,14 +88,18 @@ class BuildUpdateBundleTest(unittest.TestCase):
                 return_value=build_update_bundle.ApkMetadata("other", 2, "2", "AA"),
             ):
                 with self.assertRaises(build_update_bundle.BundleError):
-                    build_update_bundle.build_bundle(apk, dist, metadata_private_key=Path("key"), sequence=1)
+                    build_update_bundle.build_bundle(
+                        apk, dist, metadata_private_key=Path("key"), sequence=1, key_id="release-v1"
+                    )
 
             with patch(
                 "tools.build_update_bundle.inspect_apk",
                 return_value=build_update_bundle.ApkMetadata("com.jedon.kellikanvas", 2, "2", ""),
             ):
                 with self.assertRaises(build_update_bundle.BundleError):
-                    build_update_bundle.build_bundle(apk, dist, metadata_private_key=Path("key"), sequence=1)
+                    build_update_bundle.build_bundle(
+                        apk, dist, metadata_private_key=Path("key"), sequence=1, key_id="release-v1"
+                    )
 
     def test_requires_offline_metadata_key_and_positive_sequence(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -86,7 +109,11 @@ class BuildUpdateBundleTest(unittest.TestCase):
                 build_update_bundle.build_bundle(apk, Path(temporary) / "dist")
             with self.assertRaises(build_update_bundle.BundleError):
                 build_update_bundle.build_bundle(
-                    apk, Path(temporary) / "dist", metadata_private_key=Path("key"), sequence=0
+                    apk,
+                    Path(temporary) / "dist",
+                    metadata_private_key=Path("key"),
+                    sequence=0,
+                    key_id="release-v1",
                 )
 
 

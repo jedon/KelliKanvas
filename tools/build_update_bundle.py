@@ -2,6 +2,7 @@
 """Build a deterministic, independently verifiable private update bundle."""
 
 import argparse
+import base64
 import hashlib
 import json
 import os
@@ -81,20 +82,16 @@ def _atomic_write(path, data):
     os.replace(temporary, path)
 
 
-def build_bundle(
+def prepare_bundle(
     apk,
     dist,
     origin=ORIGIN,
     apksigner="apksigner",
     apkanalyzer="apkanalyzer",
-    metadata_private_key=None,
     sequence=None,
-    openssl="openssl",
 ):
     apk = Path(apk)
     dist = Path(dist)
-    if metadata_private_key is None:
-        raise BundleError("offline metadata private key is required")
     if sequence is None or sequence <= 0:
         raise BundleError("positive authenticated release sequence is required")
     parsed = urlparse(origin)
@@ -143,11 +140,56 @@ def build_bundle(
     manifest_bytes = (
         json.dumps(manifest, sort_keys=True, separators=(",", ":"), ensure_ascii=True) + "\n"
     ).encode("utf-8")
+    _atomic_write(dist / "manifest.payload.json", manifest_bytes)
+    return manifest
+
+
+def sign_prepared_bundle(
+    dist,
+    metadata_private_key,
+    key_id,
+    openssl="openssl",
+):
+    dist = Path(dist)
+    if metadata_private_key is None:
+        raise BundleError("offline metadata private key is required")
+    if (
+        not key_id
+        or len(key_id) > 64
+        or not all(character.isalnum() or character in "._-" for character in key_id)
+    ):
+        raise BundleError("valid metadata key id is required")
+    payload_path = dist / "manifest.payload.json"
+    manifest_bytes = payload_path.read_bytes()
     signature = _sign_metadata(manifest_bytes, metadata_private_key, openssl)
     if not signature or len(signature) > 1024:
         raise BundleError("metadata signature is outside limits")
-    _atomic_write(dist / "manifest.json.sig", signature)
-    _atomic_write(dist / "manifest.json", manifest_bytes)
+    envelope = {
+        "envelopeSchema": 1,
+        "keyId": key_id,
+        "payload": base64.b64encode(manifest_bytes).decode("ascii"),
+        "signature": base64.b64encode(signature).decode("ascii"),
+    }
+    envelope_bytes = (
+        json.dumps(envelope, sort_keys=True, separators=(",", ":"), ensure_ascii=True) + "\n"
+    ).encode("utf-8")
+    _atomic_write(dist / "update-envelope.json", envelope_bytes)
+    payload_path.unlink()
+
+
+def build_bundle(
+    apk,
+    dist,
+    origin=ORIGIN,
+    apksigner="apksigner",
+    apkanalyzer="apkanalyzer",
+    metadata_private_key=None,
+    sequence=None,
+    key_id=None,
+    openssl="openssl",
+):
+    manifest = prepare_bundle(apk, dist, origin, apksigner, apkanalyzer, sequence)
+    sign_prepared_bundle(dist, metadata_private_key, key_id, openssl)
     return manifest
 
 
@@ -158,20 +200,33 @@ def main():
     parser.add_argument("--origin", default=ORIGIN)
     parser.add_argument("--apksigner", default="apksigner")
     parser.add_argument("--apkanalyzer", default="apkanalyzer")
-    parser.add_argument("--metadata-private-key", type=Path, required=True)
+    parser.add_argument("--metadata-private-key", type=Path)
     parser.add_argument("--sequence", type=int, required=True)
+    parser.add_argument("--key-id")
+    parser.add_argument("--prepare-only", action="store_true")
     parser.add_argument("--openssl", default="openssl")
     arguments = parser.parse_args()
-    build_bundle(
-        arguments.apk,
-        arguments.dist,
-        arguments.origin,
-        arguments.apksigner,
-        arguments.apkanalyzer,
-        arguments.metadata_private_key,
-        arguments.sequence,
-        arguments.openssl,
-    )
+    if arguments.prepare_only:
+        prepare_bundle(
+            arguments.apk,
+            arguments.dist,
+            arguments.origin,
+            arguments.apksigner,
+            arguments.apkanalyzer,
+            arguments.sequence,
+        )
+    else:
+        build_bundle(
+            arguments.apk,
+            arguments.dist,
+            arguments.origin,
+            arguments.apksigner,
+            arguments.apkanalyzer,
+            arguments.metadata_private_key,
+            arguments.sequence,
+            arguments.key_id,
+            arguments.openssl,
+        )
 
 
 if __name__ == "__main__":
