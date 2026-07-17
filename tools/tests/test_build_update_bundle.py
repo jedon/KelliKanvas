@@ -49,6 +49,11 @@ class BuildUpdateBundleTest(unittest.TestCase):
         ).read_text(encoding="utf-8")
         self.assertIn("<verify-metadata>true</verify-metadata>", verification)
         self.assertIn("<sha256 value=", verification)
+        self.assertIn('artifact name="aapt2-9.2.0-15009934-linux.jar"', verification)
+        self.assertIn(
+            'sha256 value="755f6727fb3f4cce5e319eac0f3618ed4b36b49a46d4bb2cbb6fa8e9175a54d6"',
+            verification,
+        )
 
     def test_verifies_tools_and_writes_deterministic_versioned_bundle(self):
         with tempfile.TemporaryDirectory() as temporary:
