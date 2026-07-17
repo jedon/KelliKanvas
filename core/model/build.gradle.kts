@@ -1,7 +1,8 @@
 plugins {
-    id("com.jedon.kellikanvas.android.library")
+    id("com.jedon.kellikanvas.kotlin.jvm")
 }
 
-android {
-    namespace = "com.jedon.kellikanvas.model"
+dependencies {
+    testImplementation(libs.junit4)
+    testImplementation(libs.truth)
 }
