@@ -12,17 +12,22 @@ class SignedManifestTest {
         KeyPairGenerator.getInstance("EC").apply {
             initialize(256)
         }.generateKeyPair()
-    private val authenticator = ManifestAuthenticator(keyPair.public)
+    private val authenticator = ManifestAuthenticator(mapOf("release-v1" to keyPair.public))
 
     @Test
     fun `accepts only signed canonical schema bytes`() {
         val bytes = manifest().canonicalBytes()
-        assertThat(authenticator.authenticate(bytes, sign(bytes))).isEqualTo(manifest())
+        val envelope = envelope(bytes, sign(bytes))
+        assertThat(authenticator.authenticateEnvelope(envelope).manifest).isEqualTo(manifest())
         assertThrows(UpdateRejected::class.java) {
-            authenticator.authenticate(bytes.copyOf().also { it[10] = (it[10] + 1).toByte() }, sign(bytes))
+            authenticator.authenticateEnvelope(
+                envelope(bytes.copyOf().also { it[10] = (it[10] + 1).toByte() }, sign(bytes)),
+            )
         }
         assertThrows(UpdateRejected::class.java) {
-            authenticator.authenticate(bytes.dropLast(1).toByteArray(), sign(bytes.dropLast(1).toByteArray()))
+            authenticator.authenticateEnvelope(
+                envelope(bytes.dropLast(1).toByteArray(), sign(bytes.dropLast(1).toByteArray())),
+            )
         }
     }
 
@@ -36,7 +41,7 @@ class SignedManifestTest {
         ).forEach { malformed ->
             val bytes = malformed.toByteArray()
             assertThrows(UpdateRejected::class.java) {
-                authenticator.authenticate(bytes, sign(bytes))
+                authenticator.authenticateEnvelope(envelope(bytes, sign(bytes)))
             }
         }
     }
@@ -45,15 +50,21 @@ class SignedManifestTest {
     fun `bounds authenticated replay while allowing fresh install`() {
         val store = InMemoryAuthenticatedReleaseStore()
         val guard = ReleaseReplayGuard(store)
-        guard.accept(manifest(sequence = 10, versionCode = 20))
-        assertThat(store.highest()).isEqualTo(AuthenticatedRelease(10, 20))
+        assertThat(guard.accept(manifest(sequence = 10, versionCode = 20), "hash-a"))
+            .isEqualTo(ReplayDecision.NEW_RELEASE)
+        assertThat(store.highest()).isEqualTo(AuthenticatedRelease(10, 20, "hash-a"))
+        assertThat(guard.accept(manifest(sequence = 10, versionCode = 20), "hash-a"))
+            .isEqualTo(ReplayDecision.IDEMPOTENT_RETRY)
         assertThrows(UpdateRejected::class.java) {
-            guard.accept(manifest(sequence = 9, versionCode = 21))
+            guard.accept(manifest(sequence = 10, versionCode = 20), "conflicting-hash")
         }
         assertThrows(UpdateRejected::class.java) {
-            guard.accept(manifest(sequence = 11, versionCode = 19))
+            guard.accept(manifest(sequence = 9, versionCode = 21), "hash-b")
         }
-        ReleaseReplayGuard(InMemoryAuthenticatedReleaseStore()).accept(manifest(sequence = 1, versionCode = 1))
+        ReleaseReplayGuard(InMemoryAuthenticatedReleaseStore()).accept(
+            manifest(sequence = 1, versionCode = 1),
+            "fresh",
+        )
     }
 
     @Test
@@ -63,9 +74,8 @@ class SignedManifestTest {
                 initialize(256)
             }.generateKeyPair()
         val pins =
-            listOf(keyPair.public, next.public).joinToString(",") {
-                Base64.getEncoder().encodeToString(it.encoded)
-            }
+            "current=${Base64.getEncoder().encodeToString(keyPair.public.encoded)}," +
+                "next=${Base64.getEncoder().encodeToString(next.public.encoded)}"
         val bytes = manifest().canonicalBytes()
         val signature =
             Signature.getInstance("SHA256withECDSA").run {
@@ -73,8 +83,37 @@ class SignedManifestTest {
                 update(bytes)
                 sign()
             }
-        assertThat(ManifestAuthenticator.fromPinnedBase64(pins).authenticate(bytes, signature))
-            .isEqualTo(manifest())
+        assertThat(
+            ManifestAuthenticator.fromPinnedBase64(pins)
+                .authenticateEnvelope(envelope(bytes, signature, "next"))
+                .manifest,
+        ).isEqualTo(manifest())
+    }
+
+    @Test
+    fun `malformed DER and unknown key are privacy safe rejection`() {
+        val bytes = manifest().canonicalBytes()
+        assertThrows(UpdateRejected::class.java) {
+            authenticator.authenticateEnvelope(envelope(bytes, byteArrayOf(1, 2, 3)))
+        }
+        assertThrows(UpdateRejected::class.java) {
+            authenticator.authenticateEnvelope(envelope(bytes, sign(bytes), "unknown"))
+        }
+    }
+
+    @Test
+    fun `rejects unknown duplicate and noncanonical envelope fields`() {
+        val bytes = manifest().canonicalBytes()
+        val valid = envelope(bytes, sign(bytes)).toString(Charsets.UTF_8)
+        listOf(
+            valid.replace("\"keyId\":", "\"extra\":1,\"keyId\":"),
+            valid.replace("\"keyId\":\"release-v1\"", "\"keyId\":\"release-v1\",\"keyId\":\"release-v1\""),
+            valid.replace(",\"keyId\"", ", \"keyId\""),
+        ).forEach { malformed ->
+            assertThrows(UpdateRejected::class.java) {
+                authenticator.authenticateEnvelope(malformed.toByteArray())
+            }
+        }
     }
 
     private fun manifest(sequence: Long = 7, versionCode: Long = 2): UpdateManifest = UpdateManifest(
@@ -94,5 +133,18 @@ class SignedManifestTest {
         initSign(keyPair.private)
         update(bytes)
         sign()
+    }
+
+    private fun envelope(
+        payload: ByteArray,
+        signature: ByteArray,
+        keyId: String = "release-v1",
+    ): ByteArray {
+        val payloadBase64 = Base64.getEncoder().encodeToString(payload)
+        val signatureBase64 = Base64.getEncoder().encodeToString(signature)
+        return (
+            """{"envelopeSchema":1,"keyId":"$keyId","payload":"$payloadBase64","signature":"$signatureBase64"}""" +
+                "\n"
+            ).toByteArray()
     }
 }

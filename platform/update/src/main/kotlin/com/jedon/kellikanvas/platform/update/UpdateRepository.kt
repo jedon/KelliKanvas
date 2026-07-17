@@ -181,20 +181,18 @@ class AuthenticatedManifestRepository(
     private val replayGuard: ReleaseReplayGuard,
     private val timestampStore: CheckTimestampStore,
     private val originPolicy: UpdateOriginPolicy = UpdateOriginPolicy.QNAP_LAN,
-    private val manifestUri: URI = UpdateOriginPolicy.MANIFEST_URI,
-    private val signatureUri: URI = UpdateOriginPolicy.SIGNATURE_URI,
+    private val controlUri: URI = UpdateOriginPolicy.CONTROL_URI,
     private val nowMillis: () -> Long = System::currentTimeMillis,
 ) {
     fun check(manual: Boolean, installedVersionCode: Long): UpdateManifest? {
         val now = nowMillis()
         if (!UpdateCheckPolicy.shouldCheck(manual, now, timestampStore.lastCheckMillis())) return null
         timestampStore.recordCheck(now)
-        val manifestBytes = fetchKnown(manifestUri, UpdateLimits.METADATA_MAX_BYTES.toLong())
-        val signatureBytes = fetchKnown(signatureUri, 1024)
-        val manifest = authenticator.authenticate(manifestBytes, signatureBytes)
-        originPolicy.validateManifest(manifest, installedVersionCode)
-        replayGuard.accept(manifest)
-        return manifest
+        val controlBytes = fetchKnown(controlUri, UpdateLimits.METADATA_MAX_BYTES.toLong())
+        val authenticated = authenticator.authenticateEnvelope(controlBytes)
+        originPolicy.validateManifest(authenticated.manifest, installedVersionCode)
+        replayGuard.accept(authenticated.manifest, authenticated.payloadHash)
+        return authenticated.manifest
     }
 
     private fun fetchKnown(uri: URI, maxBytes: Long): ByteArray {

@@ -3,7 +3,9 @@ package com.jedon.kellikanvas.platform.update
 import android.content.Context
 import androidx.core.content.edit
 import java.net.URI
+import java.security.GeneralSecurityException
 import java.security.KeyFactory
+import java.security.MessageDigest
 import java.security.PublicKey
 import java.security.Signature
 import java.security.spec.X509EncodedKeySpec
@@ -91,39 +93,106 @@ data class UpdateManifest(
     }
 }
 
-class ManifestAuthenticator private constructor(private val publicKeys: List<PublicKey>) {
-    constructor(publicKey: PublicKey) : this(listOf(publicKey))
+data class AuthenticatedUpdateEnvelope(
+    val keyId: String,
+    val payloadHash: String,
+    val manifest: UpdateManifest,
+)
 
-    fun authenticate(bytes: ByteArray, signatureBytes: ByteArray): UpdateManifest {
-        if (bytes.size > UpdateLimits.METADATA_MAX_BYTES) throw UpdateRejected("manifest exceeds 64 KiB")
-        if (signatureBytes.isEmpty() || signatureBytes.size > 1024) throw UpdateRejected("invalid manifest signature")
-        val valid =
-            publicKeys.any { publicKey ->
+class ManifestAuthenticator(private val publicKeys: Map<String, PublicKey>) {
+    constructor(publicKey: PublicKey) : this(mapOf("default" to publicKey))
+
+    fun authenticateEnvelope(envelopeBytes: ByteArray): AuthenticatedUpdateEnvelope {
+        if (envelopeBytes.size > UpdateLimits.METADATA_MAX_BYTES) {
+            throw UpdateRejected("authenticated control file exceeds 64 KiB")
+        }
+        try {
+            val fields = parseEnvelopeFields(envelopeBytes)
+            val keyId = fields.getValue("keyId")
+            val publicKey = publicKeys[keyId] ?: throw UpdateRejected("unknown metadata signing key")
+            val payload = Base64.getDecoder().decode(fields.getValue("payload"))
+            val signatureBytes = Base64.getDecoder().decode(fields.getValue("signature"))
+            if (signatureBytes.isEmpty() || signatureBytes.size > 1024) {
+                throw UpdateRejected("invalid metadata signature")
+            }
+            val valid =
                 Signature.getInstance("SHA256withECDSA").run {
                     initVerify(publicKey)
-                    update(bytes)
+                    update(payload)
                     verify(signatureBytes)
                 }
+            if (!valid) throw UpdateRejected("metadata authentication failed")
+            val manifest = UpdateManifest.parse(payload)
+            val hash = MessageDigest.getInstance("SHA-256").digest(payload).joinToString("") { "%02x".format(it) }
+            return AuthenticatedUpdateEnvelope(keyId, hash, manifest)
+        } catch (error: UpdateRejected) {
+            throw error
+        } catch (_: GeneralSecurityException) {
+            throw UpdateRejected("metadata authentication failed")
+        } catch (_: IllegalArgumentException) {
+            throw UpdateRejected("malformed authenticated control file")
+        }
+    }
+
+    private fun parseEnvelopeFields(bytes: ByteArray): Map<String, String> {
+        val json = bytes.toString(Charsets.UTF_8)
+        if (!json.endsWith("\n") || !json.startsWith("{") || !json.dropLast(1).endsWith("}")) {
+            throw UpdateRejected("malformed authenticated control file")
+        }
+        val field = Regex("\"([A-Za-z][A-Za-z0-9]*)\":(\"([^\"\\\\]*)\"|\\d+)")
+        val matches =
+            json.dropLast(1).substring(1, json.length - 2).split(",").map {
+                field.matchEntire(it) ?: throw UpdateRejected("malformed authenticated control file")
             }
-        if (!valid) throw UpdateRejected("manifest signature verification failed")
-        return UpdateManifest.parse(bytes)
+        val keys = matches.map { it.groupValues[1] }
+        if (keys.size != keys.distinct().size ||
+            keys.toSet() != setOf("envelopeSchema", "keyId", "payload", "signature")
+        ) {
+            throw UpdateRejected("unknown, duplicate, or missing envelope field")
+        }
+        val raw = matches.associate { it.groupValues[1] to it.groupValues[2] }
+        if (raw.getValue("envelopeSchema") != "1") throw UpdateRejected("unsupported envelope schema")
+        listOf("keyId", "payload", "signature").forEach { name ->
+            if (!raw.getValue(name).startsWith("\"")) throw UpdateRejected("wrong envelope field type")
+        }
+        val values = raw.mapValues { (_, value) -> value.removeSurrounding("\"") }
+        val canonical =
+            """{"envelopeSchema":1,"keyId":"${values.getValue("keyId")}","payload":"${values.getValue("payload")}","signature":"${values.getValue("signature")}"}""" +
+                "\n"
+        if (!canonical.toByteArray().contentEquals(bytes)) throw UpdateRejected("control file is not canonical")
+        return values
     }
 
     companion object {
         fun fromPinnedBase64(encodedSubjectPublicKeyInfo: String): ManifestAuthenticator {
-            val keys =
-                encodedSubjectPublicKeyInfo.split(",").map { encoded ->
-                    KeyFactory.getInstance("EC").generatePublic(
-                        X509EncodedKeySpec(Base64.getDecoder().decode(encoded)),
-                    )
-                }
-            if (keys.isEmpty()) throw IllegalArgumentException("at least one metadata public key is required")
-            return ManifestAuthenticator(keys)
+            try {
+                val keys =
+                    encodedSubjectPublicKeyInfo.split(",").associate { pin ->
+                        val parts = pin.split("=", limit = 2)
+                        if (parts.size != 2 || !parts[0].matches(Regex("[A-Za-z0-9._-]{1,64}"))) {
+                            throw IllegalArgumentException("invalid metadata key pin")
+                        }
+                        parts[0] to
+                            KeyFactory.getInstance("EC").generatePublic(
+                                X509EncodedKeySpec(Base64.getDecoder().decode(parts[1])),
+                            )
+                    }
+                if (keys.isEmpty()) throw IllegalArgumentException("at least one metadata public key is required")
+                return ManifestAuthenticator(keys)
+            } catch (_: GeneralSecurityException) {
+                throw UpdateRejected("invalid metadata public key configuration")
+            } catch (_: IllegalArgumentException) {
+                throw UpdateRejected("invalid metadata public key configuration")
+            }
         }
     }
 }
 
-data class AuthenticatedRelease(val sequence: Long, val versionCode: Long)
+data class AuthenticatedRelease(
+    val sequence: Long,
+    val versionCode: Long,
+    val payloadHash: String,
+)
 
 interface AuthenticatedReleaseStore {
     fun highest(): AuthenticatedRelease?
@@ -146,10 +215,16 @@ class AndroidAuthenticatedReleaseStore(context: Context) : AuthenticatedReleaseS
         context.applicationContext.getSharedPreferences("kellikanvas-authenticated-releases", Context.MODE_PRIVATE)
 
     override fun highest(): AuthenticatedRelease? {
-        if (!preferences.contains("sequence") || !preferences.contains("versionCode")) return null
+        if (!preferences.contains("sequence") ||
+            !preferences.contains("versionCode") ||
+            !preferences.contains("payloadHash")
+        ) {
+            return null
+        }
         return AuthenticatedRelease(
             sequence = preferences.getLong("sequence", -1),
             versionCode = preferences.getLong("versionCode", -1),
+            payloadHash = preferences.getString("payloadHash", null) ?: return null,
         )
     }
 
@@ -157,18 +232,31 @@ class AndroidAuthenticatedReleaseStore(context: Context) : AuthenticatedReleaseS
         preferences.edit(commit = true) {
             putLong("sequence", release.sequence)
             putLong("versionCode", release.versionCode)
+            putString("payloadHash", release.payloadHash)
         }
     }
 }
 
+enum class ReplayDecision {
+    NEW_RELEASE,
+    IDEMPOTENT_RETRY,
+}
+
 class ReleaseReplayGuard(private val store: AuthenticatedReleaseStore) {
-    fun accept(manifest: UpdateManifest) {
+    fun accept(manifest: UpdateManifest, payloadHash: String): ReplayDecision {
         val previous = store.highest()
-        if (previous != null &&
-            (manifest.sequence <= previous.sequence || manifest.versionCode < previous.versionCode)
-        ) {
-            throw UpdateRejected("authenticated release metadata was replayed")
+        if (previous != null) {
+            if (manifest.sequence < previous.sequence || manifest.versionCode < previous.versionCode) {
+                throw UpdateRejected("older authenticated release metadata was rejected")
+            }
+            if (manifest.sequence == previous.sequence) {
+                if (manifest.versionCode == previous.versionCode && payloadHash == previous.payloadHash) {
+                    return ReplayDecision.IDEMPOTENT_RETRY
+                }
+                throw UpdateRejected("conflicting authenticated metadata reused a release sequence")
+            }
         }
-        store.save(AuthenticatedRelease(manifest.sequence, manifest.versionCode))
+        store.save(AuthenticatedRelease(manifest.sequence, manifest.versionCode, payloadHash))
+        return ReplayDecision.NEW_RELEASE
     }
 }

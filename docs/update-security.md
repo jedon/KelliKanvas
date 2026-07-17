@@ -1,18 +1,20 @@
 # Private update security
 
-KelliKanvas authenticates the exact canonical UTF-8 bytes of `manifest.json`
-with ECDSA P-256/SHA-256 before parsing or trusting any URL, package, version,
-hash, size, or APK signer metadata. Canonical JSON has lexicographically sorted
-known fields, compact separators, ASCII-safe strings, and exactly one trailing
-LF. Duplicate, unknown, missing, mistyped, reordered, or non-canonical fields
-are rejected. `manifest.json.sig` is a DER ECDSA signature and is bounded to
-1 KiB.
+KelliKanvas fetches one canonical `update-envelope.json` control file. Its
+strict schema is `envelopeSchema`, `keyId`, base64 `payload`, and base64
+`signature`. The ECDSA P-256/SHA-256 signature authenticates the exact canonical
+UTF-8 payload bytes before any URL, package, version, hash, size, or APK signer
+metadata is trusted. Both JSON objects use lexicographically sorted known
+fields, compact separators, ASCII-safe strings, and exactly one trailing LF.
+Duplicate, unknown, missing, mistyped, reordered, non-canonical, malformed DER,
+and unknown-key inputs are uniformly rejected.
 
 The release app embeds the metadata public key from
-`KELLIKANVAS_METADATA_PUBLIC_KEY_BASE64`. The corresponding private PEM is an
-offline release secret used only by the isolated signing workflow step and is
-deleted with the APK keystore immediately afterward. Neither key material nor
-secret values may be logged or committed.
+`KELLIKANVAS_METADATA_PUBLIC_KEY_BASE64` as comma-separated
+`keyId=SubjectPublicKeyInfoBase64` pins. The corresponding private PEM is used
+only by an artifact-only metadata-signing job. APK signing runs in a different
+job with only APK credentials; neither signing job runs Gradle or co-exposes
+the other key. Secret files are deleted immediately.
 
 ## Rotation
 
@@ -25,9 +27,14 @@ authenticate updates.
 
 ## Replay and suppression
 
-After signature verification, the app persists the highest authenticated
-release sequence and version. Lower or equal sequences and lower versions are
-rejected, while an empty store permits a fresh installation to bootstrap.
+After signature verification, the app atomically persists the highest
+authenticated `(sequence, versionCode, payload SHA-256)` tuple. The exact same
+tuple is an idempotent retry after a download failure, deferred install, or
+restart. Reusing a sequence with different authenticated content, lower
+sequences, and version rollback are rejected. An empty store permits bootstrap.
+Installation is not a second replay marker: the installed package version and
+signer are read from Android, while retryability remains tied to the exact
+authenticated tuple.
 This bounds replay to metadata no newer than the highest release already seen.
 An attacker who can indefinitely suppress network traffic can still prevent
 updates; complete suppression prevention requires an independent availability

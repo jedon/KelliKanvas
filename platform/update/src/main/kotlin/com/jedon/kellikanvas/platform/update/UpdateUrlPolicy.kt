@@ -38,8 +38,7 @@ class UpdateOriginPolicy private constructor(private val allowed: Set<UpdateOrig
 
     companion object {
         val QNAP_LAN = UpdateOriginPolicy(setOf(UpdateOrigin("http", "darklingnas", 8088)))
-        val MANIFEST_URI: URI = URI("http://darklingnas:8088/manifest.json")
-        val SIGNATURE_URI: URI = URI("http://darklingnas:8088/manifest.json.sig")
+        val CONTROL_URI: URI = URI("http://darklingnas:8088/update-envelope.json")
 
         fun remoteHttps(host: String, port: Int = 443): UpdateOriginPolicy = UpdateOriginPolicy(
             setOf(UpdateOrigin("https", host.lowercase(), port)),
@@ -60,7 +59,7 @@ class UpdateOriginPolicy private constructor(private val allowed: Set<UpdateOrig
 }
 
 object UpdateUrlPolicy {
-    val MANIFEST_URI = UpdateOriginPolicy.MANIFEST_URI
+    val MANIFEST_URI = UpdateOriginPolicy.CONTROL_URI
 
     fun requireAllowed(uri: URI) = UpdateOriginPolicy.QNAP_LAN.requireAllowed(uri)
 

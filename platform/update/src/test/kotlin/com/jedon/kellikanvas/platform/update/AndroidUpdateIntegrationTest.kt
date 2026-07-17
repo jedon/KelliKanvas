@@ -24,9 +24,9 @@ class AndroidUpdateIntegrationTest {
     fun `authenticated release state persists across store instances`() {
         val context = RuntimeEnvironment.getApplication()
         val first = AndroidAuthenticatedReleaseStore(context)
-        first.save(AuthenticatedRelease(12, 34))
+        first.save(AuthenticatedRelease(12, 34, "payload-hash"))
         assertThat(AndroidAuthenticatedReleaseStore(context).highest())
-            .isEqualTo(AuthenticatedRelease(12, 34))
+            .isEqualTo(AuthenticatedRelease(12, 34, "payload-hash"))
     }
 
     @Test
