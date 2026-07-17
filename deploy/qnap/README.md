@@ -229,6 +229,7 @@ PUBLISH_COUNT=0
 QUARANTINE_DIR=
 QUARANTINE_APK=
 QUARANTINE_COUNT=0
+QUARANTINE_EMPTY=0
 SEMVER_APK_PATTERN='^KelliKanvas-(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-(0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)(\.(0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?\.apk$'
 
 refuse_recovery() {
@@ -273,17 +274,23 @@ for CANDIDATE in "$CONTENT/.$NAME.quarantine."*; do
     refuse_recovery "multiple matching quarantine paths"
   test -d "$CANDIDATE" && test ! -L "$CANDIDATE" ||
     refuse_recovery "quarantine path is not a regular directory"
-  test "$(ls -A "$CANDIDATE")" = "$NAME" ||
-    refuse_recovery "quarantine contains missing or unexpected entries"
-  test -f "$CANDIDATE/$NAME" && test ! -L "$CANDIDATE/$NAME" ||
-    refuse_recovery "quarantined APK has an unexpected type"
   QUARANTINE_DIR="$CANDIDATE"
-  QUARANTINE_APK="$CANDIDATE/$NAME"
+  QUARANTINE_ENTRIES="$(ls -A "$CANDIDATE")"
+  if [ -z "$QUARANTINE_ENTRIES" ]; then
+    QUARANTINE_EMPTY=1
+  elif [ "$QUARANTINE_ENTRIES" = "$NAME" ]; then
+    test -f "$CANDIDATE/$NAME" && test ! -L "$CANDIDATE/$NAME" ||
+      refuse_recovery "quarantined APK has an unexpected type"
+    QUARANTINE_APK="$CANDIDATE/$NAME"
+  else
+    refuse_recovery "quarantine contains unexpected entries"
+  fi
 done
 
 test "$PUBLISH_COUNT" -eq 0 || test "$QUARANTINE_COUNT" -eq 0 ||
   refuse_recovery "publication temporary and quarantine both exist"
 test "$FINAL_PRESENT" -eq 0 || test "$QUARANTINE_COUNT" -eq 0 ||
+  test "$QUARANTINE_EMPTY" -eq 1 ||
   refuse_recovery "FINAL and quarantine both exist"
 
 echo "Exact recovery state:"
@@ -307,7 +314,11 @@ if [ "$PUBLISH_COUNT" -eq 1 ]; then
 fi
 if [ "$QUARANTINE_COUNT" -eq 1 ]; then
   ls -lid "$QUARANTINE_DIR"
-  ls -li "$QUARANTINE_APK"
+  if [ "$QUARANTINE_EMPTY" -eq 1 ]; then
+    echo "Quarantine directory is empty; FINAL state will be preserved."
+  else
+    ls -li "$QUARANTINE_APK"
+  fi
 fi
 ps
 
@@ -318,9 +329,11 @@ test "$CONFIRMED_NAME" = "$NAME" ||
   refuse_recovery "confirmation did not exactly match NAME"
 
 if [ "$QUARANTINE_COUNT" -eq 1 ]; then
-  mv "$QUARANTINE_APK" "$FINAL"
+  if [ "$QUARANTINE_EMPTY" -eq 0 ]; then
+    mv "$QUARANTINE_APK" "$FINAL"
+    FINAL_PRESENT=1
+  fi
   rmdir "$QUARANTINE_DIR"
-  FINAL_PRESENT=1
 fi
 
 if [ "$PUBLISH_COUNT" -eq 1 ]; then
