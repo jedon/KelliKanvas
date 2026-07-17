@@ -4,7 +4,7 @@
 
 **Goal:** Deploy a LAN-only nginx site on DarklingNAS that lists every published KelliKanvas APK version and lets a phone user copy a direct APK URL into Send to TV Quick.
 
-**Architecture:** A tested Python generator scans a QNAP content directory and atomically writes a self-contained mobile index page. Container Station runs a locked-down nginx container on port 8088 with the content directory mounted read-only. APK publication copies and verifies the versioned file first, then runs the generator so incomplete files are never advertised.
+**Architecture:** A tested Python generator scans a least-privilege QNAP content directory and atomically writes a self-contained mobile index page. Container Station runs a locked-down nginx container on the NAS household LAN address at port 8088, excluding Tailscale, with the content directory mounted read-only. APK publication copies and verifies the versioned file first, then runs the generator so incomplete files are never advertised.
 
 **Tech Stack:** Python 3 standard library and `unittest`, nginx Alpine, Docker Compose through QNAP Container Station, PowerShell/Posh-SSH for deployment, HTTP smoke tests.
 
@@ -359,21 +359,29 @@ Create `deploy/qnap/compose.yaml`:
 ```yaml
 services:
   apk-host:
-    image: nginx:1.30.3-alpine@sha256:0d3b80406a13a767339fbe2f41406d6c7da727ab89cf8fae399e81f780f814d1
+    image: nginx:1.30.4-alpine@sha256:59d10bca5c674965ef4ff884715000dd60ef5567c36663523f108eec8e4105d4
     container_name: kellikanvas-apk-host
     user: "101:101"
     ports:
-      - "8088:8080"
+      - "192.168.68.81:8088:8080"
     volumes:
       - /share/Public/KelliKanvas:/usr/share/nginx/html:ro
       - ./nginx.conf:/etc/nginx/nginx.conf:ro
     read_only: true
+    cpus: 0.5
+    mem_limit: 64m
+    pids_limit: 64
     tmpfs:
       - /tmp:size=16m,mode=1777
     cap_drop:
       - ALL
     security_opt:
       - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/healthz"]
@@ -397,7 +405,8 @@ events {
 http {
     include /etc/nginx/mime.types;
     default_type application/octet-stream;
-    access_log /dev/stdout;
+    log_format privacy '$time_iso8601 method=$request_method status=$status bytes=$body_bytes_sent';
+    access_log /dev/stdout privacy;
     client_body_temp_path /tmp/client_body;
     proxy_temp_path /tmp/proxy;
     fastcgi_temp_path /tmp/fastcgi;
@@ -466,7 +475,7 @@ Run:
 docker compose -f deploy/qnap/compose.yaml config
 docker run --rm `
   -v "${PWD}/deploy/qnap/nginx.conf:/etc/nginx/nginx.conf:ro" `
-  nginx:1.30.3-alpine@sha256:0d3b80406a13a767339fbe2f41406d6c7da727ab89cf8fae399e81f780f814d1 nginx -t
+  nginx:1.30.4-alpine@sha256:59d10bca5c674965ef4ff884715000dd60ef5567c36663523f108eec8e4105d4 nginx -t
 ```
 
 Expected: Compose prints one `apk-host` service and nginx reports
@@ -496,7 +505,7 @@ Create `deploy/qnap/README.md`:
 # QNAP APK host
 
 Container Station serves `/share/Public/KelliKanvas` through nginx at
-`http://darklingnas:8088`.
+`http://darklingnas.local:8088`.
 
 ## Deploy
 
@@ -593,6 +602,12 @@ Load `QNAP_NAS_HOST`, `QNAP_NAS_USERNAME`, and `QNAP_NAS_PASSWORD` from `.env`
 without printing them. Use Posh-SSH to create the two directories and SFTP the
 three files. Set configuration and generator files to mode 0644.
 
+Before upload, inspect `/share/Public/KelliKanvas` with numeric `getfacl`, verify
+the SSH publisher owns it, remove extended/default ACLs from that dedicated
+child only, and set mode `0755`. Do not alter `/share/Public`. Verify the final
+ACL is exactly owner `rwx`, group `r-x`, and other `r-x`, with no named, mask,
+or default entries.
+
 Expected remote layout:
 
 ```text
@@ -632,18 +647,20 @@ CS="$(getcfg container-station Install_Path -f /etc/config/qpkg.conf)"
   --format '{{.State.Health.Status}}' kellikanvas-apk-host
 ```
 
-Expected: Compose validation succeeds, the image is pulled if absent, and health
-becomes `healthy`.
+Expected: Compose validation succeeds, the image is pulled if absent, the
+container has 0.5 CPU, 64 MiB memory, and 64 PID limits, and health becomes
+`healthy`. The host listener is `192.168.68.81:8088`, not `0.0.0.0` or the
+Tailscale address.
 
 - [ ] **Step 4: Verify HTTP policy from the workstation**
 
 Run:
 
 ```powershell
-$page = Invoke-WebRequest http://darklingnas:8088/ -UseBasicParsing
-$health = Invoke-WebRequest http://darklingnas:8088/healthz -UseBasicParsing
+$page = Invoke-WebRequest http://darklingnas.local:8088/ -UseBasicParsing
+$health = Invoke-WebRequest http://darklingnas.local:8088/healthz -UseBasicParsing
 $postStatus = try {
-    Invoke-WebRequest http://darklingnas:8088/ -Method Post -UseBasicParsing
+    Invoke-WebRequest http://darklingnas.local:8088/ -Method Post -UseBasicParsing
     200
 } catch {
     [int]$_.Exception.Response.StatusCode

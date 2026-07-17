@@ -1,7 +1,9 @@
 # QNAP APK host
 
 QNAP Container Station serves `/share/Public/KelliKanvas` through nginx at
-`http://darklingnas:8088`. The Compose file, nginx configuration, and index
+`http://darklingnas.local:8088` (`http://192.168.68.81:8088`). The Compose
+file binds only the stable household LAN address `192.168.68.81`; the NAS
+Tailscale address does not accept this service. Configuration and the index
 generator live separately in `/share/Container/KelliKanvas`.
 
 This service is for the trusted household LAN only. Do not forward port 8088
@@ -19,7 +21,9 @@ Prerequisites:
 - `QNAP_NAS_HOST` and `QNAP_NAS_USERNAME` are configured in the workstation
   environment. Use an SSH key, agent, or interactive password prompt; never put
   a password in a command or shell history.
-- That SSH account can use Container Station and write both QNAP shares.
+- That SSH account can use Container Station and owns the dedicated
+  `/share/Public/KelliKanvas` child directory. It is the only non-root writer;
+  the ephemeral root generator is the intentional administrative exception.
 
 The expected files are:
 
@@ -43,16 +47,43 @@ $Remote = "$($env:QNAP_NAS_USERNAME)@$($env:QNAP_NAS_HOST)"
 
 $Bootstrap = @'
 set -eu
-for DIRECTORY in /share/Container/KelliKanvas /share/Public/KelliKanvas; do
-  if [ ! -d "$DIRECTORY" ]; then
-    mkdir -p "$DIRECTORY"
-    chmod 0755 "$DIRECTORY"
-  fi
-  test -x "$DIRECTORY" || {
-    echo "Directory is not traversable: $DIRECTORY" >&2
-    exit 1
-  }
-done
+CONFIG=/share/Container/KelliKanvas
+CONTENT=/share/Public/KelliKanvas
+
+if [ ! -d "$CONFIG" ]; then
+  mkdir -p "$CONFIG"
+  chmod 0755 "$CONFIG"
+fi
+if [ ! -d "$CONTENT" ]; then
+  mkdir -p "$CONTENT"
+fi
+
+test -x "$CONFIG"
+test "$(stat -c '%u' "$CONTENT")" = "$(id -u)" || {
+  echo "Content directory is not owned by the configured SSH publisher" >&2
+  exit 1
+}
+command -v getfacl >/dev/null
+command -v setfacl >/dev/null
+
+echo "Existing child ACL (inspect before continuing):"
+getfacl -n -p "$CONTENT"
+
+# Change only the dedicated child. Never apply these commands to /share/Public.
+setfacl -k "$CONTENT"
+setfacl -b "$CONTENT"
+chmod 0755 "$CONTENT"
+
+ACL="$(getfacl -n -p "$CONTENT")"
+test "$(stat -c '%a' "$CONTENT")" = 755
+printf '%s\n' "$ACL" | grep -Eq '^user::rwx$'
+printf '%s\n' "$ACL" | grep -Eq '^group::r-x$'
+printf '%s\n' "$ACL" | grep -Eq '^other::r-x$'
+if printf '%s\n' "$ACL" |
+  grep -Eq '^(user|group):[0-9]+:|^mask::|^default:'; then
+  echo "Extended or default ACL entries still grant inherited access" >&2
+  exit 1
+fi
 '@
 ssh $Remote $Bootstrap
 if ($LASTEXITCODE -ne 0) {
@@ -124,6 +155,14 @@ if ($LASTEXITCODE -ne 0) {
     throw "Failed to generate the index or start a healthy APK host"
 }
 ```
+
+The service pins the multi-architecture
+`nginx:1.30.4-alpine@sha256:59d10bca5c674965ef4ff884715000dd60ef5567c36663523f108eec8e4105d4`
+image, which includes the 2026-07-15 fixes for CVE-2026-42533,
+CVE-2026-60005, and CVE-2026-56434. Compose limits nginx to 0.5 CPU, 64 MiB,
+and 64 PIDs. Docker JSON logs rotate at 10 MiB with three files. Access logs
+retain only timestamp, method, status, and response bytes; they omit client
+address, hostname, query, and requested path.
 
 ## Publish an APK
 
@@ -381,15 +420,14 @@ the entire content directory read-only, so it cannot alter APKs or the index.
 
 ## Send an APK from a phone
 
-1. On the phone, browse to `http://darklingnas:8088`.
+1. On the phone, browse to `http://darklingnas.local:8088`.
 2. Tap **Copy URL** beside the required version.
 3. Open [sendtoquick.com](https://sendtoquick.com) and paste the URL into the
    device paired with Send to TV Quick.
 
 The phone and TV must both resolve and reach the LAN hostname in the copied URL.
-If `darklingnas` does not resolve through mDNS or local DNS, open the page by the
-NAS IP, for example `http://192.168.1.10:8088`; **Copy URL** will then copy a URL
-using that IP.
+If `darklingnas.local` does not resolve through mDNS or local DNS, open the page
+at `http://192.168.68.81:8088`; **Copy URL** will then copy a URL using that IP.
 
 ## Verify
 
@@ -413,7 +451,7 @@ version:
 
 ```sh
 set -eu
-BASE=http://darklingnas:8088
+BASE=http://darklingnas.local:8088
 CONTENT=/share/Public/KelliKanvas
 NAME=KelliKanvas-1.2.3.apk
 CHECK_DIR=
@@ -553,7 +591,7 @@ Finally, download the APK and explicitly compare its SHA-256 with the source:
 
 ```sh
 set -eu
-BASE=http://darklingnas:8088
+BASE=http://darklingnas.local:8088
 NAME=KelliKanvas-1.2.3.apk
 SOURCE=/path/to/KelliKanvas-1.2.3.apk
 DOWNLOADED=
@@ -601,7 +639,7 @@ latest:
 ```sh
 set -eu
 CONTENT=/share/Public/KelliKanvas
-BASE=http://darklingnas:8088
+BASE=http://darklingnas.local:8088
 NAME=KelliKanvas-1.2.3.apk
 FINAL="$CONTENT/$NAME"
 LOCK="$CONTENT/.$NAME.lock"
@@ -759,20 +797,41 @@ ls -l \
 
 ### Permission denied or 404
 
-APKs and `index.html` must be mode `0644`. Every directory component must be
-traversable by container UID 101. New dedicated directories use mode `0755`;
-existing directory modes are not reset because they may implement a local QNAP
-access policy. `ls` and `stat` are available on QNAP even when `namei` is not:
+APKs and `index.html` must be mode `0644`. The dedicated content child must be
+owned by the configured SSH publisher, mode `0755`, and have no named, mask, or
+default ACL entries. That leaves the publisher as the only non-root writer
+while nginx UID 101 and household clients retain read/traverse access. The
+ephemeral generator intentionally runs as root. Never change `/share/Public` or
+another share while repairing this child.
 
 ```sh
 set -eu
 CONTENT=/share/Public/KelliKanvas
 CS="$(getcfg container-station Install_Path -f /etc/config/qpkg.conf)"
 test -x "$CS/bin/docker"
+command -v getfacl >/dev/null
+command -v setfacl >/dev/null
 
 for DIRECTORY in /share /share/Public "$CONTENT"; do
   ls -ld "$DIRECTORY"
 done
+
+test "$(stat -c '%u' "$CONTENT")" = "$(id -u)" || {
+  echo "Content directory owner is not the configured publisher" >&2
+  exit 1
+}
+
+ACL="$(getfacl -n -p "$CONTENT")"
+printf '%s\n' "$ACL"
+test "$(stat -c '%a' "$CONTENT")" = 755
+printf '%s\n' "$ACL" | grep -Eq '^user::rwx$'
+printf '%s\n' "$ACL" | grep -Eq '^group::r-x$'
+printf '%s\n' "$ACL" | grep -Eq '^other::r-x$'
+if printf '%s\n' "$ACL" |
+  grep -Eq '^(user|group):[0-9]+:|^mask::|^default:'; then
+  echo "Unexpected extended or default ACL on dedicated content child" >&2
+  exit 1
+fi
 
 for FILE in "$CONTENT/index.html" "$CONTENT"/KelliKanvas-*.apk; do
   test -e "$FILE" || continue
@@ -788,9 +847,11 @@ done
   test -r /usr/share/nginx/html/index.html
 ```
 
-Use `chmod 0644` on an incorrectly-modeled index or APK. Change an existing
-directory policy only after confirming the intended QNAP ACLs; the container
-read test above is the authoritative traversability check.
+Use `chmod 0644` on an incorrectly-modeled index or APK. If QNAP share settings
+or a restore reintroduce inherited/default rights, inspect the numeric ACL, then
+run `setfacl -k "$CONTENT"`, `setfacl -b "$CONTENT"`, and
+`chmod 0755 "$CONTENT"` on this exact child only. Repeat every assertion above
+before publishing or recovering an APK.
 
 ### Hostname does not resolve
 
@@ -800,8 +861,8 @@ reachability:
 
 ```sh
 set -u
-HOST=darklingnas
-NAS_IP=192.168.1.10
+HOST=darklingnas.local
+NAS_IP=192.168.68.81
 
 if command -v getent >/dev/null 2>&1; then
   getent hosts "$HOST" || echo "Hostname lookup failed: $HOST" >&2

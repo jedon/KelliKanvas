@@ -16,7 +16,7 @@
 - `compileSdk = 37`, `targetSdk = 37`, `minSdk = 28`.
 - Android 17 LAN access uses the runtime `ACCESS_LOCAL_NETWORK` permission.
 - The app is sideloaded and updated with explicit Android package-installer confirmation.
-- QNAP delivery URL: `http://darklingnas:8088`; files are backed by `\\DarklingNAS\Public\KelliKanvas`.
+- QNAP delivery URL: `http://darklingnas.local:8088`; files are backed by `\\DarklingNAS\Public\KelliKanvas`.
 - No persistent full-resolution photo cache. Only current/next disposable image data is allowed under `cacheDir`.
 - No boot receiver, root, device-owner provisioning, hidden APIs, silent installs, or privileged power/CEC calls.
 - Native 4K and CanvasTV sensors remain `UNVERIFIED` until physical-device qualification.
@@ -815,7 +815,7 @@ git commit -m "feat: integrate slideshow controls and diagnostics"
 
 - [ ] **Step 1: Write failing manifest/URL tests**
 
-Manifest origin is exactly `http://darklingnas:8088`, maximum 64 KiB, no redirects, package `com.jedon.kellikanvas`, newer version only, APK maximum 500 MiB.
+Manifest origin is exactly `http://darklingnas.local:8088`, maximum 64 KiB, no redirects, package `com.jedon.kellikanvas`, newer version only, APK maximum 500 MiB.
 
 - [ ] **Step 2: Write failing APK verification tests**
 
@@ -831,7 +831,7 @@ Release signing comes only from four environment variables. The Python tool veri
 
 - [ ] **Step 5: Implement QNAP publisher**
 
-Copy to `\\DarklingNAS\Public\KelliKanvas`, verify copied SHA-256, and atomically rename manifest last. nginx binds port 8088, read-only mounts `/share/Public/KelliKanvas`, disables listing, and serves only GET/HEAD.
+Copy to `\\DarklingNAS\Public\KelliKanvas`, verify copied SHA-256, and atomically rename manifest last. nginx binds `192.168.68.81:8088` (not Tailscale), read-only mounts the least-privilege `/share/Public/KelliKanvas` child, disables listing, and serves only GET/HEAD.
 
 - [ ] **Step 6: Verify**
 
