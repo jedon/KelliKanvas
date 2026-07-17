@@ -625,18 +625,54 @@ rollback_removal() {
   STATUS=$?
   trap - 0 HUP INT TERM
   set +e
-  test -z "$PAGE" || rm -f "$PAGE"
-  if [ "$RESTORE_NEEDED" -eq 1 ] && [ -f "$QUARANTINE" ]; then
-    if mv "$QUARANTINE" "$FINAL"; then
-      if ! regenerate_index; then
-        echo "CRITICAL: APK restored but old index regeneration failed" >&2
+  test "$STATUS" -ne 0 || STATUS=1
+  RECOVERY_FAILED=0
+  APK_READY=0
+
+  recovery_failed() {
+    echo "RECOVERY REQUIRED: $*" >&2
+    RECOVERY_FAILED=1
+  }
+
+  if [ -n "$PAGE" ] && ! rm -f "$PAGE"; then
+    recovery_failed "failed to remove verification temporary: $PAGE"
+  fi
+
+  if [ "$RESTORE_NEEDED" -eq 1 ]; then
+    if [ -f "$QUARANTINE" ] && [ ! -L "$QUARANTINE" ]; then
+      if mv "$QUARANTINE" "$FINAL"; then
+        APK_READY=1
+      else
+        recovery_failed "failed to restore quarantined APK: $QUARANTINE"
       fi
+    elif [ -f "$FINAL" ] && [ ! -L "$FINAL" ]; then
+      APK_READY=1
     else
-      echo "CRITICAL: failed to restore quarantined APK: $QUARANTINE" >&2
+      recovery_failed "neither FINAL nor a restorable quarantine APK exists"
+    fi
+
+    if [ "$APK_READY" -eq 1 ] && ! regenerate_index; then
+      recovery_failed "failed to regenerate the old index after APK restoration"
     fi
   fi
-  test -z "$QUARANTINE_DIR" || rmdir "$QUARANTINE_DIR" 2>/dev/null
-  rmdir "$LOCK" 2>/dev/null
+
+  if [ -n "$QUARANTINE_DIR" ]; then
+    if [ -d "$QUARANTINE_DIR" ] && [ ! -L "$QUARANTINE_DIR" ]; then
+      rmdir "$QUARANTINE_DIR" 2>/dev/null ||
+        recovery_failed "quarantine cleanup failed: $QUARANTINE_DIR"
+    elif [ -e "$QUARANTINE_DIR" ] || [ -L "$QUARANTINE_DIR" ]; then
+      recovery_failed "quarantine path has an unexpected type: $QUARANTINE_DIR"
+    fi
+  fi
+
+  if [ "$RECOVERY_FAILED" -eq 0 ]; then
+    rmdir "$LOCK" 2>/dev/null ||
+      recovery_failed "failed to release the exact version lock: $LOCK"
+  fi
+
+  if [ "$RECOVERY_FAILED" -ne 0 ]; then
+    echo "RECOVERY REQUIRED: lock retained; reconcile this exact NAME before another operation." >&2
+  fi
   exit "$STATUS"
 }
 
