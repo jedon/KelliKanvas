@@ -1,163 +1,100 @@
-# KelliKanvas Full App Shell Design
+# KelliKanvas SAF Shell Design
 
 **Date:** 2026-07-18  
 **Status:** Approved for implementation  
-**Parent:** [2026-07-17-kellikanvas-design.md](./2026-07-17-kellikanvas-design.md)
+**Parent:** [2026-07-17-kellikanvas-design.md](./2026-07-17-kellikanvas-design.md)  
+**Supersedes scope of:** earlier full-app draft in this filename’s history — this document is the active scope.
 
 ## Summary
 
-Ship the remaining product surface so the installed app is usable on phone and Google TV: first-run setup for all four sources, Home, settings, and the full slideshow engine. Foundations already exist (models, catalog, preferences, SAF, DLNA library, security, ambient policies, updates). Feature UI modules, HTTP/SMB adapters, image pipeline, and SurfaceView renderer are empty and must be implemented.
+Ship a first usable vertical slice on phone (and TV launcher-compatible): SAF folder pick → Home → simple Compose slideshow. Defer DLNA/HTTP/SMB setup UI, SurfaceView renderer, portrait pairing, transition suite, and full settings taxonomy.
 
 ## Goals
 
-- Replace the placeholder `MainActivity` with a real navigation graph.
-- Complete setup for SAF, DLNA, HTTP, and SMB.
-- Persist source profile configuration so adapters recover after process death.
-- Provide Home with the five approved destinations and focus restore.
-- Implement the slideshow engine: decode pipeline, SurfaceView renderer, layout modes, portrait look-ahead pairing (4), transitions, timing, shuffle, remote/touch controls.
-- Wire Appearance, Playback, Ambient, and Collection screens to DataStore/Room.
-- Keep the app installable on phone (`leanback` optional) and TV (`LEANBACK_LAUNCHER`).
+- Replace placeholder `MainActivity` with Setup → Home → Slideshow navigation.
+- First-run SAF tree pick, persist grant, select one or more folders (optional recursion).
+- Persist collection + selected roots + SAF connection details in Room.
+- Home with Start/Resume and stub entries for Collection / Appearance / Playback / Ambient.
+- Simple slideshow: timed advance, pause/resume, prev/next, basic fit/fill of the current photo.
+- Installable on phone and TV (`leanback` optional, both launcher categories).
 
 ## Non-goals
 
-- Changing the approved product defaults from the parent design.
-- Replacing the QNAP signed-update channel.
-- Live QNAP DLNA hardware certification beyond fixture/unit coverage (fix if time allows).
-- Play Store distribution.
+- HTTP, SMB, or DLNA setup UI in this slice (adapters may remain unused).
+- SurfaceView / 4K renderer, portrait pairing, crossfade suite.
+- Full Appearance/Playback/Ambient editors (show destinations; deep screens can be placeholders).
+- QNAP update-channel changes.
 
 ## Architecture
 
 ```
-app (MainActivity, Application, NavHost, DI)
-  ├── feature/setup        first-run + add-source flows
-  ├── feature/collection   multi-folder collection editing
-  ├── feature/settings     Appearance / Playback / Ambient / Overlays
-  ├── feature/slideshow    session controller + controls overlay
-  ├── core/ui-tv           shared TV/phone Compose tokens and focus helpers
-  ├── core/image           decode, scale, blur-border, cache
-  ├── renderer/surface     4K SurfaceView presenter + transitions
-  ├── source/saf|dlna|http|smb
-  ├── core/catalog         Room + DataStore (existing)
-  └── platform/ambient|update (existing)
+app (Application, NavHost, DI)
+  ├── feature/setup      SAF-only first-run
+  ├── feature/home       five destinations (Start live; others stub or minimal)
+  ├── feature/slideshow  Compose image pager + timer + controls
+  ├── core/ui-tv         shared focus/spacing helpers as needed
+  ├── source/saf         existing adapter
+  └── core/catalog       Room + DataStore (extend for SAF connection)
 ```
 
 ### Navigation
 
-Routes: `Setup`, `Home`, `Collection`, `Appearance`, `Playback`, `Ambient`, `Slideshow`.
+- No selected roots → `Setup`
+- Else → `Home`
+- Start/Resume → `Slideshow`
+- Back from Slideshow → Home (keep session ordinal)
+- Back from Home → exit app
 
-- Cold start with no collection or no selected roots → `Setup`.
-- Otherwise → `Home`.
-- `Start/Resume Slideshow` → `Slideshow`.
-- Back from Home exits the app.
-- Back from Slideshow returns to Home without clearing session position.
+### DI
 
-### Dependency injection
+Manual `KelliKanvasApp` graph: database, preferences, SAF adapter factory, playlist lister for the active collection.
 
-Single process `KelliKanvasApp` builds:
+## Setup (SAF)
 
-- Room database and preference repository
-- Credential vault
-- Source adapter registry keyed by `SourceKind`
-- Playlist/session coordinator
-- Image loader and renderer factory
-
-No third-party DI framework required; manual constructors with interfaces for tests.
-
-## Setup
-
-Follow parent §9.2 wizard steps, shortened only where a source makes a step inapplicable.
-
-| Source | Connect step | Notes |
-|--------|--------------|-------|
-| SAF | Storage Access Framework tree pick + persistable grant | Phone-first path; TV uses document providers when available |
-| DLNA | SSDP discovery → pick MediaServer → ContentDirectory browse | Reuse existing adapter |
-| HTTP | Base URL + optional bearer/basic credential in vault | New adapter |
-| SMB | Host/share/path + credentials in vault | New adapter |
-
-After folder selection (with optional recursion), persist:
-
-- `SourceProfile` plus adapter-specific config blob/table (URI, UDN/endpoint, URL, SMB target)
-- Collection + selected roots + filters
-- Mark setup complete by presence of ≥1 selected root (no separate flag required)
+1. Welcome
+2. Launch SAF tree picker (`SafTreePickerContract`) and take persistable permission
+3. Browse children via `SafSourceAdapter`; user selects folder roots; optional “include subfolders”
+4. Write `SourceProfile` + SAF tree URI connection row, collection, selected roots
+5. Navigate to Home
 
 ## Home
 
-Five focusable destinations (parent §9.1):
+Five focusable rows:
 
-1. Start or Resume Slideshow — show collection name and source/folder/photo counts
-2. Collection
-3. Appearance
-4. Playback
-5. Ambient and System
+1. Start or Resume Slideshow — enabled when ≥1 photo can be listed; show collection label and rough counts when cheap to compute
+2. Collection — placeholder (“Coming next”)
+3. Appearance — placeholder
+4. Playback — placeholder
+5. Ambient and System — placeholder
 
-Restore `lastHomeControl` from DataStore. Disable Start/Resume when the active collection has zero playable assets.
+Restore `lastHomeControl` when present.
 
-## Slideshow
+## Simple slideshow
 
-Implement parent rendering and control semantics:
+- Build a flat photo list by walking selected roots through SAF (respect recursion flag).
+- Show one image at a time with Coil/Compose or BitmapFactory downsample.
+- Default interval from `AppPreferences.slideDuration` (15s default) or hard-default 15s if wiring prefs is costly.
+- Controls: pause/resume, previous, next; touch and D-pad.
+- Layout: center-crop fill for landscape; for portrait, fit height centered on dark background (no blur pairing yet).
+- Persist last ordinal in slideshow session table when practical; otherwise in-memory resume for the process lifetime is acceptable for this slice.
 
-- Landscape: fill screen
-- Portrait: full photo + blurred background (fill height)
-- Portrait pairing: look ahead up to 4 photos for a partner
-- Default timing 15s, crossfade 700ms, shuffle cycles, resume on
-- Controls: prev/next, pause/resume, transient overlay (auto-hide 5s), photo info, Back behavior per parent §9.3
-- Phone: touch equivalents for the same actions
+## Persistence gap (minimal)
 
-Engine pieces:
-
-1. `PlaylistEngine` — builds ordered cycle from selected roots via adapters; persists session ordinals
-2. `core/image` — decode/downsample for display size; produce paired/blurred frames
-3. `renderer/surface` — presents frames with transitions on a SurfaceView hosted in Compose
-
-## Settings
-
-Wire existing `AppPreferences` fields to Compose screens under Appearance, Playback, Overlays (if exposed), and Ambient. Validate with existing preference bounds. Ambient screen reflects capability inventory and schedule/sensor modes already modeled.
-
-## Source adapters still missing
-
-### HTTP
-
-- List children from a JSON or directory-style photo API as specified in the parent design (`api` photos).
-- Stream bytes over HTTPS/HTTP with size limits and cancellation.
-- Store base URL + secrets in vault; never log credentials.
-
-### SMB
-
-- Browse share folders with `smbj`.
-- Stream file bytes with cancellation.
-- Store host/share/user/password in vault; privacy-safe failures.
-
-Both must pass `AdapterContract` tests.
-
-## Profile persistence gap
-
-Catalog currently stores profile kind/name/status without adapter connection details. Add a stable `SourceConnectionEntity` (or per-kind tables) holding opaque, non-secret config (SAF tree URI string, DLNA UDN/endpoint, HTTP base URL, SMB host/share/path). Secrets remain in the credential vault keyed by `SourceProfileId`.
+Add SAF connection storage keyed by `SourceProfileId` (tree URI string). Secrets not applicable for SAF.
 
 ## Error handling
 
-Reuse `SourceFailure` taxonomy. Setup and slideshow surfaces show privacy-safe messages only. Transient network errors allow retry; revoked SAF grants route to repair.
+Privacy-safe messages via `SourceFailure`. Revoked grant → return to Setup repair / re-pick.
 
 ## Testing
 
-- Unit: playlist ordering/pairing, preference wiring, HTTP/SMB contract suites
-- Robolectric/instrumentation: SAF setup path, navigation first-run gate
-- Manual: S21 Ultra Wi-Fi ADB and Hisense Canvas TV sideload smoke
-
-## Delivery
-
-Parallel workstreams, then integration:
-
-1. HTTP + SMB adapters + connection persistence
-2. Nav shell + Home + SAF setup
-3. Image pipeline + SurfaceView + slideshow controls
-4. DLNA/HTTP/SMB setup UI + Collection/Settings/Ambient screens
-5. App integration, debug install to phone, release APK republish if requested
+- Unit: first-run gate (has roots or not), photo list flattening with recursion flag
+- Robolectric/instrumentation where SAF test fakes already exist
+- Manual: S21 Ultra Wi-Fi ADB — pick folder → Home → play
 
 ## Acceptance
 
-- Fresh install opens Setup; completing SAF (and each other source) reaches Home
-- Home starts a slideshow that advances, pauses, and navigates
-- Landscape fill and portrait blur+pair behave per parent defaults
-- Preferences changes affect subsequent playback
-- App runs on phone and TV launchers
-- No credentials or URIs in logs/diagnostics
+- Fresh install opens SAF setup and can grant a folder
+- Home Start opens a slideshow that advances and pauses
+- App runs on phone launcher
+- No URIs/credentials in log messages
