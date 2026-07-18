@@ -1,6 +1,7 @@
 package com.jedon.kellikanvas.feature.setup
 
 import com.jedon.kellikanvas.catalog.CatalogCollection
+import com.jedon.kellikanvas.catalog.CatalogIds
 import com.jedon.kellikanvas.catalog.KelliKanvasDatabase
 import com.jedon.kellikanvas.catalog.SafConnection
 import com.jedon.kellikanvas.catalog.SelectedRoot
@@ -18,7 +19,7 @@ class SafSetupController(
         displayName: String,
         includeDescendants: Boolean,
     ): String {
-        val collectionId = DEFAULT_COLLECTION_ID
+        val collectionId = CatalogIds.DEFAULT_COLLECTION_ID
         val createdAtMillis = nowMillis()
         database.sourceProfiles.upsert(
             SourceProfile(
@@ -54,9 +55,5 @@ class SafSetupController(
             ),
         )
         return collectionId
-    }
-
-    companion object {
-        const val DEFAULT_COLLECTION_ID = "default"
     }
 }

@@ -12,7 +12,6 @@ dependencies {
     implementation(project(":core:model"))
     implementation(project(":core:source-api"))
     implementation(project(":core:ui-tv"))
-    implementation(project(":feature:setup"))
     implementation(platform(libs.compose.bom))
     implementation(libs.androidx.room.runtime)
     implementation(libs.compose.ui)

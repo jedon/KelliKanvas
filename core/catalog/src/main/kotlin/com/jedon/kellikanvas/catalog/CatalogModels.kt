@@ -68,6 +68,10 @@ enum class CollectionIndexStatus {
     UNKNOWN,
 }
 
+object CatalogIds {
+    const val DEFAULT_COLLECTION_ID = "default"
+}
+
 data class CatalogCollection(
     val id: String,
     val label: String,

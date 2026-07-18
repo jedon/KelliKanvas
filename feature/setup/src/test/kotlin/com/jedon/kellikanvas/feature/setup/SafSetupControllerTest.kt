@@ -4,6 +4,7 @@ import android.content.Intent
 import android.net.Uri
 import com.google.common.truth.Truth.assertThat
 import com.jedon.kellikanvas.catalog.CatalogCollection
+import com.jedon.kellikanvas.catalog.CatalogIds
 import com.jedon.kellikanvas.catalog.DlnaConnection
 import com.jedon.kellikanvas.catalog.KelliKanvasDatabase
 import com.jedon.kellikanvas.catalog.KelliKanvasDatabaseFactory
@@ -59,10 +60,10 @@ class SafSetupControllerTest {
         val profile = database.sourceProfiles.get(profileId)
         assertThat(profile?.kind).isEqualTo(SourceProfileKind.Known(SourceKind.SAF))
         assertThat(database.safConnections.get(profileId)?.treeUri).isEqualTo(grant.treeUri.toString())
-        assertThat(database.collections.get(SafSetupController.DEFAULT_COLLECTION_ID))
+        assertThat(database.collections.get(CatalogIds.DEFAULT_COLLECTION_ID))
             .isEqualTo(CatalogCollection("default", "Pictures"))
 
-        val root = database.selectedRoots.list(SafSetupController.DEFAULT_COLLECTION_ID).single()
+        val root = database.selectedRoots.list(CatalogIds.DEFAULT_COLLECTION_ID).single()
         assertThat(root.profileId).isEqualTo(profileId)
         assertThat(root.objectId.value).isEqualTo(grant.documentId)
         assertThat(root.includeDescendants).isFalse()
@@ -97,13 +98,13 @@ class SafSetupControllerTest {
             includeDescendants = false,
         )
 
-        val roots = database.selectedRoots.list(SafSetupController.DEFAULT_COLLECTION_ID)
+        val roots = database.selectedRoots.list(CatalogIds.DEFAULT_COLLECTION_ID)
         assertThat(roots).hasSize(2)
         assertThat(roots.map { it.profileId }).containsExactly(firstId, secondId)
         assertThat(database.sourceProfiles.get(firstId)).isNotNull()
         assertThat(database.safConnections.get(firstId)).isNotNull()
         assertThat(database.sourceProfiles.get(secondId)).isNotNull()
-        assertThat(database.collections.get(SafSetupController.DEFAULT_COLLECTION_ID))
+        assertThat(database.collections.get(CatalogIds.DEFAULT_COLLECTION_ID))
             .isEqualTo(CatalogCollection("default", "Old"))
     }
 
@@ -111,7 +112,7 @@ class SafSetupControllerTest {
     fun complete_appendsSafWithoutDeletingOtherProfiles() = runTest {
         val dlnaId = SourceProfileId("dlna-nas")
         val safId = SourceProfileId("saf-pictures")
-        val collectionId = SafSetupController.DEFAULT_COLLECTION_ID
+        val collectionId = CatalogIds.DEFAULT_COLLECTION_ID
         database.sourceProfiles.upsert(
             SourceProfile(
                 id = dlnaId,
