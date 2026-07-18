@@ -3,11 +3,16 @@ package com.jedon.kellikanvas.source.smb
 /**
  * Baked-in household NAS topology (no secrets).
  * Credentials are injected at build time via app BuildConfig / env.
+ *
+ * Auto-bootstrap targets only the Frame TV 16×9 landscape mix folder.
  */
 object HouseholdNasDefaults {
     const val PRIMARY_HOST: String = "192.168.68.81"
     const val PORT: Int = 445
     const val DISPLAY_NAME: String = "DarklingNAS"
+
+    /** Relative to the [PRIMARY_SHARE] share. */
+    const val FRAME_TV_16X9_PATH: String = "Frame TV landscape photos_mix/16X9"
 
     /** Hostnames to try in order when connecting. */
     val HOST_CANDIDATES: List<String> =
@@ -20,41 +25,22 @@ object HouseholdNasDefaults {
 
     /**
      * Probe-proven photo roots. Paths are relative to [share].
-     * Primary share is [Kelli], which holds the household photo libraries.
+     * Only the Frame TV 16×9 folder is auto-selected for household bootstrap.
      */
     val PHOTO_SHARES: List<HouseholdSmbShare> =
         listOf(
             HouseholdSmbShare(
                 share = "Kelli",
-                displayName = "Kelli photos",
-                photoRoots =
-                    listOf(
-                        "Digital Photos",
-                        "Cell Phone Photos",
-                        "Photos for frame TV and printing",
-                        "Frame TV landscape photos_mix",
-                        "Images",
-                        "kelli_resized",
-                        "Business Card photos 2026",
-                        "Colonial Williamsburg Grand Illumination",
-                        "Jedons cell phone photos incl Swept Away",
-                        "Photography files",
-                    ),
-            ),
-            HouseholdSmbShare(
-                share = "Multimedia",
-                displayName = "Multimedia Canvas",
-                photoRoots = listOf("Canvas"),
-            ),
-            HouseholdSmbShare(
-                share = "Public",
-                displayName = "Public pictures",
-                photoRoots = listOf("Media/Pictures"),
+                displayName = "Frame TV 16x9",
+                photoRoots = listOf(FRAME_TV_16X9_PATH),
             ),
         )
 
     /** Default share used when a single profile is needed. */
     val PRIMARY_SHARE: HouseholdSmbShare = PHOTO_SHARES.first()
+
+    fun isPreferredSmbRoot(objectId: String): Boolean =
+        SmbPath.normalize(objectId).equals(FRAME_TV_16X9_PATH, ignoreCase = true)
 }
 
 data class HouseholdSmbShare(

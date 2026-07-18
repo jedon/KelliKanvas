@@ -7,6 +7,7 @@ import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -32,14 +33,19 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.tv.material3.WideButton
+import androidx.tv.material3.Text as TvText
+import androidx.tv.material3.MaterialTheme as TvMaterialTheme
 import com.jedon.kellikanvas.catalog.SelectedRoot
 import com.jedon.kellikanvas.catalog.preferences.HomeControl
 import com.jedon.kellikanvas.feature.collection.CollectionHubScreen
 import com.jedon.kellikanvas.feature.collection.HighContrastFocusButton
 import com.jedon.kellikanvas.model.SourceProfileId
 import com.jedon.kellikanvas.ui.PhoneMaterialTheme
+import com.jedon.kellikanvas.ui.tv.isTelevisionUi
 import kotlinx.coroutines.launch
 
 enum class PhotosBootstrapUi {
@@ -129,7 +135,7 @@ fun HomeScreen(
                     if (native.action != KeyEvent.ACTION_DOWN || native.repeatCount != 0) {
                         return@onPreviewKeyEvent false
                     }
-                    val menuTarget = targetPageForCenterSelect(
+                    val menuTarget = targetPageForMenuKey(
                         currentPage = pagerState.currentPage,
                         keyCode = native.keyCode,
                     )
@@ -252,7 +258,7 @@ private fun HomeCenterPage(
             PhotosBootstrapUi.Idle -> {
                 if (!canStartSlideshow) {
                     Text(
-                        text = "Add a photos folder in Collection, or open Menu (OK) to connect.",
+                        text = "Add a photos folder in Collection, or open Menu (↑ / Menu) to connect.",
                         textAlign = TextAlign.Center,
                         style = MaterialTheme.typography.bodyLarge,
                     )
@@ -269,13 +275,13 @@ private fun HomeCenterPage(
                 .focusRequester(startFocusRequester),
         )
         Text(
-            text = "OK opens Menu · ← → swipe between pages",
+            text = "OK starts slideshow · ↑ / Menu opens Menu · ← → pages",
             textAlign = TextAlign.Center,
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Text(
-            text = "← Menu · Home · Collection →",
+            text = "← Menu · Home · Collection → · Back exits slideshow to Home",
             textAlign = TextAlign.Center,
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -294,6 +300,54 @@ private fun MenuPage(
     onBackToHome: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val television = LocalContext.current.isTelevisionUi()
+    if (television) {
+        TvMaterialTheme {
+            Column(
+                modifier = modifier
+                    .fillMaxSize()
+                    .padding(WindowInsets.safeDrawing.asPaddingValues())
+                    .padding(horizontal = 48.dp, vertical = 24.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.Top),
+            ) {
+                TvText(
+                    text = "Menu",
+                    style = TvMaterialTheme.typography.headlineMedium,
+                )
+                WideButton(
+                    onClick = onBackToHome,
+                    modifier = Modifier.fillMaxWidth(),
+                    title = { TvText("Home") },
+                    subtitle = { TvText("Back or OK") },
+                )
+                WideButton(
+                    onClick = onOpenCollection,
+                    modifier = Modifier.fillMaxWidth(),
+                    title = { TvText("Collection") },
+                    subtitle = { TvText("Photo folders") },
+                )
+                WideButton(
+                    onClick = onOpenAppearance,
+                    modifier = Modifier.fillMaxWidth(),
+                    title = { TvText("Appearance") },
+                    subtitle = { TvText("Layouts and overlays") },
+                )
+                WideButton(
+                    onClick = onOpenPlayback,
+                    modifier = Modifier.fillMaxWidth(),
+                    title = { TvText("Playback") },
+                    subtitle = { TvText("Timing and order") },
+                )
+                WideButton(
+                    onClick = onOpenAmbient,
+                    modifier = Modifier.fillMaxWidth(),
+                    title = { TvText("Ambient and System") },
+                    subtitle = { TvText("Brightness, presence, updates") },
+                )
+            }
+        }
+        return
+    }
     Scaffold(
         modifier = modifier,
         containerColor = MaterialTheme.colorScheme.background,

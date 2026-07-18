@@ -77,7 +77,7 @@ class HomePagerNavigationTest {
             targetPageForDpad(
                 currentPage = PAGE_HOME,
                 pageCount = PAGE_COUNT,
-                keyCode = KeyEvent.KEYCODE_DPAD_UP,
+                keyCode = KeyEvent.KEYCODE_BACK,
             ),
         ).isNull()
     }
@@ -116,27 +116,43 @@ class HomePagerNavigationTest {
     }
 
     @Test
-    fun centerSelectFromHomeOpensMenu() {
+    fun menuOrUpFromHomeOpensMenu() {
         assertThat(
-            targetPageForCenterSelect(
+            targetPageForMenuKey(
                 currentPage = PAGE_HOME,
-                keyCode = KeyEvent.KEYCODE_DPAD_CENTER,
+                keyCode = KeyEvent.KEYCODE_MENU,
             ),
         ).isEqualTo(PAGE_MENU)
         assertThat(
-            targetPageForCenterSelect(
+            targetPageForMenuKey(
                 currentPage = PAGE_HOME,
-                keyCode = KeyEvent.KEYCODE_ENTER,
+                keyCode = KeyEvent.KEYCODE_DPAD_UP,
             ),
         ).isEqualTo(PAGE_MENU)
     }
 
     @Test
-    fun centerSelectFromOtherPagesIgnored() {
+    fun enterAndCenterDoNotOpenMenu() {
         assertThat(
-            targetPageForCenterSelect(
-                currentPage = PAGE_COLLECTION,
+            targetPageForMenuKey(
+                currentPage = PAGE_HOME,
                 keyCode = KeyEvent.KEYCODE_DPAD_CENTER,
+            ),
+        ).isNull()
+        assertThat(
+            targetPageForMenuKey(
+                currentPage = PAGE_HOME,
+                keyCode = KeyEvent.KEYCODE_ENTER,
+            ),
+        ).isNull()
+    }
+
+    @Test
+    fun menuKeyFromOtherPagesIgnored() {
+        assertThat(
+            targetPageForMenuKey(
+                currentPage = PAGE_COLLECTION,
+                keyCode = KeyEvent.KEYCODE_MENU,
             ),
         ).isNull()
     }

@@ -68,6 +68,7 @@ class DlnaSetupController(
         profile: DlnaProfile,
         friendlyName: String,
         folders: List<SelectedFolder>,
+        replaceNetworkRoots: Boolean = false,
     ): String {
         val descriptionLocation = requireNotNull(profile.descriptionLocation) {
             "DLNA profile requires description location"
@@ -104,7 +105,12 @@ class DlnaSetupController(
             }
         database.collections.upsert(CatalogCollection(collectionId, collectionLabel))
 
-        val retainedRoots = previousRoots.filter { it.profileId != profile.id }
+        val retainedRoots =
+            previousRoots.filter { root ->
+                if (root.profileId == profile.id) return@filter false
+                if (!replaceNetworkRoots) return@filter true
+                database.safConnections.get(root.profileId) != null
+            }
         val selectedRoots = folders.map { folder ->
             SelectedRoot(
                 collectionId = collectionId,

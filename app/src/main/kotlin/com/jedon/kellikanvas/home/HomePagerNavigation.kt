@@ -21,18 +21,16 @@ fun targetPageForDpad(
 }
 
 /**
- * On Home, Enter / Center / OK opens the Menu page without requiring a Left press.
+ * On Home, Menu or Up opens the Menu page. Enter / Center are left for Start slideshow.
  */
-fun targetPageForCenterSelect(
+fun targetPageForMenuKey(
     currentPage: Int,
     keyCode: Int,
 ): Int? {
     if (currentPage != PAGE_HOME) return null
     return when (keyCode) {
-        KeyEvent.KEYCODE_DPAD_CENTER,
-        KeyEvent.KEYCODE_ENTER,
-        KeyEvent.KEYCODE_NUMPAD_ENTER,
-        KeyEvent.KEYCODE_BUTTON_A,
+        KeyEvent.KEYCODE_MENU,
+        KeyEvent.KEYCODE_DPAD_UP,
         -> PAGE_MENU
         else -> null
     }

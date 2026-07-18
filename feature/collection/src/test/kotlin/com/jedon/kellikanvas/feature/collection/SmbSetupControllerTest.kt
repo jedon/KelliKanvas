@@ -64,8 +64,8 @@ class SmbSetupControllerTest {
 
         assertThat(result.host).isIn(HouseholdNasDefaults.HOST_CANDIDATES)
         assertThat(result.share).isEqualTo(HouseholdNasDefaults.PRIMARY_SHARE.share)
-        assertThat(result.rootCount).isAtLeast(1)
-        assertThat(result.roots).contains("Digital Photos")
+        assertThat(result.rootCount).isEqualTo(1)
+        assertThat(result.roots).containsExactly(HouseholdNasDefaults.FRAME_TV_16X9_PATH)
 
         val stored = database.smbConnections.get(profileId)
         assertThat(stored).isNotNull()
@@ -75,7 +75,9 @@ class SmbSetupControllerTest {
         assertThat(vault.stored[profileId.value]).isEqualTo("fake-password")
 
         val roots = database.selectedRoots.list(result.collectionId)
-        assertThat(roots.map { it.objectId.value }).contains("Digital Photos")
+        assertThat(roots.map { it.objectId.value })
+            .containsExactly(HouseholdNasDefaults.FRAME_TV_16X9_PATH)
+        assertThat(roots.map { it.objectId.value }).doesNotContain("Digital Photos")
     }
 
     private class FakeCredentialVault : CredentialVault {
@@ -127,12 +129,25 @@ class SmbSetupControllerTest {
             val items =
                 when (path) {
                     "", SmbSourceAdapter.ROOT_OBJECT_ID ->
-                        HouseholdNasDefaults.PRIMARY_SHARE.photoRoots.map { root ->
+                        listOf(
                             SourceEntry.Folder(
-                                ref = FolderRef(profileId, ProviderObjectId(root)),
-                                name = root.substringAfterLast('/'),
-                            )
-                        }
+                                ref = FolderRef(
+                                    profileId,
+                                    ProviderObjectId("Frame TV landscape photos_mix"),
+                                ),
+                                name = "Frame TV landscape photos_mix",
+                            ),
+                        )
+                    "Frame TV landscape photos_mix" ->
+                        listOf(
+                            SourceEntry.Folder(
+                                ref = FolderRef(
+                                    profileId,
+                                    ProviderObjectId(HouseholdNasDefaults.FRAME_TV_16X9_PATH),
+                                ),
+                                name = "16X9",
+                            ),
+                        )
                     else -> emptyList()
                 }
             return Page(items = items.take(limit), nextCursor = null)

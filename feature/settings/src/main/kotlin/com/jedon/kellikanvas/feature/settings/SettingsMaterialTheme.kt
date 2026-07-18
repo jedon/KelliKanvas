@@ -1,14 +1,19 @@
 package com.jedon.kellikanvas.feature.settings
 
-import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.MaterialTheme as PhoneMaterialTheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.tv.material3.MaterialTheme as TvMaterialTheme
+import androidx.tv.material3.darkColorScheme
+import com.jedon.kellikanvas.ui.tv.isTelevisionUi
 
 /**
- * Phone Material3 chrome for settings screens. Must not inherit TV MaterialTheme locals.
+ * Phone: Material3 light chrome.
+ * TV: Compose for TV Material3 dark scheme (focus/glow friendly).
  */
-private val SettingsColorScheme = lightColorScheme(
+private val PhoneSettingsColorScheme = lightColorScheme(
     primary = Color(0xFF1565C0),
     onPrimary = Color.White,
     surface = Color.White,
@@ -22,5 +27,10 @@ private val SettingsColorScheme = lightColorScheme(
 @Suppress("ktlint:standard:function-naming")
 @Composable
 fun SettingsMaterialTheme(content: @Composable () -> Unit) {
-    MaterialTheme(colorScheme = SettingsColorScheme, content = content)
+    val television = LocalContext.current.isTelevisionUi()
+    if (television) {
+        TvMaterialTheme(colorScheme = darkColorScheme(), content = content)
+    } else {
+        PhoneMaterialTheme(colorScheme = PhoneSettingsColorScheme, content = content)
+    }
 }

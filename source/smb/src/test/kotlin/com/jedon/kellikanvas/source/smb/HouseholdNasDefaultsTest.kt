@@ -14,7 +14,10 @@ class HouseholdNasDefaultsTest {
     }
 
     @Test
-    fun photoRootsAreNormalizedRelativePaths() {
+    fun photoRootsAreOnlyFrameTv16x9() {
+        assertThat(HouseholdNasDefaults.PHOTO_SHARES).hasSize(1)
+        assertThat(HouseholdNasDefaults.PRIMARY_SHARE.photoRoots)
+            .containsExactly(HouseholdNasDefaults.FRAME_TV_16X9_PATH)
         for (share in HouseholdNasDefaults.PHOTO_SHARES) {
             for (root in share.photoRoots) {
                 assertThat(SmbPath.normalize(root)).isEqualTo(root.replace('\\', '/'))
@@ -23,7 +26,9 @@ class HouseholdNasDefaultsTest {
             }
         }
         assertThat(HouseholdNasDefaults.PRIMARY_SHARE.photoRoots)
-            .containsAtLeast("Digital Photos", "Cell Phone Photos", "Photos for frame TV and printing")
+            .doesNotContain("Digital Photos")
+        assertThat(HouseholdNasDefaults.PRIMARY_SHARE.photoRoots)
+            .doesNotContain("Cell Phone Photos")
     }
 
     @Test

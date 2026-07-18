@@ -21,6 +21,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
+import com.jedon.kellikanvas.catalog.CatalogIds
 import com.jedon.kellikanvas.catalog.SelectedRoot
 import com.jedon.kellikanvas.catalog.preferences.AppPreferencesState
 import com.jedon.kellikanvas.feature.collection.BootstrapResult
@@ -99,11 +100,19 @@ fun KelliKanvasNavHost(
 
     LaunchedEffect(container, bootstrapAttempt) {
         val current = shellState ?: loadShellState(container).also { shellState = it }
-        if (current.roots.isNotEmpty() && current.adapters.isNotEmpty()) {
+        val allRoots =
+            runCatching {
+                container.database.selectedRoots.list(CatalogIds.DEFAULT_COLLECTION_ID)
+            }.getOrDefault(current.roots)
+        val shouldBootstrap =
+            current.adapters.isEmpty() ||
+                HouseholdNasBootstrap.needsHouseholdRootReplace(allRoots)
+        if (!shouldBootstrap) {
             bootstrapUi = PhotosBootstrapUi.Idle
             bootstrapError = null
             return@LaunchedEffect
         }
+        val wasEmpty = allRoots.isEmpty()
         bootstrapUi = PhotosBootstrapUi.Connecting
         bootstrapError = null
         val result = runCatching { householdBootstrap(container).ensurePhotosCollection() }
@@ -117,11 +126,20 @@ fun KelliKanvasNavHost(
                 shellState = loadShellState(container)
                 collectionRevision++
                 bootstrapUi = PhotosBootstrapUi.Idle
-                autoStartSlideshowToken++
+                // Auto-start on first empty connect, or when replacing stale household roots.
+                if (wasEmpty || HouseholdNasBootstrap.needsHouseholdRootReplace(allRoots)) {
+                    autoStartSlideshowToken++
+                }
             }
             is BootstrapResult.Failed -> {
-                bootstrapUi = PhotosBootstrapUi.Failed
-                bootstrapError = result.message
+                // Keep existing playable roots usable when a re-bootstrap fails.
+                if (current.roots.isNotEmpty() && current.adapters.isNotEmpty()) {
+                    bootstrapUi = PhotosBootstrapUi.Idle
+                    bootstrapError = null
+                } else {
+                    bootstrapUi = PhotosBootstrapUi.Failed
+                    bootstrapError = result.message
+                }
             }
         }
     }

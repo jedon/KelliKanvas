@@ -37,8 +37,10 @@ class SmbSetupController(
     /**
      * Connects using baked-in household hosts/shares and build-time credentials.
      * Auto-selects probe-proven photo roots that exist on the share.
+     *
+     * @param replaceNetworkRoots when true, drops prior SMB/DLNA roots (keeps SAF).
      */
-    suspend fun connectHousehold(): HouseholdConnectResult {
+    suspend fun connectHousehold(replaceNetworkRoots: Boolean = false): HouseholdConnectResult {
         require(householdUsername.isNotBlank()) {
             "Household SMB username missing (set QNAP_NAS_USERNAME for the build)"
         }
@@ -81,6 +83,7 @@ class SmbSetupController(
                                         includeDescendants = true,
                                     )
                                 },
+                                replaceNetworkRoots = replaceNetworkRoots,
                             )
                         return HouseholdConnectResult(
                             collectionId = collectionId,
@@ -132,6 +135,7 @@ class SmbSetupController(
         credentials: SmbCredentials,
         displayName: String,
         folders: List<SelectedFolder>,
+        replaceNetworkRoots: Boolean = false,
     ): String {
         val collectionId = CatalogIds.DEFAULT_COLLECTION_ID
         database.sourceProfiles.upsert(
@@ -164,7 +168,12 @@ class SmbSetupController(
             }
         database.collections.upsert(CatalogCollection(collectionId, collectionLabel))
 
-        val retainedRoots = previousRoots.filter { it.profileId != profile.id }
+        val retainedRoots =
+            previousRoots.filter { root ->
+                if (root.profileId == profile.id) return@filter false
+                if (!replaceNetworkRoots) return@filter true
+                database.safConnections.get(root.profileId) != null
+            }
         val selectedRoots =
             folders.map { folder ->
                 SelectedRoot(
