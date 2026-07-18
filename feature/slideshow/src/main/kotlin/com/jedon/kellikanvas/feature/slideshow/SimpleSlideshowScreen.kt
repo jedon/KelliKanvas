@@ -1,8 +1,8 @@
 package com.jedon.kellikanvas.feature.slideshow
 
 import android.util.Log
+import android.view.ViewGroup
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -23,20 +23,24 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.tv.material3.Text
 import com.jedon.kellikanvas.catalog.SelectedRoot
 import com.jedon.kellikanvas.model.AssetRef
 import com.jedon.kellikanvas.model.SourceProfileId
+import com.jedon.kellikanvas.renderer.surface.DisplayPhotoTarget
+import com.jedon.kellikanvas.renderer.surface.PhotoSurfaceView
+import com.jedon.kellikanvas.renderer.surface.isTelevisionFormFactor
+import com.jedon.kellikanvas.renderer.surface.slideshowDecodeLongEdgePx
 import com.jedon.kellikanvas.source.SourceAdapter
 import kotlinx.coroutines.delay
 
@@ -51,12 +55,19 @@ fun SimpleSlideshowScreen(
     slideDurationMillis: Long = 15_000,
     onExit: () -> Unit,
     modifier: Modifier = Modifier,
-    maxEdgePx: Int = 1_920,
+    maxEdgePx: Int? = null,
 ) {
+    val context = LocalContext.current
+    // Panel-sized decode: 4K TV → 3840 long edge. Never default to an arbitrary 1920 OOM band-aid.
+    val resolvedMaxEdge =
+        maxEdgePx
+            ?: remember(context) { context.slideshowDecodeLongEdgePx() }
+    val television = remember(context) { context.isTelevisionFormFactor() }
     val focusRequester = remember { FocusRequester() }
     var playlist by remember { mutableStateOf<List<AssetRef>?>(null) }
     var player by remember { mutableStateOf<SlideshowPlayerState?>(null) }
     var bitmap by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
+    var surfaceView by remember { mutableStateOf<PhotoSurfaceView?>(null) }
     var loadFailure by remember { mutableStateOf(false) }
     var photoLoadError by remember { mutableStateOf<String?>(null) }
     var consecutiveDecodeFailures by remember { mutableIntStateOf(0) }
@@ -64,6 +75,7 @@ fun SimpleSlideshowScreen(
     BackHandler(onBack = onExit)
     DisposableEffect(Unit) {
         onDispose {
+            surfaceView?.clearFrame()
             bitmap?.recycle()
             bitmap = null
         }
@@ -87,23 +99,30 @@ fun SimpleSlideshowScreen(
         delay(activePlayer.intervalMillis)
         activePlayer.next()
     }
-    LaunchedEffect(player?.index, playlist) {
+    LaunchedEffect(player?.index, playlist, resolvedMaxEdge) {
         val activePlaylist = playlist ?: return@LaunchedEffect
         val activePlayer = player ?: return@LaunchedEffect
         val index = activePlayer.index
         val asset = activePlaylist.getOrNull(index) ?: return@LaunchedEffect
         photoLoadError = null
+        // Drop the previous frame before decoding the next so we never hold two panel-sized
+        // bitmaps plus the compressed PNG bytes at once.
+        val previous = bitmap
+        bitmap = null
+        surfaceView?.clearFrame()
+        previous?.recycle()
         val result =
             runCatching {
                 PhotoBitmapLoader.decode(
                     adapters.getValue(asset.profileId).open(asset),
-                    maxEdgePx,
+                    resolvedMaxEdge,
                 )
             }
         val decoded = result.getOrNull()
-        val previous = bitmap
         bitmap = decoded
-        previous?.recycle()
+        if (decoded != null) {
+            surfaceView?.showFrame(decoded)
+        }
         if (decoded == null) {
             val reason =
                 result.exceptionOrNull()?.let { failure ->
@@ -150,6 +169,37 @@ fun SimpleSlideshowScreen(
             .onKeyAction(Key.NumPadEnter) { player?.togglePause() },
         contentAlignment = Alignment.Center,
     ) {
+        // SurfaceView owns still-photo pixels (panel-sized buffer). Overlay text for status.
+        // Video never uses this Compose/ARGB path — MediaCodec → Surface; stills must match.
+        AndroidView(
+            factory = { ctx ->
+                PhotoSurfaceView(ctx).also { view ->
+                    view.layoutParams =
+                        ViewGroup.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT,
+                            ViewGroup.LayoutParams.MATCH_PARENT,
+                        )
+                    if (television && resolvedMaxEdge >= DisplayPhotoTarget.UHD_WIDTH) {
+                        view.setFixedPanelSize(
+                            DisplayPhotoTarget.UHD_WIDTH,
+                            DisplayPhotoTarget.UHD_HEIGHT,
+                        )
+                    }
+                    surfaceView = view
+                    bitmap?.let { view.showFrame(it) }
+                }
+            },
+            modifier = Modifier.fillMaxSize(),
+            update = { view ->
+                surfaceView = view
+                val frame = bitmap
+                if (frame != null && !frame.isRecycled) {
+                    view.showFrame(frame)
+                } else {
+                    view.clearFrame()
+                }
+            },
+        )
         when {
             playlist == null -> Text(text = "Loading…", color = Color.White)
             playlist?.isEmpty() == true -> Text(
@@ -175,19 +225,6 @@ fun SimpleSlideshowScreen(
                     )
                 }
             bitmap == null -> Text(text = "Loading photo…", color = Color.White)
-            else -> {
-                val image = bitmap ?: return@Box
-                Image(
-                    bitmap = image.asImageBitmap(),
-                    contentDescription = "Slideshow photo",
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = if (image.height > image.width) {
-                        ContentScale.Fit
-                    } else {
-                        ContentScale.Crop
-                    },
-                )
-            }
         }
     }
 }

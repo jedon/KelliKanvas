@@ -61,10 +61,23 @@ class PhotoBitmapLoaderTest {
     }
 
     @Test
-    fun `sampleSizeFor downsamples 4K frames to display edge`() {
+    fun `sampleSizeFor downsamples only when larger than display edge`() {
+        assertThat(PhotoBitmapLoader.sampleSizeFor(3840, 2160, maxEdgePx = 3840)).isEqualTo(1)
         assertThat(PhotoBitmapLoader.sampleSizeFor(3840, 2160, maxEdgePx = 1920)).isEqualTo(2)
         assertThat(PhotoBitmapLoader.sampleSizeFor(3840, 2160, maxEdgePx = 960)).isEqualTo(4)
         assertThat(PhotoBitmapLoader.sampleSizeFor(800, 600, maxEdgePx = 1920)).isEqualTo(1)
+    }
+
+    @Test
+    fun `decode prefers RGB_565 for panel-sized frames`() = runTest {
+        val bytes = createTestImageBytes(200, 100)
+        val stream = FakePhotoByteStream(bytes)
+
+        val decoded = PhotoBitmapLoader.decode(stream, maxEdgePx = 200)
+
+        assertThat(decoded.config).isEqualTo(Bitmap.Config.RGB_565)
+        assertThat(decoded.width).isEqualTo(200)
+        assertThat(decoded.height).isEqualTo(100)
     }
 
     @Test
