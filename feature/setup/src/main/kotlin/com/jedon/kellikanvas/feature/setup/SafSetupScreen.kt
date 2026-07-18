@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
@@ -60,6 +61,7 @@ fun SafSetupScreen(
     Column(
         modifier = modifier
             .fillMaxSize()
+            .safeDrawingPadding()
             .padding(32.dp)
             .widthIn(max = 720.dp),
         verticalArrangement = Arrangement.spacedBy(24.dp, Alignment.CenterVertically),

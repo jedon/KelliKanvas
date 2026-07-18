@@ -3,8 +3,11 @@ package com.jedon.kellikanvas.feature.settings
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.material.icons.Icons
@@ -32,9 +35,11 @@ fun SettingsScreenScaffold(
         BackHandler(onBack = onBack)
         Scaffold(
             modifier = modifier,
+            contentWindowInsets = WindowInsets.safeDrawing,
             topBar = {
                 TopAppBar(
                     title = { Text(title) },
+                    windowInsets = WindowInsets.statusBars,
                     navigationIcon = {
                         IconButton(onClick = onBack) {
                             Icon(

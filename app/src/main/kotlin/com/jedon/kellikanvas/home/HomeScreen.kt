@@ -6,10 +6,13 @@ import androidx.activity.compose.LocalActivity
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material3.Button
@@ -131,9 +134,11 @@ fun HomeScreen(
                 )
                 PAGE_HOME -> Scaffold(
                     containerColor = MaterialTheme.colorScheme.background,
+                    contentWindowInsets = WindowInsets.safeDrawing,
                     topBar = {
                         TopAppBar(
                             title = { Text(collectionLabel.ifBlank { "KelliKanvas" }) },
+                            windowInsets = WindowInsets.statusBars,
                             colors = TopAppBarDefaults.topAppBarColors(
                                 containerColor = Color.White,
                                 titleContentColor = menuTint,
@@ -232,9 +237,11 @@ private fun MenuPage(
     Scaffold(
         modifier = modifier,
         containerColor = MaterialTheme.colorScheme.background,
+        contentWindowInsets = WindowInsets.safeDrawing,
         topBar = {
             TopAppBar(
                 title = { Text("Menu") },
+                windowInsets = WindowInsets.statusBars,
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = Color.White,
                     titleContentColor = Color.Black,
