@@ -5,6 +5,10 @@ plugins {
 
 android {
     namespace = "com.jedon.kellikanvas.feature.slideshow"
+
+    testOptions {
+        unitTests.isIncludeAndroidResources = true
+    }
 }
 
 dependencies {
@@ -20,5 +24,6 @@ dependencies {
 
     testImplementation(libs.junit4)
     testImplementation(libs.truth)
+    testImplementation(libs.robolectric)
     testImplementation(libs.kotlinx.coroutines.test)
 }
