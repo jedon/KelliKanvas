@@ -15,7 +15,9 @@ import com.jedon.kellikanvas.model.SourceProfileId
 import com.jedon.kellikanvas.model.SourceStatus
 import com.jedon.kellikanvas.source.PhotoByteStream
 import com.jedon.kellikanvas.source.SourceAdapter
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
+import org.junit.Assert.fail
 import org.junit.Test
 
 class CollectionPhotoPlaylistTest {
@@ -47,6 +49,26 @@ class CollectionPhotoPlaylistTest {
             val nextCursor = if (endIndex < allChildren.size) PageCursor(endIndex.toString()) else null
             return Page(items, nextCursor)
         }
+
+        override suspend fun metadataFor(asset: AssetRef): PhotoMetadata = PhotoMetadata(asset)
+
+        override suspend fun openStream(asset: AssetRef): PhotoByteStream = throw UnsupportedOperationException()
+    }
+
+    private class CancellingSourceAdapter(
+        override val profileId: SourceProfileId,
+        private val cancellation: CancellationException = CancellationException("listing cancelled"),
+    ) : SourceAdapter() {
+        override val kind = SourceKind.SAF
+        override val capabilities = SourceCapabilities(supportsPaging = true)
+
+        override suspend fun probe(): SourceStatus = SourceStatus(available = true, summary = "Fake cancelling")
+
+        override suspend fun listChildrenPage(
+            folder: FolderRef,
+            cursor: PageCursor?,
+            limit: Int,
+        ): Page<SourceEntry> = throw cancellation
 
         override suspend fun metadataFor(asset: AssetRef): PhotoMetadata = PhotoMetadata(asset)
 
@@ -106,6 +128,26 @@ class CollectionPhotoPlaylistTest {
         assertThat(result[0].profileId).isEqualTo(profileId1)
         assertThat(result[1].objectId.value).isEqualTo("photo2")
         assertThat(result[1].profileId).isEqualTo(profileId2)
+    }
+
+    @Test
+    fun build_rootListingCancelled_propagatesCancellation() = runTest {
+        val rootRef = FolderRef(profileId1, ProviderObjectId("root"))
+        val cancellation = CancellationException("listing cancelled")
+        val adapter = CancellingSourceAdapter(profileId1, cancellation)
+        val roots = listOf(
+            SelectedRoot("col1", profileId1, rootRef.objectId, "Root", includeDescendants = false),
+        )
+
+        try {
+            CollectionPhotoPlaylist.build(
+                adapters = mapOf(profileId1 to adapter),
+                roots = roots,
+            )
+            fail("Expected cancellation")
+        } catch (caught: CancellationException) {
+            assertThat(caught).isSameInstanceAs(cancellation)
+        }
     }
 
     @Test

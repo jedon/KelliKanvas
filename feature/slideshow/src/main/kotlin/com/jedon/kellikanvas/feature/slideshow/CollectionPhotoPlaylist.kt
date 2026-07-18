@@ -7,6 +7,7 @@ import com.jedon.kellikanvas.model.PageCursor
 import com.jedon.kellikanvas.model.SourceEntry
 import com.jedon.kellikanvas.model.SourceProfileId
 import com.jedon.kellikanvas.source.SourceAdapter
+import kotlinx.coroutines.CancellationException
 
 object CollectionPhotoPlaylist {
     private const val MAX_PHOTOS_LIMIT = 5000
@@ -31,6 +32,9 @@ object CollectionPhotoPlaylist {
                     results = results,
                 )
             }.onFailure { throwable ->
+                if (throwable is CancellationException) {
+                    throw throwable
+                }
                 if (throwable is IllegalStateException &&
                     throwable.message?.contains("Playlist size limit exceeded") == true
                 ) {
