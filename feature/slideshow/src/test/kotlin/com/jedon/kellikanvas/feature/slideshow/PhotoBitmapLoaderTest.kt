@@ -61,6 +61,13 @@ class PhotoBitmapLoaderTest {
     }
 
     @Test
+    fun `sampleSizeFor downsamples 4K frames to display edge`() {
+        assertThat(PhotoBitmapLoader.sampleSizeFor(3840, 2160, maxEdgePx = 1920)).isEqualTo(2)
+        assertThat(PhotoBitmapLoader.sampleSizeFor(3840, 2160, maxEdgePx = 960)).isEqualTo(4)
+        assertThat(PhotoBitmapLoader.sampleSizeFor(800, 600, maxEdgePx = 1920)).isEqualTo(1)
+    }
+
+    @Test
     fun `decode closes stream even when decode fails`() = runTest {
         val invalidBytes = byteArrayOf(1, 2, 3, 4, 5)
         val stream = FakePhotoByteStream(invalidBytes)

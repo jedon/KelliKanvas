@@ -217,6 +217,7 @@ fun KelliKanvasNavHost(
                 onRetryBootstrap = { bootstrapAttempt++ },
                 collectionLoadError = collectionState.loadError ?: homeState.loadError,
                 autoStartSlideshowToken = autoStartSlideshowToken,
+                onAutoStartSlideshowConsumed = { autoStartSlideshowToken = 0 },
             )
         }
         composable(ShellRoutes.COLLECTION) {

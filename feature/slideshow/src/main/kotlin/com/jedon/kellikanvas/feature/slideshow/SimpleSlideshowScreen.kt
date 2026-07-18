@@ -1,16 +1,20 @@
 package com.jedon.kellikanvas.feature.slideshow
 
+import android.util.Log
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -28,12 +32,16 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
 import androidx.tv.material3.Text
 import com.jedon.kellikanvas.catalog.SelectedRoot
 import com.jedon.kellikanvas.model.AssetRef
 import com.jedon.kellikanvas.model.SourceProfileId
 import com.jedon.kellikanvas.source.SourceAdapter
 import kotlinx.coroutines.delay
+
+private const val TAG = "SimpleSlideshow"
+private const val DECODE_ERROR_DWELL_MS = 1_200L
 
 @Suppress("ktlint:standard:function-naming")
 @Composable
@@ -43,14 +51,15 @@ fun SimpleSlideshowScreen(
     slideDurationMillis: Long = 15_000,
     onExit: () -> Unit,
     modifier: Modifier = Modifier,
-    maxEdgePx: Int = 2_048,
+    maxEdgePx: Int = 1_920,
 ) {
     val focusRequester = remember { FocusRequester() }
     var playlist by remember { mutableStateOf<List<AssetRef>?>(null) }
     var player by remember { mutableStateOf<SlideshowPlayerState?>(null) }
     var bitmap by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
     var loadFailure by remember { mutableStateOf(false) }
-    var photoLoadError by remember { mutableStateOf(false) }
+    var photoLoadError by remember { mutableStateOf<String?>(null) }
+    var consecutiveDecodeFailures by remember { mutableIntStateOf(0) }
 
     BackHandler(onBack = onExit)
     DisposableEffect(Unit) {
@@ -69,25 +78,52 @@ fun SimpleSlideshowScreen(
         }
         focusRequester.requestFocus()
     }
-    LaunchedEffect(player?.playing, player?.index, playlist) {
+    LaunchedEffect(player?.playing, player?.index, playlist, bitmap, photoLoadError) {
         val activePlayer = player ?: return@LaunchedEffect
         val activePlaylist = playlist ?: return@LaunchedEffect
         if (activePlaylist.isEmpty() || !activePlayer.playing) return@LaunchedEffect
+        // Advance only while a photo is visible; decode failures skip via their own dwell.
+        if (photoLoadError != null || bitmap == null) return@LaunchedEffect
         delay(activePlayer.intervalMillis)
         activePlayer.next()
     }
     LaunchedEffect(player?.index, playlist) {
         val activePlaylist = playlist ?: return@LaunchedEffect
         val activePlayer = player ?: return@LaunchedEffect
-        val asset = activePlaylist.getOrNull(activePlayer.index) ?: return@LaunchedEffect
-        photoLoadError = false
-        val decoded = runCatching {
-            PhotoBitmapLoader.decode(adapters.getValue(asset.profileId).open(asset), maxEdgePx)
-        }.getOrNull()
+        val index = activePlayer.index
+        val asset = activePlaylist.getOrNull(index) ?: return@LaunchedEffect
+        photoLoadError = null
+        val result =
+            runCatching {
+                PhotoBitmapLoader.decode(
+                    adapters.getValue(asset.profileId).open(asset),
+                    maxEdgePx,
+                )
+            }
+        val decoded = result.getOrNull()
         val previous = bitmap
         bitmap = decoded
         previous?.recycle()
-        photoLoadError = decoded == null
+        if (decoded == null) {
+            val reason =
+                result.exceptionOrNull()?.let { failure ->
+                    Log.w(TAG, "Decode failed for ${asset.objectId.value}", failure)
+                    briefErrorReason(failure)
+                } ?: "Unable to decode"
+            photoLoadError = reason
+            consecutiveDecodeFailures += 1
+            if (consecutiveDecodeFailures >= activePlaylist.size) {
+                // Every item failed — stay on the error so Back can exit.
+                return@LaunchedEffect
+            }
+            delay(DECODE_ERROR_DWELL_MS)
+            if (player?.index == index) {
+                activePlayer.next()
+            }
+        } else {
+            consecutiveDecodeFailures = 0
+            photoLoadError = null
+        }
     }
 
     val contentModifier = modifier
@@ -121,11 +157,23 @@ fun SimpleSlideshowScreen(
                 color = Color.White,
                 textAlign = TextAlign.Center,
             )
-            photoLoadError -> Text(
-                text = "Unable to display this photo",
-                color = Color.White,
-                textAlign = TextAlign.Center,
-            )
+            photoLoadError != null ->
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier.padding(24.dp),
+                ) {
+                    Text(
+                        text = "Unable to display this photo",
+                        color = Color.White,
+                        textAlign = TextAlign.Center,
+                    )
+                    Text(
+                        text = photoLoadError.orEmpty(),
+                        color = Color.White.copy(alpha = 0.75f),
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.padding(top = 8.dp),
+                    )
+                }
             bitmap == null -> Text(text = "Loading photo…", color = Color.White)
             else -> {
                 val image = bitmap ?: return@Box
@@ -142,6 +190,14 @@ fun SimpleSlideshowScreen(
             }
         }
     }
+}
+
+internal fun briefErrorReason(failure: Throwable): String {
+    val raw =
+        failure.message?.trim()?.takeIf { it.isNotEmpty() }
+            ?: failure::class.simpleName
+            ?: "Decode error"
+    return raw.take(96)
 }
 
 private fun Modifier.onKeyAction(

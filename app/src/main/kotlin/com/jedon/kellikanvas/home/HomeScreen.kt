@@ -77,6 +77,7 @@ fun HomeScreen(
     onRetryBootstrap: () -> Unit = {},
     collectionLoadError: String? = null,
     autoStartSlideshowToken: Int = 0,
+    onAutoStartSlideshowConsumed: () -> Unit = {},
 ) {
     val activity = LocalActivity.current
     val scope = rememberCoroutineScope()
@@ -108,7 +109,14 @@ fun HomeScreen(
     }
 
     LaunchedEffect(autoStartSlideshowToken, canStartSlideshow) {
-        if (autoStartSlideshowToken > 0 && canStartSlideshow) {
+        // Consume before navigating so Back → Home does not re-fire auto-start.
+        if (
+            AutoStartSlideshowToken.consumeIfReady(
+                token = autoStartSlideshowToken,
+                canStart = canStartSlideshow,
+                onConsumed = onAutoStartSlideshowConsumed,
+            )
+        ) {
             onUpdateHomeControl(HomeControl.START_OR_RESUME)
             onStartSlideshow()
         }
