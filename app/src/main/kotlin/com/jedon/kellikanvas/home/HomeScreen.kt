@@ -17,8 +17,10 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -26,8 +28,22 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.jedon.kellikanvas.catalog.preferences.HomeControl
+
+/**
+ * Phone Material3 chrome must not inherit TV MaterialTheme locals from [MainActivity].
+ * Force a high-contrast light scheme so the overflow control is always readable.
+ */
+private val HomePhoneColorScheme = lightColorScheme(
+    primary = Color(0xFF1565C0),
+    onPrimary = Color.White,
+    surface = Color.White,
+    onSurface = Color.Black,
+    background = Color.White,
+    onBackground = Color.Black,
+)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Suppress("ktlint:standard:function-naming")
@@ -48,9 +64,8 @@ fun HomeScreen(
         activity?.finish()
     }
 
-    // Provide phone Material3 colors; app root only wraps TV MaterialTheme.
-    MaterialTheme {
-        val menuTint = MaterialTheme.colorScheme.onSurface
+    MaterialTheme(colorScheme = HomePhoneColorScheme) {
+        val menuTint = Color.Black
         Scaffold(
             modifier = modifier,
             containerColor = MaterialTheme.colorScheme.background,
@@ -58,16 +73,19 @@ fun HomeScreen(
                 TopAppBar(
                     title = { Text(collectionLabel.ifBlank { "KelliKanvas" }) },
                     colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = MaterialTheme.colorScheme.surface,
+                        containerColor = Color.White,
                         titleContentColor = menuTint,
                         actionIconContentColor = menuTint,
                     ),
                     actions = {
                         var expanded by remember { mutableStateOf(false) }
+                        TextButton(onClick = { expanded = true }) {
+                            Text("Menu", color = menuTint)
+                        }
                         IconButton(onClick = { expanded = true }) {
                             Icon(
                                 imageVector = Icons.Default.MoreVert,
-                                contentDescription = "Menu",
+                                contentDescription = "More options",
                                 tint = menuTint,
                             )
                         }
