@@ -37,6 +37,7 @@ import com.jedon.kellikanvas.source.SourceAdapter
 import com.jedon.kellikanvas.source.dlna.DlnaProfile
 import com.jedon.kellikanvas.source.saf.SafProfile
 import com.jedon.kellikanvas.source.saf.SafTreeGrant
+import com.jedon.kellikanvas.ui.PhoneMaterialTheme
 import kotlinx.coroutines.launch
 import java.net.URI
 
@@ -93,18 +94,36 @@ fun KelliKanvasNavHost(
         composable(ShellRoutes.HOME) {
             val homeState = shellState ?: return@composable
             val canStartSlideshow = homeState.roots.isNotEmpty() && homeState.adapters.isNotEmpty()
+            val controller = remember(container.database) {
+                CollectionHubController(container.database)
+            }
+            var collectionState by remember { mutableStateOf(CollectionScreenState()) }
+            LaunchedEffect(controller, collectionRevision) {
+                collectionState = loadCollectionScreenState(container, controller)
+            }
             HomeScreen(
                 collectionLabel = homeState.collectionLabel,
                 canStartSlideshow = canStartSlideshow,
+                roots = collectionState.roots,
+                sourceLabels = collectionState.sourceLabels,
                 onStartSlideshow = {
                     if (canStartSlideshow) {
                         navController.navigate(ShellRoutes.SLIDESHOW)
                     }
                 },
-                onOpenCollection = { navController.navigate(ShellRoutes.COLLECTION) },
                 onOpenAppearance = { navController.navigate(ShellRoutes.APPEARANCE) },
                 onOpenPlayback = { navController.navigate(ShellRoutes.PLAYBACK) },
                 onOpenAmbient = { navController.navigate(ShellRoutes.AMBIENT) },
+                onAddLocalFolder = { navController.navigate(ShellRoutes.SETUP) },
+                onAddQnap = { navController.navigate(ShellRoutes.DLNA_SETUP) },
+                onRemoveRoot = { root ->
+                    scope.launch {
+                        controller.removeRoot(root)
+                        shellState = loadShellState(container)
+                        collectionRevision++
+                        collectionState = loadCollectionScreenState(container, controller)
+                    }
+                },
                 onUpdateHomeControl = { control ->
                     scope.launch {
                         container.preferences.update { it.copy(lastHomeControl = control) }
@@ -120,20 +139,22 @@ fun KelliKanvasNavHost(
             LaunchedEffect(controller, collectionRevision) {
                 collectionState = loadCollectionScreenState(container, controller)
             }
-            CollectionHubScreen(
-                roots = collectionState.roots,
-                sourceLabels = collectionState.sourceLabels,
-                onAddLocalFolder = { navController.navigate(ShellRoutes.SETUP) },
-                onAddQnap = { navController.navigate(ShellRoutes.DLNA_SETUP) },
-                onRemoveRoot = { root ->
-                    scope.launch {
-                        controller.removeRoot(root)
-                        shellState = loadShellState(container)
-                        collectionState = loadCollectionScreenState(container, controller)
-                    }
-                },
-                onBack = { navController.popBackStack() },
-            )
+            PhoneMaterialTheme {
+                CollectionHubScreen(
+                    roots = collectionState.roots,
+                    sourceLabels = collectionState.sourceLabels,
+                    onAddLocalFolder = { navController.navigate(ShellRoutes.SETUP) },
+                    onAddQnap = { navController.navigate(ShellRoutes.DLNA_SETUP) },
+                    onRemoveRoot = { root ->
+                        scope.launch {
+                            controller.removeRoot(root)
+                            shellState = loadShellState(container)
+                            collectionState = loadCollectionScreenState(container, controller)
+                        }
+                    },
+                    onBack = { navController.popBackStack() },
+                )
+            }
         }
         composable(ShellRoutes.SETUP) {
             SafSetupScreen(

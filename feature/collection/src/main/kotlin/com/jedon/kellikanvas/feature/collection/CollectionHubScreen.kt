@@ -38,8 +38,9 @@ fun CollectionHubScreen(
     onRemoveRoot: (SelectedRoot) -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
+    backHandlerEnabled: Boolean = true,
 ) {
-    BackHandler(onBack = onBack)
+    BackHandler(enabled = backHandlerEnabled, onBack = onBack)
 
     Scaffold(
         modifier = modifier,

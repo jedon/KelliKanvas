@@ -13,6 +13,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.jedon.kellikanvas.ui.PhoneMaterialTheme
 
 @Suppress("ktlint:standard:function-naming")
 @Composable
@@ -22,19 +23,21 @@ fun SettingsPlaceholderScreen(
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    BackHandler(onBack = onBack)
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .padding(32.dp)
-            .widthIn(max = 720.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterVertically),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Text(text = title, style = MaterialTheme.typography.headlineMedium)
-        Text(text = body, style = MaterialTheme.typography.bodyLarge)
-        Button(onClick = onBack) {
-            Text(text = "Back to Home")
+    PhoneMaterialTheme {
+        BackHandler(onBack = onBack)
+        Column(
+            modifier = modifier
+                .fillMaxSize()
+                .padding(32.dp)
+                .widthIn(max = 720.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterVertically),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text(text = title, style = MaterialTheme.typography.headlineMedium)
+            Text(text = body, style = MaterialTheme.typography.bodyLarge)
+            Button(onClick = onBack) {
+                Text(text = "Back to Home")
+            }
         }
     }
 }

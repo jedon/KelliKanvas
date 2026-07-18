@@ -13,8 +13,8 @@ android {
 
     defaultConfig {
         applicationId = "com.jedon.kellikanvas"
-        versionCode = 3
-        versionName = "1.0.2-debug"
+        versionCode = 4
+        versionName = "1.0.3-debug"
         buildConfigField(
             "String",
             "UPDATE_METADATA_PUBLIC_KEY_BASE64",
