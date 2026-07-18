@@ -30,12 +30,30 @@ class KelliKanvasMigrationTest {
                 InstrumentationRegistry.getInstrumentation().targetContext,
                 KelliKanvasDatabase::class.java,
                 DATABASE_NAME,
-            ).build()
+            )
+                .addMigrations(MIGRATION_1_2)
+                .build()
         try {
             database.openHelper.writableDatabase
         } finally {
             database.close()
         }
+    }
+
+    @Test
+    fun migrate1To2CreatesSafConnectionsTable() {
+        helper.createDatabase(DATABASE_NAME, 1).close()
+
+        val database = helper.runMigrationsAndValidate(DATABASE_NAME, 2, true, MIGRATION_1_2)
+
+        val tableExists =
+            database.query(
+                "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'saf_connections'",
+            ).use { cursor ->
+                cursor.moveToFirst()
+            }
+        assertThat(tableExists).isTrue()
+        database.close()
     }
 
     @Test
