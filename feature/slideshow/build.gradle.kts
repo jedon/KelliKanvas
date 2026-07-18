@@ -19,6 +19,8 @@ dependencies {
     implementation(project(":core:ui-tv"))
     implementation(project(":renderer:surface"))
     implementation(platform(libs.compose.bom))
+    implementation(libs.androidx.activity.compose)
+    implementation(libs.compose.foundation)
     implementation(libs.compose.ui)
     implementation(libs.tv.material)
 
