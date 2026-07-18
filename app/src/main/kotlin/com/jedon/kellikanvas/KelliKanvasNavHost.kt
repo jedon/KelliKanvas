@@ -25,6 +25,8 @@ import com.jedon.kellikanvas.feature.collection.CollectionHubController
 import com.jedon.kellikanvas.feature.collection.CollectionHubScreen
 import com.jedon.kellikanvas.feature.collection.DlnaSetupController
 import com.jedon.kellikanvas.feature.collection.DlnaSetupScreen
+import com.jedon.kellikanvas.feature.collection.SmbSetupController
+import com.jedon.kellikanvas.feature.collection.SmbSetupScreen
 import com.jedon.kellikanvas.feature.settings.AmbientSettingsScreen
 import com.jedon.kellikanvas.feature.settings.AppearanceSettingsScreen
 import com.jedon.kellikanvas.feature.settings.PlaybackSettingsScreen
@@ -34,21 +36,26 @@ import com.jedon.kellikanvas.feature.slideshow.SimpleSlideshowScreen
 import com.jedon.kellikanvas.home.HomeScreen
 import com.jedon.kellikanvas.model.AppPreferences
 import com.jedon.kellikanvas.model.SourceProfileId
+import com.jedon.kellikanvas.security.CredentialReadResult
 import com.jedon.kellikanvas.shell.ShellRoute
 import com.jedon.kellikanvas.shell.ShellStartup
 import com.jedon.kellikanvas.source.SourceAdapter
 import com.jedon.kellikanvas.source.dlna.DlnaProfile
 import com.jedon.kellikanvas.source.saf.SafProfile
 import com.jedon.kellikanvas.source.saf.SafTreeGrant
+import com.jedon.kellikanvas.source.smb.SmbCredentials
+import com.jedon.kellikanvas.source.smb.SmbProfile
 import com.jedon.kellikanvas.ui.PhoneMaterialTheme
 import kotlinx.coroutines.launch
 import java.net.URI
+import java.nio.charset.StandardCharsets
 
 private object ShellRoutes {
     const val SETUP = "setup"
     const val HOME = "home"
     const val COLLECTION = "collection"
     const val DLNA_SETUP = "dlna_setup"
+    const val SMB_SETUP = "smb_setup"
     const val SLIDESHOW = "slideshow"
     const val APPEARANCE = "appearance"
     const val PLAYBACK = "playback"
@@ -134,6 +141,7 @@ fun KelliKanvasNavHost(
                 onOpenAmbient = { navController.navigate(ShellRoutes.AMBIENT) },
                 onAddLocalFolder = { navController.navigate(ShellRoutes.SETUP) },
                 onAddQnap = { navController.navigate(ShellRoutes.DLNA_SETUP) },
+                onConnectHouseholdNas = { navController.navigate(ShellRoutes.SMB_SETUP) },
                 onRemoveRoot = { root ->
                     scope.launch {
                         controller.removeRoot(root)
@@ -163,6 +171,7 @@ fun KelliKanvasNavHost(
                     sourceLabels = collectionState.sourceLabels,
                     onAddLocalFolder = { navController.navigate(ShellRoutes.SETUP) },
                     onAddQnap = { navController.navigate(ShellRoutes.DLNA_SETUP) },
+                    onConnectHouseholdNas = { navController.navigate(ShellRoutes.SMB_SETUP) },
                     onRemoveRoot = { root ->
                         scope.launch {
                             controller.removeRoot(root)
@@ -223,6 +232,33 @@ fun KelliKanvasNavHost(
                 onBack = { navController.popBackStack() },
             )
         }
+        composable(ShellRoutes.SMB_SETUP) {
+            PhoneMaterialTheme {
+                SmbSetupScreen(
+                    controller =
+                    SmbSetupController(
+                        database = container.database,
+                        credentialVault = container.credentialVault,
+                        householdUsername = container.householdSmbUsername(),
+                        householdPassword = container.householdSmbPassword(),
+                        adapterFactory = { profile, credentials ->
+                            container.smbAdapter(profile, credentials)
+                        },
+                    ),
+                    onFinished = {
+                        scope.launch {
+                            shellState = loadShellState(container)
+                            collectionRevision++
+                            navController.navigate(ShellRoutes.COLLECTION) {
+                                popUpTo(ShellRoutes.COLLECTION) { inclusive = false }
+                                launchSingleTop = true
+                            }
+                        }
+                    },
+                    onBack = { navController.popBackStack() },
+                )
+            }
+        }
         composable(ShellRoutes.APPEARANCE) {
             AppearanceSettingsScreen(
                 preferences = preferences,
@@ -278,6 +314,11 @@ private suspend fun loadCollectionScreenState(
         .associateWith { profileId ->
             when {
                 container.database.safConnections.get(profileId) != null -> "Local"
+                container.database.smbConnections.get(profileId) != null ->
+                    container.database.smbConnections.get(profileId)
+                        ?.displayName
+                        ?.ifBlank { "SMB" }
+                        ?: "SMB"
                 else -> container.database.dlnaConnections.get(profileId)
                     ?.displayName
                     ?.ifBlank { "QNAP" }
@@ -324,6 +365,25 @@ private suspend fun loadShellState(container: AppContainer): ShellState {
             )
             adapters[profileId] = container.dlnaAdapter(profile)
         }
+        database.smbConnections.get(profileId)?.let { connection ->
+            val passwordChars = readSmbPassword(container, profileId) ?: return@let
+            val profile =
+                SmbProfile(
+                    id = profileId,
+                    host = connection.host,
+                    port = connection.port,
+                    share = connection.share,
+                    domain = connection.domain,
+                    username = connection.username,
+                )
+            val credentials =
+                SmbCredentials(
+                    username = connection.username,
+                    password = passwordChars,
+                    domain = connection.domain,
+                )
+            adapters[profileId] = container.smbAdapter(profile, credentials)
+        }
     }
     val playableRoots = roots.filter { it.profileId in adapters }
     return ShellState(
@@ -332,4 +392,21 @@ private suspend fun loadShellState(container: AppContainer): ShellState {
         roots = playableRoots,
         adapters = adapters,
     )
+}
+
+private fun readSmbPassword(
+    container: AppContainer,
+    profileId: SourceProfileId,
+): CharArray? = when (val result = container.credentialVault.read(profileId)) {
+    is CredentialReadResult.Present -> {
+        result.use { present ->
+            val bytes = present.secret.copyBytes()
+            try {
+                String(bytes, StandardCharsets.UTF_8).toCharArray()
+            } finally {
+                bytes.fill(0)
+            }
+        }
+    }
+    CredentialReadResult.Missing, CredentialReadResult.RequiresReentry -> null
 }

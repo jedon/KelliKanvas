@@ -1,0 +1,3 @@
+-keep class com.hierynomus.** { *; }
+-dontwarn com.hierynomus.**
+-dontwarn net.engio.mbassy.**

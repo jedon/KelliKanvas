@@ -38,6 +38,7 @@ fun CollectionHubScreen(
     sourceLabels: Map<SourceProfileId, String>,
     onAddLocalFolder: () -> Unit,
     onAddQnap: () -> Unit,
+    onConnectHouseholdNas: () -> Unit,
     onRemoveRoot: (SelectedRoot) -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
@@ -72,7 +73,7 @@ fun CollectionHubScreen(
         ) {
             if (roots.isEmpty()) {
                 Text(
-                    text = "No photo folders yet. Add a local folder or connect to QNAP.",
+                    text = "No photo folders yet. Add a local folder, household NAS, or QNAP DLNA.",
                     style = MaterialTheme.typography.bodyLarge,
                 )
             } else {
@@ -99,10 +100,16 @@ fun CollectionHubScreen(
                 Text("Add local folder")
             }
             Button(
+                onClick = onConnectHouseholdNas,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text("Connect household NAS")
+            }
+            Button(
                 onClick = onAddQnap,
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                Text("Add QNAP")
+                Text("Add QNAP (DLNA)")
             }
         }
     }

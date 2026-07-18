@@ -305,3 +305,39 @@ class DlnaConnection(
             "contentDirectoryVersion=$contentDirectoryVersion, displayName=$displayName)"
 }
 
+class SmbConnection(
+    val profileId: SourceProfileId,
+    val host: String,
+    val port: Int,
+    val share: String,
+    val domain: String,
+    val username: String,
+    val displayName: String,
+) {
+    init {
+        require(host.isNotBlank() && !host.contains('\n'))
+        require(port in 1..65535)
+        require(share.isNotBlank() && !share.contains('/') && !share.contains('\\'))
+        require(!domain.contains('\n'))
+        require(username.isNotBlank() && !username.contains('\n'))
+        require(displayName.isNotBlank())
+    }
+
+    override fun equals(other: Any?): Boolean =
+        other is SmbConnection &&
+            profileId == other.profileId &&
+            host == other.host &&
+            port == other.port &&
+            share == other.share &&
+            domain == other.domain &&
+            username == other.username &&
+            displayName == other.displayName
+
+    override fun hashCode(): Int =
+        listOf(profileId, host, port, share, domain, username, displayName).hashCode()
+
+    override fun toString(): String =
+        "SmbConnection(profileId=$profileId, host=$host, port=$port, share=$share, " +
+            "domain=<redacted>, username=<redacted>, displayName=$displayName)"
+}
+

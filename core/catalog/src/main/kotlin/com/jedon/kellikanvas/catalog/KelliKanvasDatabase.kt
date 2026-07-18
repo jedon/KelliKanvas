@@ -21,8 +21,9 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         SlideshowSessionLastPresentedEntity::class,
         SafConnectionEntity::class,
         DlnaConnectionEntity::class,
+        SmbConnectionEntity::class,
     ],
-    version = 3,
+    version = 4,
     exportSchema = true,
 )
 abstract class KelliKanvasDatabase : RoomDatabase() {
@@ -45,6 +46,8 @@ abstract class KelliKanvasDatabase : RoomDatabase() {
     internal abstract fun roomSafConnections(): RoomSafConnectionDao
 
     internal abstract fun roomDlnaConnections(): RoomDlnaConnectionDao
+
+    internal abstract fun roomSmbConnections(): RoomSmbConnectionDao
 
     val sourceProfiles: SourceProfileDao by lazy {
         SourceProfileDao(roomSourceProfiles())
@@ -76,6 +79,9 @@ abstract class KelliKanvasDatabase : RoomDatabase() {
     val dlnaConnections: DlnaConnectionDao by lazy {
         DlnaConnectionDao(roomDlnaConnections())
     }
+    val smbConnections: SmbConnectionDao by lazy {
+        SmbConnectionDao(roomSmbConnections())
+    }
     val cycleSnapshots: CycleSnapshotDao by lazy {
         CycleSnapshotDao(this)
     }
@@ -92,7 +98,7 @@ object KelliKanvasDatabaseFactory {
         KelliKanvasDatabase::class.java,
         databaseName,
     )
-        .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
         .build()
 
     fun inMemory(context: Context): KelliKanvasDatabase = Room.inMemoryDatabaseBuilder(
@@ -126,6 +132,27 @@ val MIGRATION_2_3 = object : Migration(2, 3) {
                 `description_location` TEXT NOT NULL,
                 `control_url` TEXT NOT NULL,
                 `content_directory_version` INTEGER NOT NULL,
+                `display_name` TEXT NOT NULL,
+                PRIMARY KEY(`profile_id`),
+                FOREIGN KEY(`profile_id`) REFERENCES `source_profiles`(`profile_id`)
+                    ON UPDATE NO ACTION ON DELETE CASCADE
+            )
+            """.trimIndent(),
+        )
+    }
+}
+
+val MIGRATION_3_4 = object : Migration(3, 4) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS `smb_connections` (
+                `profile_id` TEXT NOT NULL,
+                `host` TEXT NOT NULL,
+                `port` INTEGER NOT NULL,
+                `share` TEXT NOT NULL,
+                `domain` TEXT NOT NULL,
+                `username` TEXT NOT NULL,
                 `display_name` TEXT NOT NULL,
                 PRIMARY KEY(`profile_id`),
                 FOREIGN KEY(`profile_id`) REFERENCES `source_profiles`(`profile_id`)

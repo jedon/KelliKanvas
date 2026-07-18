@@ -10,9 +10,11 @@ android {
 dependencies {
     implementation(project(":core:catalog"))
     implementation(project(":core:model"))
+    implementation(project(":core:security"))
     implementation(project(":core:source-api"))
     implementation(project(":core:ui-tv"))
     implementation(project(":source:dlna"))
+    implementation(project(":source:smb"))
     implementation(platform(libs.compose.bom))
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.room.runtime)

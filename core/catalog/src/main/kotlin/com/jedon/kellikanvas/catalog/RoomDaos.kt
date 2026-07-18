@@ -244,3 +244,15 @@ internal interface RoomDlnaConnectionDao {
     suspend fun delete(profileId: String)
 }
 
+@Dao
+internal interface RoomSmbConnectionDao {
+    @Upsert
+    suspend fun upsert(entity: SmbConnectionEntity)
+
+    @Query("SELECT * FROM smb_connections WHERE profile_id = :profileId")
+    suspend fun get(profileId: String): SmbConnectionEntity?
+
+    @Query("DELETE FROM smb_connections WHERE profile_id = :profileId")
+    suspend fun delete(profileId: String)
+}
+

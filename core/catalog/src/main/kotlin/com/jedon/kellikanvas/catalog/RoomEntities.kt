@@ -275,3 +275,25 @@ internal data class DlnaConnectionEntity(
     @ColumnInfo(name = "display_name") val displayName: String,
 )
 
+@Entity(
+    tableName = "smb_connections",
+    primaryKeys = ["profile_id"],
+    foreignKeys = [
+        ForeignKey(
+            entity = SourceProfileEntity::class,
+            parentColumns = ["profile_id"],
+            childColumns = ["profile_id"],
+            onDelete = ForeignKey.CASCADE,
+        ),
+    ],
+)
+internal data class SmbConnectionEntity(
+    @ColumnInfo(name = "profile_id") val profileId: String,
+    @ColumnInfo(name = "host") val host: String,
+    @ColumnInfo(name = "port") val port: Int,
+    @ColumnInfo(name = "share") val share: String,
+    @ColumnInfo(name = "domain") val domain: String,
+    @ColumnInfo(name = "username") val username: String,
+    @ColumnInfo(name = "display_name") val displayName: String,
+)
+

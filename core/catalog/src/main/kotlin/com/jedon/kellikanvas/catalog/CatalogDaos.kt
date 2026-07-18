@@ -36,6 +36,16 @@ class DlnaConnectionDao internal constructor(
     suspend fun delete(id: SourceProfileId) = roomDao.delete(id.value)
 }
 
+class SmbConnectionDao internal constructor(
+    private val roomDao: RoomSmbConnectionDao,
+) {
+    suspend fun upsert(connection: SmbConnection) = roomDao.upsert(connection.toEntity())
+
+    suspend fun get(id: SourceProfileId): SmbConnection? = roomDao.get(id.value)?.toDomain()
+
+    suspend fun delete(id: SourceProfileId) = roomDao.delete(id.value)
+}
+
 class CollectionDao internal constructor(
     private val roomDao: RoomCollectionDao,
 ) {
@@ -378,6 +388,26 @@ private fun DlnaConnectionEntity.toDomain() = DlnaConnection(
     descriptionLocation = descriptionLocation,
     controlUrl = controlUrl,
     contentDirectoryVersion = contentDirectoryVersion,
+    displayName = displayName,
+)
+
+private fun SmbConnection.toEntity() = SmbConnectionEntity(
+    profileId = profileId.value,
+    host = host,
+    port = port,
+    share = share,
+    domain = domain,
+    username = username,
+    displayName = displayName,
+)
+
+private fun SmbConnectionEntity.toDomain() = SmbConnection(
+    profileId = SourceProfileId(profileId),
+    host = host,
+    port = port,
+    share = share,
+    domain = domain,
+    username = username,
     displayName = displayName,
 )
 

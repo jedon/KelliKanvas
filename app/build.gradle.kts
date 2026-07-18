@@ -5,6 +5,61 @@ plugins {
 
 val metadataPublicKeyBase64 = providers.environmentVariable("KELLIKANVAS_METADATA_PUBLIC_KEY_BASE64").orNull
 
+fun escapeBuildConfigString(value: String): String = buildString {
+    append('"')
+    value.forEach { ch ->
+        when (ch) {
+            '\\' -> append("\\\\")
+            '"' -> append("\\\"")
+            '\n' -> append("\\n")
+            '\r' -> append("\\r")
+            '\t' -> append("\\t")
+            '$' -> append("\\$")
+            else -> append(ch)
+        }
+    }
+    append('"')
+}
+
+fun loadDotEnv(file: java.io.File): Map<String, String> {
+    if (!file.isFile) return emptyMap()
+    return file.readLines()
+        .map { it.trim() }
+        .filter { it.isNotEmpty() && !it.startsWith("#") && it.contains('=') }
+        .associate { line ->
+            val idx = line.indexOf('=')
+            val key = line.substring(0, idx).trim()
+            var value = line.substring(idx + 1).trim()
+            if ((value.startsWith("\"") && value.endsWith("\"")) ||
+                (value.startsWith("'") && value.endsWith("'"))
+            ) {
+                value = value.substring(1, value.length - 1)
+            }
+            key to value
+        }
+}
+
+fun secretProperty(name: String): String {
+    val fromEnv = providers.environmentVariable(name).orNull
+    if (!fromEnv.isNullOrBlank()) return fromEnv
+    val candidates =
+        listOf(
+            rootProject.file(".env"),
+            rootProject.file("../.env"),
+            rootProject.file("../../.env"),
+            rootProject.file("local.properties"),
+        )
+    for (file in candidates) {
+        val map = loadDotEnv(file)
+        val value = map[name]
+        if (!value.isNullOrBlank()) return value
+    }
+    return ""
+}
+
+val householdSmbUsername = secretProperty("QNAP_NAS_USERNAME")
+val householdSmbPassword = secretProperty("QNAP_NAS_PASSWORD")
+
 android {
     namespace = "com.jedon.kellikanvas"
     buildFeatures {
@@ -20,6 +75,9 @@ android {
             "UPDATE_METADATA_PUBLIC_KEY_BASE64",
             "\"${metadataPublicKeyBase64.orEmpty()}\"",
         )
+        // Household SMB credentials from env / .env / local.properties (never commit values).
+        buildConfigField("String", "HOUSEHOLD_SMB_USERNAME", escapeBuildConfigString(householdSmbUsername))
+        buildConfigField("String", "HOUSEHOLD_SMB_PASSWORD", escapeBuildConfigString(householdSmbPassword))
     }
 
     testOptions {
