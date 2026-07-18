@@ -82,6 +82,12 @@ def _atomic_write(path, data):
     os.replace(temporary, path)
 
 
+ALLOWED_ORIGINS = {
+    "http://darklingnas:8088",
+    "http://192.168.68.81:8088",
+}
+
+
 def prepare_bundle(
     apk,
     dist,
@@ -95,15 +101,15 @@ def prepare_bundle(
     if sequence is None or sequence <= 0:
         raise BundleError("positive authenticated release sequence is required")
     parsed = urlparse(origin)
-    if (parsed.scheme, parsed.hostname, parsed.port, parsed.path, parsed.query, parsed.fragment) != (
-        "http",
-        "darklingnas",
-        8088,
-        "",
-        "",
-        "",
+    normalized = f"{parsed.scheme}://{parsed.hostname}:{parsed.port}"
+    if (
+        origin.rstrip("/") not in ALLOWED_ORIGINS
+        or normalized not in ALLOWED_ORIGINS
+        or (parsed.path, parsed.query, parsed.fragment) != ("", "", "")
     ):
-        raise BundleError("origin must be exactly http://darklingnas:8088")
+        raise BundleError(
+            "origin must be http://darklingnas:8088 or http://192.168.68.81:8088"
+        )
     size = apk.stat().st_size
     if size <= 0 or size > APK_MAX_BYTES:
         raise BundleError("APK size is outside limits")
