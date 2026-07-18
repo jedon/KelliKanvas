@@ -1,4 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
   <string name="app_name">KelliKanvas</string>
+  <string name="shell_status">Photo sources and slideshow UI are not wired into this build yet.\nYou should see this placeholder, not a hang.</string>
 </resources>
