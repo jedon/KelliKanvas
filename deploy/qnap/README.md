@@ -681,9 +681,9 @@ certificate; no Let's Encrypt setup is required on the NAS).
 Current TV-installable build:
 
 - HTTPS (paste into Downloader):
-  `https://github.com/jedon/KelliKanvas/releases/download/v1.0.5/KelliKanvas-1.0.5.apk`
+  `https://github.com/jedon/KelliKanvas/releases/download/v1.0.6/KelliKanvas-1.0.6.apk`
 - LAN mirror (browsers / phone workflows):
-  `http://192.168.68.81:8088/KelliKanvas-1.0.5.apk`
+  `http://192.168.68.81:8088/KelliKanvas-1.0.6.apk`
 
 ### Republish a newer TV build
 
