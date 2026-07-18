@@ -2,11 +2,13 @@ package com.jedon.kellikanvas
 
 import android.content.Intent
 import android.provider.DocumentsContract
+import android.util.Log
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -21,10 +23,12 @@ import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import com.jedon.kellikanvas.catalog.SelectedRoot
 import com.jedon.kellikanvas.catalog.preferences.AppPreferencesState
+import com.jedon.kellikanvas.feature.collection.BootstrapResult
 import com.jedon.kellikanvas.feature.collection.CollectionHubController
 import com.jedon.kellikanvas.feature.collection.CollectionHubScreen
 import com.jedon.kellikanvas.feature.collection.DlnaSetupController
 import com.jedon.kellikanvas.feature.collection.DlnaSetupScreen
+import com.jedon.kellikanvas.feature.collection.HouseholdNasBootstrap
 import com.jedon.kellikanvas.feature.collection.SmbSetupController
 import com.jedon.kellikanvas.feature.collection.SmbSetupScreen
 import com.jedon.kellikanvas.feature.settings.AmbientSettingsScreen
@@ -34,6 +38,7 @@ import com.jedon.kellikanvas.feature.setup.SafSetupController
 import com.jedon.kellikanvas.feature.setup.SafSetupScreen
 import com.jedon.kellikanvas.feature.slideshow.SimpleSlideshowScreen
 import com.jedon.kellikanvas.home.HomeScreen
+import com.jedon.kellikanvas.home.PhotosBootstrapUi
 import com.jedon.kellikanvas.model.AppPreferences
 import com.jedon.kellikanvas.model.SourceProfileId
 import com.jedon.kellikanvas.security.CredentialReadResult
@@ -49,6 +54,8 @@ import com.jedon.kellikanvas.ui.PhoneMaterialTheme
 import kotlinx.coroutines.launch
 import java.net.URI
 import java.nio.charset.StandardCharsets
+
+private const val TAG = "KelliKanvasNavHost"
 
 private object ShellRoutes {
     const val SETUP = "setup"
@@ -67,6 +74,7 @@ private data class ShellState(
     val collectionLabel: String = "",
     val roots: List<SelectedRoot> = emptyList(),
     val adapters: Map<SourceProfileId, SourceAdapter> = emptyMap(),
+    val loadError: String? = null,
 )
 
 @Suppress("ktlint:standard:function-naming")
@@ -79,13 +87,43 @@ fun KelliKanvasNavHost(
     val scope = rememberCoroutineScope()
     var shellState by remember { mutableStateOf<ShellState?>(null) }
     var preferences by remember { mutableStateOf(AppPreferencesState()) }
-    var collectionRevision by remember { mutableStateOf(0) }
+    var collectionRevision by remember { mutableIntStateOf(0) }
+    var bootstrapUi by remember { mutableStateOf(PhotosBootstrapUi.Idle) }
+    var bootstrapError by remember { mutableStateOf<String?>(null) }
+    var bootstrapAttempt by remember { mutableIntStateOf(0) }
+    var autoStartSlideshowToken by remember { mutableIntStateOf(0) }
 
     LaunchedEffect(container) {
-        shellState = loadShellState(container)
-    }
-    LaunchedEffect(container) {
         container.preferences.preferences.collect { preferences = it }
+    }
+
+    LaunchedEffect(container, bootstrapAttempt) {
+        val current = shellState ?: loadShellState(container).also { shellState = it }
+        if (current.roots.isNotEmpty() && current.adapters.isNotEmpty()) {
+            bootstrapUi = PhotosBootstrapUi.Idle
+            bootstrapError = null
+            return@LaunchedEffect
+        }
+        bootstrapUi = PhotosBootstrapUi.Connecting
+        bootstrapError = null
+        val result = runCatching { householdBootstrap(container).ensurePhotosCollection() }
+            .getOrElse { failure ->
+                Log.e(TAG, "Household bootstrap crashed", failure)
+                BootstrapResult.Failed(failure.message ?: "Bootstrap failed")
+            }
+        when (result) {
+            is BootstrapResult.Success -> {
+                Log.i(TAG, "Bootstrap added: ${result.sources}")
+                shellState = loadShellState(container)
+                collectionRevision++
+                bootstrapUi = PhotosBootstrapUi.Idle
+                autoStartSlideshowToken++
+            }
+            is BootstrapResult.Failed -> {
+                bootstrapUi = PhotosBootstrapUi.Failed
+                bootstrapError = result.message
+            }
+        }
     }
 
     val state = shellState
@@ -127,7 +165,7 @@ fun KelliKanvasNavHost(
                 collectionState = loadCollectionScreenState(container, controller)
             }
             HomeScreen(
-                collectionLabel = homeState.collectionLabel,
+                collectionLabel = homeState.collectionLabel.ifBlank { "KelliKanvas" },
                 canStartSlideshow = canStartSlideshow,
                 roots = collectionState.roots,
                 sourceLabels = collectionState.sourceLabels,
@@ -144,7 +182,8 @@ fun KelliKanvasNavHost(
                 onConnectHouseholdNas = { navController.navigate(ShellRoutes.SMB_SETUP) },
                 onRemoveRoot = { root ->
                     scope.launch {
-                        controller.removeRoot(root)
+                        runCatching { controller.removeRoot(root) }
+                            .onFailure { Log.e(TAG, "removeRoot failed", it) }
                         shellState = loadShellState(container)
                         collectionRevision++
                         collectionState = loadCollectionScreenState(container, controller)
@@ -155,6 +194,11 @@ fun KelliKanvasNavHost(
                         container.preferences.update { it.copy(lastHomeControl = control) }
                     }
                 },
+                bootstrapUi = bootstrapUi,
+                bootstrapError = bootstrapError,
+                onRetryBootstrap = { bootstrapAttempt++ },
+                collectionLoadError = collectionState.loadError ?: homeState.loadError,
+                autoStartSlideshowToken = autoStartSlideshowToken,
             )
         }
         composable(ShellRoutes.COLLECTION) {
@@ -174,63 +218,69 @@ fun KelliKanvasNavHost(
                     onConnectHouseholdNas = { navController.navigate(ShellRoutes.SMB_SETUP) },
                     onRemoveRoot = { root ->
                         scope.launch {
-                            controller.removeRoot(root)
+                            runCatching { controller.removeRoot(root) }
+                                .onFailure { Log.e(TAG, "removeRoot failed", it) }
                             shellState = loadShellState(container)
                             collectionState = loadCollectionScreenState(container, controller)
                         }
                     },
                     onBack = { navController.popBackStack() },
+                    loadError = collectionState.loadError,
                 )
             }
         }
         composable(ShellRoutes.SETUP) {
-            SafSetupScreen(
-                controller = SafSetupController(container.database),
-                onFinished = {
-                    scope.launch {
-                        shellState = loadShellState(container)
-                        collectionRevision++
-                        navController.navigate(ShellRoutes.COLLECTION) {
-                            popUpTo(ShellRoutes.COLLECTION) { inclusive = false }
-                            launchSingleTop = true
-                        }
-                    }
-                },
-                onOpenMenu = {
-                    if (!navController.popBackStack(ShellRoutes.COLLECTION, inclusive = false)) {
-                        navController.navigate(ShellRoutes.HOME) {
-                            popUpTo(ShellRoutes.HOME) { inclusive = false }
-                            launchSingleTop = true
-                        }
-                    }
-                },
-            )
-        }
-        composable(ShellRoutes.DLNA_SETUP) {
-            DlnaSetupScreen(
-                controller = DlnaSetupController(
-                    database = container.database,
-                    discoverProfiles = {
-                        container.dlnaDiscovery().setupNamed().map {
-                            it.friendlyName to it.profile
+            PhoneMaterialTheme {
+                SafSetupScreen(
+                    controller = SafSetupController(container.database),
+                    onFinished = {
+                        scope.launch {
+                            shellState = loadShellState(container)
+                            collectionRevision++
+                            navController.navigate(ShellRoutes.COLLECTION) {
+                                popUpTo(ShellRoutes.COLLECTION) { inclusive = false }
+                                launchSingleTop = true
+                            }
                         }
                     },
-                    resolveManual = { container.dlnaManualResolver().resolve(it) },
-                    resolveBuiltIn = { container.dlnaManualResolver().resolveBuiltIn() },
-                    adapterFactory = { container.dlnaAdapter(it) },
-                ),
-                onFinished = {
-                    scope.launch {
-                        shellState = loadShellState(container)
-                        collectionRevision++
-                        navController.navigate(ShellRoutes.COLLECTION) {
-                            popUpTo(ShellRoutes.COLLECTION) { inclusive = false }
-                            launchSingleTop = true
+                    onOpenMenu = {
+                        if (!navController.popBackStack(ShellRoutes.COLLECTION, inclusive = false)) {
+                            navController.navigate(ShellRoutes.HOME) {
+                                popUpTo(ShellRoutes.HOME) { inclusive = false }
+                                launchSingleTop = true
+                            }
                         }
-                    }
-                },
-                onBack = { navController.popBackStack() },
-            )
+                    },
+                )
+            }
+        }
+        composable(ShellRoutes.DLNA_SETUP) {
+            PhoneMaterialTheme {
+                DlnaSetupScreen(
+                    controller = DlnaSetupController(
+                        database = container.database,
+                        discoverProfiles = {
+                            container.dlnaDiscovery().setupNamed().map {
+                                it.friendlyName to it.profile
+                            }
+                        },
+                        resolveManual = { container.dlnaManualResolver().resolve(it) },
+                        resolveBuiltIn = { container.dlnaManualResolver().resolveBuiltIn() },
+                        adapterFactory = { container.dlnaAdapter(it) },
+                    ),
+                    onFinished = {
+                        scope.launch {
+                            shellState = loadShellState(container)
+                            collectionRevision++
+                            navController.navigate(ShellRoutes.COLLECTION) {
+                                popUpTo(ShellRoutes.COLLECTION) { inclusive = false }
+                                launchSingleTop = true
+                            }
+                        }
+                    },
+                    onBack = { navController.popBackStack() },
+                )
+            }
         }
         composable(ShellRoutes.SMB_SETUP) {
             PhoneMaterialTheme {
@@ -301,12 +351,44 @@ fun KelliKanvasNavHost(
 private data class CollectionScreenState(
     val roots: List<SelectedRoot> = emptyList(),
     val sourceLabels: Map<SourceProfileId, String> = emptyMap(),
+    val loadError: String? = null,
 )
+
+private fun householdBootstrap(container: AppContainer): HouseholdNasBootstrap {
+    val smb = SmbSetupController(
+        database = container.database,
+        credentialVault = container.credentialVault,
+        householdUsername = container.householdSmbUsername(),
+        householdPassword = container.householdSmbPassword(),
+        adapterFactory = { profile, credentials ->
+            container.smbAdapter(profile, credentials)
+        },
+    )
+    val dlna = DlnaSetupController(
+        database = container.database,
+        discoverProfiles = {
+            container.dlnaDiscovery().setupNamed().map {
+                it.friendlyName to it.profile
+            }
+        },
+        resolveManual = { container.dlnaManualResolver().resolve(it) },
+        resolveBuiltIn = { container.dlnaManualResolver().resolveBuiltIn() },
+        adapterFactory = { container.dlnaAdapter(it) },
+    )
+    return HouseholdNasBootstrap(
+        smb = smb,
+        dlna = dlna,
+        hasHouseholdSmbCredentials = {
+            container.householdSmbUsername().isNotBlank() &&
+                container.householdSmbPassword().isNotEmpty()
+        },
+    )
+}
 
 private suspend fun loadCollectionScreenState(
     container: AppContainer,
     controller: CollectionHubController,
-): CollectionScreenState {
+): CollectionScreenState = try {
     val roots = controller.listRoots()
     val sourceLabels = roots
         .map(SelectedRoot::profileId)
@@ -325,73 +407,94 @@ private suspend fun loadCollectionScreenState(
                     ?: "Unknown"
             }
         }
-    return CollectionScreenState(roots, sourceLabels)
+    CollectionScreenState(roots, sourceLabels)
+} catch (failure: Exception) {
+    Log.e(TAG, "loadCollectionScreenState failed", failure)
+    CollectionScreenState(loadError = "Could not load collection. ${failure.message?.take(80) ?: ""}".trim())
 }
 
 private suspend fun loadShellState(container: AppContainer): ShellState {
-    val database = container.database
-    val collections = database.collections.list()
-    val rootsByCollection = collections.associate { it.id to database.selectedRoots.list(it.id) }
-    if (!ShellStartup.hasPlayableRoots(collections, rootsByCollection)) {
-        return ShellState(route = ShellRoute.Home, collectionLabel = "KelliKanvas")
-    }
+    return try {
+        val database = container.database
+        val collections = database.collections.list()
+        val rootsByCollection = collections.associate { it.id to database.selectedRoots.list(it.id) }
+        if (!ShellStartup.hasPlayableRoots(collections, rootsByCollection)) {
+            return ShellState(route = ShellRoute.Home, collectionLabel = "KelliKanvas")
+        }
 
-    val activeCollection = collections.first { rootsByCollection[it.id].orEmpty().isNotEmpty() }
-    val roots = rootsByCollection.getValue(activeCollection.id)
-    val resolver = container.contentResolver
-    val adapters = linkedMapOf<SourceProfileId, SourceAdapter>()
-    for (profileId in roots.map(SelectedRoot::profileId).distinct()) {
-        database.safConnections.get(profileId)?.let { connection ->
-            val treeUri = connection.treeUri.toUri()
-            val hasReadPermission = resolver.persistedUriPermissions.any {
-                it.uri == treeUri && it.isReadPermission
+        val activeCollection = collections.first { rootsByCollection[it.id].orEmpty().isNotEmpty() }
+        val roots = rootsByCollection.getValue(activeCollection.id)
+        val resolver = container.contentResolver
+        val adapters = linkedMapOf<SourceProfileId, SourceAdapter>()
+        for (profileId in roots.map(SelectedRoot::profileId).distinct()) {
+            try {
+                database.safConnections.get(profileId)?.let { connection ->
+                    val treeUri = connection.treeUri.toUri()
+                    val hasReadPermission = resolver.persistedUriPermissions.any {
+                        it.uri == treeUri && it.isReadPermission
+                    }
+                    if (hasReadPermission) {
+                        val grant = SafTreeGrant(
+                            treeUri = treeUri,
+                            documentId = DocumentsContract.getTreeDocumentId(treeUri),
+                            flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION,
+                        )
+                        adapters[profileId] = container.safAdapter(SafProfile(profileId, grant))
+                    }
+                }
+                database.dlnaConnections.get(profileId)?.let { connection ->
+                    val profile = DlnaProfile(
+                        id = profileId,
+                        serverUdn = connection.serverUdn,
+                        descriptionLocation = URI(connection.descriptionLocation),
+                        controlUrl = URI(connection.controlUrl),
+                        contentDirectoryVersion = connection.contentDirectoryVersion,
+                    )
+                    adapters[profileId] = container.dlnaAdapter(profile)
+                }
+                database.smbConnections.get(profileId)?.let { connection ->
+                    val passwordChars = readSmbPassword(container, profileId) ?: return@let
+                    val profile =
+                        SmbProfile(
+                            id = profileId,
+                            host = connection.host,
+                            port = connection.port,
+                            share = connection.share,
+                            domain = connection.domain,
+                            username = connection.username,
+                        )
+                    val credentials =
+                        SmbCredentials(
+                            username = connection.username,
+                            password = passwordChars,
+                            domain = connection.domain,
+                        )
+                    adapters[profileId] = container.smbAdapter(profile, credentials)
+                }
+            } catch (failure: Exception) {
+                Log.e(TAG, "Failed to restore adapter for $profileId", failure)
             }
-            if (hasReadPermission) {
-                val grant = SafTreeGrant(
-                    treeUri = treeUri,
-                    documentId = DocumentsContract.getTreeDocumentId(treeUri),
-                    flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION,
-                )
-                adapters[profileId] = container.safAdapter(SafProfile(profileId, grant))
-            }
         }
-        database.dlnaConnections.get(profileId)?.let { connection ->
-            val profile = DlnaProfile(
-                id = profileId,
-                serverUdn = connection.serverUdn,
-                descriptionLocation = URI(connection.descriptionLocation),
-                controlUrl = URI(connection.controlUrl),
-                contentDirectoryVersion = connection.contentDirectoryVersion,
-            )
-            adapters[profileId] = container.dlnaAdapter(profile)
-        }
-        database.smbConnections.get(profileId)?.let { connection ->
-            val passwordChars = readSmbPassword(container, profileId) ?: return@let
-            val profile =
-                SmbProfile(
-                    id = profileId,
-                    host = connection.host,
-                    port = connection.port,
-                    share = connection.share,
-                    domain = connection.domain,
-                    username = connection.username,
-                )
-            val credentials =
-                SmbCredentials(
-                    username = connection.username,
-                    password = passwordChars,
-                    domain = connection.domain,
-                )
-            adapters[profileId] = container.smbAdapter(profile, credentials)
-        }
+        val playableRoots = roots.filter { it.profileId in adapters }
+        ShellState(
+            route = ShellRoute.Home,
+            collectionLabel = activeCollection.label,
+            roots = playableRoots,
+            adapters = adapters,
+            loadError = if (playableRoots.isEmpty() && roots.isNotEmpty()) {
+                "Saved photo folders could not be opened. Open Menu to reconnect."
+            } else {
+                null
+            },
+        )
+    } catch (failure: Exception) {
+        Log.e(TAG, "loadShellState failed", failure)
+        ShellState(
+            route = ShellRoute.Home,
+            collectionLabel = "KelliKanvas",
+            loadError = "Could not load photos. ${failure.message?.take(80) ?: "Try again."}",
+        )
     }
-    val playableRoots = roots.filter { it.profileId in adapters }
-    return ShellState(
-        route = ShellRoute.Home,
-        collectionLabel = activeCollection.label,
-        roots = playableRoots,
-        adapters = adapters,
-    )
 }
 
 private fun readSmbPassword(

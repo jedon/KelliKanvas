@@ -10,18 +10,16 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.statusBars
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -43,6 +41,7 @@ fun CollectionHubScreen(
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
     backHandlerEnabled: Boolean = true,
+    loadError: String? = null,
 ) {
     BackHandler(enabled = backHandlerEnabled, onBack = onBack)
 
@@ -64,53 +63,52 @@ fun CollectionHubScreen(
             )
         },
     ) { padding ->
+        // Prefer verticalScroll over LazyColumn: HorizontalPager pages can measure with
+        // infinite max height, which crashes nested LazyColumn ("infinity maximum height").
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
+                .verticalScroll(rememberScrollState())
                 .padding(horizontal = 24.dp, vertical = 16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
+            if (loadError != null) {
+                Text(
+                    text = loadError,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
             if (roots.isEmpty()) {
                 Text(
                     text = "No photo folders yet. Add a local folder, household NAS, or QNAP DLNA.",
                     style = MaterialTheme.typography.bodyLarge,
                 )
             } else {
-                LazyColumn(
-                    modifier = Modifier.weight(1f, fill = false),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    items(
-                        items = roots,
-                        key = { root -> "${root.collectionId}:${root.profileId}:${root.objectId}" },
-                    ) { root ->
-                        RootRow(
-                            root = root,
-                            sourceLabel = sourceLabels[root.profileId] ?: "Unknown",
-                            onRemove = { onRemoveRoot(root) },
-                        )
-                    }
+                roots.forEach { root ->
+                    RootRow(
+                        root = root,
+                        sourceLabel = sourceLabels[root.profileId] ?: "Unknown",
+                        onRemove = { onRemoveRoot(root) },
+                    )
                 }
             }
-            Button(
+            HighContrastFocusButton(
                 onClick = onAddLocalFolder,
+                label = "Add local folder",
                 modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text("Add local folder")
-            }
-            Button(
+            )
+            HighContrastFocusButton(
                 onClick = onConnectHouseholdNas,
+                label = "Connect household NAS",
                 modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text("Connect household NAS")
-            }
-            Button(
+            )
+            HighContrastFocusButton(
                 onClick = onAddQnap,
+                label = "Add QNAP (DLNA)",
                 modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text("Add QNAP (DLNA)")
-            }
+            )
         }
     }
 }
@@ -139,8 +137,10 @@ private fun RootRow(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        TextButton(onClick = onRemove) {
-            Text("Remove")
-        }
+        HighContrastFocusButton(
+            onClick = onRemove,
+            label = "Remove",
+            minHeightDp = 48,
+        )
     }
 }

@@ -114,4 +114,30 @@ class HomePagerNavigationTest {
             ),
         ).isNull()
     }
+
+    @Test
+    fun centerSelectFromHomeOpensMenu() {
+        assertThat(
+            targetPageForCenterSelect(
+                currentPage = PAGE_HOME,
+                keyCode = KeyEvent.KEYCODE_DPAD_CENTER,
+            ),
+        ).isEqualTo(PAGE_MENU)
+        assertThat(
+            targetPageForCenterSelect(
+                currentPage = PAGE_HOME,
+                keyCode = KeyEvent.KEYCODE_ENTER,
+            ),
+        ).isEqualTo(PAGE_MENU)
+    }
+
+    @Test
+    fun centerSelectFromOtherPagesIgnored() {
+        assertThat(
+            targetPageForCenterSelect(
+                currentPage = PAGE_COLLECTION,
+                keyCode = KeyEvent.KEYCODE_DPAD_CENTER,
+            ),
+        ).isNull()
+    }
 }

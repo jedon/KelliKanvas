@@ -135,11 +135,24 @@ fun DlnaSetupScreen(
                             folderObjectId = action.folderObjectId,
                         )
                     }.onSuccess { folders ->
-                        phase = DlnaSetupPhase.Browsing(
-                            server = action.server,
-                            folderObjectId = action.folderObjectId,
-                            folders = folders,
-                        )
+                        val photos =
+                            if (action.folderObjectId == "0") {
+                                PhotosFolderPicker.findPhotosFolder(folders)
+                            } else {
+                                null
+                            }
+                        if (photos != null) {
+                            selectedFolders.clear()
+                            selectedFolders[photos.objectId] = photos
+                            includeDescendants = true
+                            phase = DlnaSetupPhase.Confirm(action.server)
+                        } else {
+                            phase = DlnaSetupPhase.Browsing(
+                                server = action.server,
+                                folderObjectId = action.folderObjectId,
+                                folders = folders,
+                            )
+                        }
                     }.onFailure { failure ->
                         phase = DlnaSetupPhase.Error(
                             message = dlnaSetupFailureMessage(

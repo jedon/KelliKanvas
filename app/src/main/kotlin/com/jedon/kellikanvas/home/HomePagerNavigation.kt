@@ -21,6 +21,24 @@ fun targetPageForDpad(
 }
 
 /**
+ * On Home, Enter / Center / OK opens the Menu page without requiring a Left press.
+ */
+fun targetPageForCenterSelect(
+    currentPage: Int,
+    keyCode: Int,
+): Int? {
+    if (currentPage != PAGE_HOME) return null
+    return when (keyCode) {
+        KeyEvent.KEYCODE_DPAD_CENTER,
+        KeyEvent.KEYCODE_ENTER,
+        KeyEvent.KEYCODE_NUMPAD_ENTER,
+        KeyEvent.KEYCODE_BUTTON_A,
+        -> PAGE_MENU
+        else -> null
+    }
+}
+
+/**
  * Maps joystick/hat AXIS_HAT_X values to a pager page index.
  * Negative hat X is left; positive is right; near-zero is neutral.
  */

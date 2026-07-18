@@ -9,13 +9,12 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
-import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -38,9 +37,16 @@ import androidx.compose.ui.unit.dp
 import com.jedon.kellikanvas.catalog.SelectedRoot
 import com.jedon.kellikanvas.catalog.preferences.HomeControl
 import com.jedon.kellikanvas.feature.collection.CollectionHubScreen
+import com.jedon.kellikanvas.feature.collection.HighContrastFocusButton
 import com.jedon.kellikanvas.model.SourceProfileId
 import com.jedon.kellikanvas.ui.PhoneMaterialTheme
 import kotlinx.coroutines.launch
+
+enum class PhotosBootstrapUi {
+    Idle,
+    Connecting,
+    Failed,
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Suppress("ktlint:standard:function-naming")
@@ -60,6 +66,11 @@ fun HomeScreen(
     onRemoveRoot: (SelectedRoot) -> Unit,
     onUpdateHomeControl: (HomeControl) -> Unit,
     modifier: Modifier = Modifier,
+    bootstrapUi: PhotosBootstrapUi = PhotosBootstrapUi.Idle,
+    bootstrapError: String? = null,
+    onRetryBootstrap: () -> Unit = {},
+    collectionLoadError: String? = null,
+    autoStartSlideshowToken: Int = 0,
 ) {
     val activity = LocalActivity.current
     val scope = rememberCoroutineScope()
@@ -90,6 +101,13 @@ fun HomeScreen(
         }
     }
 
+    LaunchedEffect(autoStartSlideshowToken, canStartSlideshow) {
+        if (autoStartSlideshowToken > 0 && canStartSlideshow) {
+            onUpdateHomeControl(HomeControl.START_OR_RESUME)
+            onStartSlideshow()
+        }
+    }
+
     BackHandler(enabled = pagerState.currentPage != PAGE_COLLECTION) {
         if (pagerState.currentPage != PAGE_HOME) {
             scrollTo(PAGE_HOME)
@@ -110,6 +128,14 @@ fun HomeScreen(
                     val native = event.nativeKeyEvent
                     if (native.action != KeyEvent.ACTION_DOWN || native.repeatCount != 0) {
                         return@onPreviewKeyEvent false
+                    }
+                    val menuTarget = targetPageForCenterSelect(
+                        currentPage = pagerState.currentPage,
+                        keyCode = native.keyCode,
+                    )
+                    if (menuTarget != null) {
+                        scrollToFromDpad(menuTarget)
+                        return@onPreviewKeyEvent true
                     }
                     val target = targetPageForDpad(
                         currentPage = pagerState.currentPage,
@@ -155,6 +181,9 @@ fun HomeScreen(
                 ) { padding ->
                     HomeCenterPage(
                         canStartSlideshow = canStartSlideshow,
+                        bootstrapUi = bootstrapUi,
+                        bootstrapError = bootstrapError,
+                        onRetryBootstrap = onRetryBootstrap,
                         onStartSlideshow = {
                             onUpdateHomeControl(HomeControl.START_OR_RESUME)
                             onStartSlideshow()
@@ -172,6 +201,7 @@ fun HomeScreen(
                     onRemoveRoot = onRemoveRoot,
                     onBack = { scrollTo(PAGE_HOME) },
                     backHandlerEnabled = pagerState.currentPage == PAGE_COLLECTION,
+                    loadError = collectionLoadError,
                 )
             }
         }
@@ -182,6 +212,9 @@ fun HomeScreen(
 @Composable
 private fun HomeCenterPage(
     canStartSlideshow: Boolean,
+    bootstrapUi: PhotosBootstrapUi,
+    bootstrapError: String?,
+    onRetryBootstrap: () -> Unit,
     onStartSlideshow: () -> Unit,
     startFocusRequester: FocusRequester,
     modifier: Modifier = Modifier,
@@ -193,31 +226,56 @@ private fun HomeCenterPage(
         verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterVertically),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        if (!canStartSlideshow) {
-            Text(
-                text = "Add a photos folder in Collection to start the slideshow.",
-                textAlign = TextAlign.Center,
-                style = MaterialTheme.typography.bodyLarge,
-            )
+        when (bootstrapUi) {
+            PhotosBootstrapUi.Connecting -> {
+                CircularProgressIndicator()
+                Text(
+                    text = "Connecting to photos…",
+                    textAlign = TextAlign.Center,
+                    style = MaterialTheme.typography.bodyLarge,
+                )
+            }
+            PhotosBootstrapUi.Failed -> {
+                Text(
+                    text = bootstrapError ?: "Could not connect to household photos.",
+                    textAlign = TextAlign.Center,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.error,
+                )
+                HighContrastFocusButton(
+                    onClick = onRetryBootstrap,
+                    label = "Retry",
+                    minHeightDp = 56,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+            PhotosBootstrapUi.Idle -> {
+                if (!canStartSlideshow) {
+                    Text(
+                        text = "Add a photos folder in Collection, or open Menu (OK) to connect.",
+                        textAlign = TextAlign.Center,
+                        style = MaterialTheme.typography.bodyLarge,
+                    )
+                }
+            }
         }
-        Button(
+        HighContrastFocusButton(
             onClick = onStartSlideshow,
+            label = "Start or Resume Slideshow",
             enabled = canStartSlideshow,
+            minHeightDp = 56,
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(min = 56.dp)
                 .focusRequester(startFocusRequester),
-        ) {
-            Text("Start or Resume Slideshow")
-        }
+        )
         Text(
-            text = "← Menu · Home · Collection →",
+            text = "OK opens Menu · ← → swipe between pages",
             textAlign = TextAlign.Center,
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Text(
-            text = "Use Left/Right on remote or swipe",
+            text = "← Menu · Home · Collection →",
             textAlign = TextAlign.Center,
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -263,27 +321,26 @@ private fun MenuPage(
                 .padding(horizontal = 24.dp, vertical = 16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.Top),
         ) {
-            MenuRow(label = "Collection", onClick = onOpenCollection)
-            MenuRow(label = "Appearance", onClick = onOpenAppearance)
-            MenuRow(label = "Playback", onClick = onOpenPlayback)
-            MenuRow(label = "Ambient and System", onClick = onOpenAmbient)
+            HighContrastFocusButton(
+                label = "Collection",
+                onClick = onOpenCollection,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            HighContrastFocusButton(
+                label = "Appearance",
+                onClick = onOpenAppearance,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            HighContrastFocusButton(
+                label = "Playback",
+                onClick = onOpenPlayback,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            HighContrastFocusButton(
+                label = "Ambient and System",
+                onClick = onOpenAmbient,
+                modifier = Modifier.fillMaxWidth(),
+            )
         }
-    }
-}
-
-@Suppress("ktlint:standard:function-naming")
-@Composable
-private fun MenuRow(
-    label: String,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Button(
-        onClick = onClick,
-        modifier = modifier
-            .fillMaxWidth()
-            .heightIn(min = 64.dp),
-    ) {
-        Text(text = label, style = MaterialTheme.typography.titleMedium)
     }
 }
