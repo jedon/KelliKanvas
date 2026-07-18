@@ -12,6 +12,7 @@ dependencies {
     implementation(project(":core:model"))
     implementation(project(":core:source-api"))
     implementation(project(":core:ui-tv"))
+    implementation(project(":source:dlna"))
     implementation(platform(libs.compose.bom))
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.room.runtime)
