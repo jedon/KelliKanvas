@@ -32,6 +32,7 @@ import com.jedon.kellikanvas.feature.setup.SafSetupController
 import com.jedon.kellikanvas.feature.setup.SafSetupScreen
 import com.jedon.kellikanvas.feature.slideshow.SimpleSlideshowScreen
 import com.jedon.kellikanvas.home.HomeScreen
+import com.jedon.kellikanvas.model.AppPreferences
 import com.jedon.kellikanvas.model.SourceProfileId
 import com.jedon.kellikanvas.shell.ShellRoute
 import com.jedon.kellikanvas.shell.ShellStartup
@@ -86,6 +87,21 @@ fun KelliKanvasNavHost(
             Text(text = "Loading…", color = MaterialTheme.colorScheme.onBackground)
         }
         return
+    }
+
+    val updateAppPreferences: ((AppPreferences) -> AppPreferences) -> Unit = { transform ->
+        scope.launch {
+            container.preferences.update { prefs ->
+                prefs.copy(appPreferences = transform(prefs.appPreferences))
+            }
+        }
+    }
+    val updateReducedMotion: ((Boolean) -> Boolean) -> Unit = { transform ->
+        scope.launch {
+            container.preferences.update { prefs ->
+                prefs.copy(reducedMotion = transform(prefs.reducedMotion))
+            }
+        }
     }
 
     NavHost(
@@ -209,46 +225,22 @@ fun KelliKanvasNavHost(
         composable(ShellRoutes.APPEARANCE) {
             AppearanceSettingsScreen(
                 preferences = preferences,
-                onUpdatePreferences = { updated ->
-                    scope.launch {
-                        container.preferences.update { state ->
-                            state.copy(appPreferences = updated)
-                        }
-                    }
-                },
+                onUpdatePreferences = updateAppPreferences,
                 onBack = { navController.popBackStack() },
             )
         }
         composable(ShellRoutes.PLAYBACK) {
             PlaybackSettingsScreen(
                 preferences = preferences,
-                onUpdatePreferences = { updated ->
-                    scope.launch {
-                        container.preferences.update { state ->
-                            state.copy(appPreferences = updated)
-                        }
-                    }
-                },
+                onUpdatePreferences = updateAppPreferences,
                 onBack = { navController.popBackStack() },
             )
         }
         composable(ShellRoutes.AMBIENT) {
             AmbientSettingsScreen(
                 preferences = preferences,
-                onUpdatePreferences = { updated ->
-                    scope.launch {
-                        container.preferences.update { state ->
-                            state.copy(appPreferences = updated)
-                        }
-                    }
-                },
-                onUpdateReducedMotion = { enabled ->
-                    scope.launch {
-                        container.preferences.update { state ->
-                            state.copy(reducedMotion = enabled)
-                        }
-                    }
-                },
+                onUpdatePreferences = updateAppPreferences,
+                onUpdateReducedMotion = updateReducedMotion,
                 onBack = { navController.popBackStack() },
             )
         }

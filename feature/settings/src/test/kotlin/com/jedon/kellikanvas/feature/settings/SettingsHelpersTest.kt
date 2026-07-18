@@ -57,6 +57,14 @@ class SettingsHelpersTest {
     }
 
     @Test
+    fun stepBlurDim_usesRoundedSteps() {
+        assertThat(stepBlurDim(0.35, -1)).isEqualTo(0.3)
+        assertThat(stepBlurDim(0.35, 1)).isEqualTo(0.4)
+        assertThat(stepBlurDim(0.0, -1)).isEqualTo(0.0)
+        assertThat(stepBlurDim(1.0, 1)).isEqualTo(1.0)
+    }
+
+    @Test
     fun clampPortraitLookAhead_staysBetweenOneAndFour() {
         assertThat(clampPortraitLookAhead(0)).isEqualTo(1)
         assertThat(clampPortraitLookAhead(3)).isEqualTo(3)
@@ -85,10 +93,10 @@ class SettingsHelpersTest {
     }
 
     @Test
-    fun formatEnumLabel_titleCasesUnderscores() {
+    fun formatEnumLabel_titleCasesUnderscoresAndPreservesTv() {
         assertThat(formatEnumLabel(LayoutMode.BLURRED_BORDER)).isEqualTo("Blurred Border")
         assertThat(formatEnumLabel(TransitionType.FADE_THROUGH_BLACK)).isEqualTo("Fade Through Black")
-        assertThat(formatEnumLabel(BrightnessMode.FOLLOW_TV)).isEqualTo("Follow Tv")
+        assertThat(formatEnumLabel(BrightnessMode.FOLLOW_TV)).isEqualTo("Follow TV")
     }
 
     @Test

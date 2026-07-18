@@ -9,7 +9,7 @@ import com.jedon.kellikanvas.model.AppPreferences
 @Composable
 fun AppearanceSettingsScreen(
     preferences: AppPreferencesState,
-    onUpdatePreferences: (AppPreferences) -> Unit,
+    onUpdatePreferences: ((AppPreferences) -> AppPreferences) -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -27,7 +27,9 @@ fun AppearanceSettingsScreen(
                 label = "Landscape layout",
                 valueLabel = formatEnumLabel(app.landscapeLayout),
                 onCycle = {
-                    onUpdatePreferences(app.copy(landscapeLayout = nextEnum(app.landscapeLayout)))
+                    onUpdatePreferences { current ->
+                        current.copy(landscapeLayout = nextEnum(current.landscapeLayout))
+                    }
                 },
             )
         }
@@ -36,9 +38,9 @@ fun AppearanceSettingsScreen(
                 label = "Single portrait layout",
                 valueLabel = formatEnumLabel(app.singlePortraitLayout),
                 onCycle = {
-                    onUpdatePreferences(
-                        app.copy(singlePortraitLayout = nextEnum(app.singlePortraitLayout)),
-                    )
+                    onUpdatePreferences { current ->
+                        current.copy(singlePortraitLayout = nextEnum(current.singlePortraitLayout))
+                    }
                 },
             )
         }
@@ -47,9 +49,9 @@ fun AppearanceSettingsScreen(
                 label = "Single portrait fit",
                 valueLabel = formatEnumLabel(app.singlePortraitFit),
                 onCycle = {
-                    onUpdatePreferences(
-                        app.copy(singlePortraitFit = nextEnum(app.singlePortraitFit)),
-                    )
+                    onUpdatePreferences { current ->
+                        current.copy(singlePortraitFit = nextEnum(current.singlePortraitFit))
+                    }
                 },
             )
         }
@@ -61,9 +63,9 @@ fun AppearanceSettingsScreen(
                 label = "Portrait pairing",
                 valueLabel = formatEnumLabel(app.portraitPairingMode),
                 onCycle = {
-                    onUpdatePreferences(
-                        app.copy(portraitPairingMode = nextEnum(app.portraitPairingMode)),
-                    )
+                    onUpdatePreferences { current ->
+                        current.copy(portraitPairingMode = nextEnum(current.portraitPairingMode))
+                    }
                 },
             )
         }
@@ -72,18 +74,18 @@ fun AppearanceSettingsScreen(
                 label = "Look ahead",
                 valueLabel = "${app.portraitLookAhead}",
                 onDecrement = {
-                    onUpdatePreferences(
-                        app.copy(
-                            portraitLookAhead = clampPortraitLookAhead(app.portraitLookAhead - 1),
-                        ),
-                    )
+                    onUpdatePreferences { current ->
+                        current.copy(
+                            portraitLookAhead = clampPortraitLookAhead(current.portraitLookAhead - 1),
+                        )
+                    }
                 },
                 onIncrement = {
-                    onUpdatePreferences(
-                        app.copy(
-                            portraitLookAhead = clampPortraitLookAhead(app.portraitLookAhead + 1),
-                        ),
-                    )
+                    onUpdatePreferences { current ->
+                        current.copy(
+                            portraitLookAhead = clampPortraitLookAhead(current.portraitLookAhead + 1),
+                        )
+                    }
                 },
                 decrementEnabled = app.portraitLookAhead > 1,
                 incrementEnabled = app.portraitLookAhead < 4,
@@ -94,14 +96,14 @@ fun AppearanceSettingsScreen(
                 label = "Pair gutter",
                 valueLabel = "${app.pairGutterDp} dp",
                 onDecrement = {
-                    onUpdatePreferences(
-                        app.copy(pairGutterDp = clampPairGutter(app.pairGutterDp - 4)),
-                    )
+                    onUpdatePreferences { current ->
+                        current.copy(pairGutterDp = clampPairGutter(current.pairGutterDp - 4))
+                    }
                 },
                 onIncrement = {
-                    onUpdatePreferences(
-                        app.copy(pairGutterDp = clampPairGutter(app.pairGutterDp + 4)),
-                    )
+                    onUpdatePreferences { current ->
+                        current.copy(pairGutterDp = clampPairGutter(current.pairGutterDp + 4))
+                    }
                 },
                 decrementEnabled = app.pairGutterDp > 0,
             )
@@ -114,7 +116,9 @@ fun AppearanceSettingsScreen(
                 label = "Blur strength",
                 valueLabel = formatEnumLabel(app.blurStrength),
                 onCycle = {
-                    onUpdatePreferences(app.copy(blurStrength = nextEnum(app.blurStrength)))
+                    onUpdatePreferences { current ->
+                        current.copy(blurStrength = nextEnum(current.blurStrength))
+                    }
                 },
             )
         }
@@ -123,22 +127,14 @@ fun AppearanceSettingsScreen(
                 label = "Blur dimming",
                 valueLabel = formatBlurDimLabel(app.blurDimAmount),
                 onDecrement = {
-                    onUpdatePreferences(
-                        app.copy(
-                            blurDimAmount = clampBlurDim(
-                                ((app.blurDimAmount * 20).toInt() - 1) / 20.0,
-                            ),
-                        ),
-                    )
+                    onUpdatePreferences { current ->
+                        current.copy(blurDimAmount = stepBlurDim(current.blurDimAmount, -1))
+                    }
                 },
                 onIncrement = {
-                    onUpdatePreferences(
-                        app.copy(
-                            blurDimAmount = clampBlurDim(
-                                ((app.blurDimAmount * 20).toInt() + 1) / 20.0,
-                            ),
-                        ),
-                    )
+                    onUpdatePreferences { current ->
+                        current.copy(blurDimAmount = stepBlurDim(current.blurDimAmount, 1))
+                    }
                 },
                 decrementEnabled = app.blurDimAmount > 0.0,
                 incrementEnabled = app.blurDimAmount < 1.0,
@@ -151,8 +147,10 @@ fun AppearanceSettingsScreen(
             SettingsSwitchRow(
                 label = "Metadata overlay",
                 checked = app.metadataOverlayEnabled,
-                onCheckedChange = {
-                    onUpdatePreferences(app.copy(metadataOverlayEnabled = it))
+                onCheckedChange = { enabled ->
+                    onUpdatePreferences { current ->
+                        current.copy(metadataOverlayEnabled = enabled)
+                    }
                 },
             )
         }
@@ -160,8 +158,10 @@ fun AppearanceSettingsScreen(
             SettingsSwitchRow(
                 label = "Clock overlay",
                 checked = app.clockOverlayEnabled,
-                onCheckedChange = {
-                    onUpdatePreferences(app.copy(clockOverlayEnabled = it))
+                onCheckedChange = { enabled ->
+                    onUpdatePreferences { current ->
+                        current.copy(clockOverlayEnabled = enabled)
+                    }
                 },
             )
         }
@@ -169,8 +169,10 @@ fun AppearanceSettingsScreen(
             SettingsSwitchRow(
                 label = "Capture date overlay",
                 checked = app.captureDateOverlayEnabled,
-                onCheckedChange = {
-                    onUpdatePreferences(app.copy(captureDateOverlayEnabled = it))
+                onCheckedChange = { enabled ->
+                    onUpdatePreferences { current ->
+                        current.copy(captureDateOverlayEnabled = enabled)
+                    }
                 },
             )
         }
@@ -178,8 +180,10 @@ fun AppearanceSettingsScreen(
             SettingsSwitchRow(
                 label = "Filename overlay",
                 checked = app.filenameOverlayEnabled,
-                onCheckedChange = {
-                    onUpdatePreferences(app.copy(filenameOverlayEnabled = it))
+                onCheckedChange = { enabled ->
+                    onUpdatePreferences { current ->
+                        current.copy(filenameOverlayEnabled = enabled)
+                    }
                 },
             )
         }

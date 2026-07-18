@@ -9,7 +9,7 @@ import com.jedon.kellikanvas.model.AppPreferences
 @Composable
 fun PlaybackSettingsScreen(
     preferences: AppPreferencesState,
-    onUpdatePreferences: (AppPreferences) -> Unit,
+    onUpdatePreferences: ((AppPreferences) -> AppPreferences) -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -27,14 +27,14 @@ fun PlaybackSettingsScreen(
                 label = "Slide duration",
                 valueLabel = formatDurationLabel(app.slideDurationMillis),
                 onDecrement = {
-                    onUpdatePreferences(
-                        withSlideDuration(app, app.slideDurationMillis - 1_000),
-                    )
+                    onUpdatePreferences { current ->
+                        withSlideDuration(current, current.slideDurationMillis - 1_000)
+                    }
                 },
                 onIncrement = {
-                    onUpdatePreferences(
-                        withSlideDuration(app, app.slideDurationMillis + 1_000),
-                    )
+                    onUpdatePreferences { current ->
+                        withSlideDuration(current, current.slideDurationMillis + 1_000)
+                    }
                 },
                 decrementEnabled = app.slideDurationMillis > 1_000,
             )
@@ -44,7 +44,9 @@ fun PlaybackSettingsScreen(
                 label = "Transition",
                 valueLabel = formatEnumLabel(app.transitionType),
                 onCycle = {
-                    onUpdatePreferences(app.copy(transitionType = nextEnum(app.transitionType)))
+                    onUpdatePreferences { current ->
+                        current.copy(transitionType = nextEnum(current.transitionType))
+                    }
                 },
             )
         }
@@ -53,14 +55,14 @@ fun PlaybackSettingsScreen(
                 label = "Transition duration",
                 valueLabel = formatDurationLabel(app.transitionDurationMillis),
                 onDecrement = {
-                    onUpdatePreferences(
-                        withTransitionDuration(app, app.transitionDurationMillis - 100),
-                    )
+                    onUpdatePreferences { current ->
+                        withTransitionDuration(current, current.transitionDurationMillis - 100)
+                    }
                 },
                 onIncrement = {
-                    onUpdatePreferences(
-                        withTransitionDuration(app, app.transitionDurationMillis + 100),
-                    )
+                    onUpdatePreferences { current ->
+                        withTransitionDuration(current, current.transitionDurationMillis + 100)
+                    }
                 },
                 decrementEnabled = app.transitionDurationMillis > 0,
                 incrementEnabled = app.transitionDurationMillis < app.slideDurationMillis - 1,
@@ -74,7 +76,9 @@ fun PlaybackSettingsScreen(
                 label = "Order",
                 valueLabel = formatEnumLabel(app.playbackOrder),
                 onCycle = {
-                    onUpdatePreferences(app.copy(playbackOrder = nextEnum(app.playbackOrder)))
+                    onUpdatePreferences { current ->
+                        current.copy(playbackOrder = nextEnum(current.playbackOrder))
+                    }
                 },
             )
         }
@@ -82,14 +86,18 @@ fun PlaybackSettingsScreen(
             SettingsSwitchRow(
                 label = "Loop",
                 checked = app.loopEnabled,
-                onCheckedChange = { onUpdatePreferences(app.copy(loopEnabled = it)) },
+                onCheckedChange = { enabled ->
+                    onUpdatePreferences { current -> current.copy(loopEnabled = enabled) }
+                },
             )
         }
         item {
             SettingsSwitchRow(
                 label = "Resume session",
                 checked = app.resumeEnabled,
-                onCheckedChange = { onUpdatePreferences(app.copy(resumeEnabled = it)) },
+                onCheckedChange = { enabled ->
+                    onUpdatePreferences { current -> current.copy(resumeEnabled = enabled) }
+                },
             )
         }
         item {
