@@ -9,13 +9,16 @@ enum class ShellRoute {
 }
 
 object ShellStartup {
+    @Suppress("UNUSED_PARAMETER")
     fun startRoute(
         collections: List<CatalogCollection>,
         rootsByCollection: Map<String, List<SelectedRoot>>,
-    ): ShellRoute {
-        val hasRoot = collections.any { (rootsByCollection[it.id] ?: emptyList()).isNotEmpty() }
-        return if (hasRoot) ShellRoute.Home else ShellRoute.Setup
-    }
+    ): ShellRoute = ShellRoute.Home
+
+    fun hasPlayableRoots(
+        collections: List<CatalogCollection>,
+        rootsByCollection: Map<String, List<SelectedRoot>>,
+    ): Boolean = collections.any { (rootsByCollection[it.id] ?: emptyList()).isNotEmpty() }
 
     fun activeCollectionId(
         collections: List<CatalogCollection>,

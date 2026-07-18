@@ -25,6 +25,7 @@ import com.jedon.kellikanvas.feature.setup.SafSetupController
 import com.jedon.kellikanvas.feature.setup.SafSetupScreen
 import com.jedon.kellikanvas.feature.slideshow.SimpleSlideshowScreen
 import com.jedon.kellikanvas.home.HomeScreen
+import com.jedon.kellikanvas.settings.SettingsPlaceholderScreen
 import com.jedon.kellikanvas.shell.ShellRoute
 import com.jedon.kellikanvas.shell.ShellStartup
 import com.jedon.kellikanvas.source.saf.SafProfile
@@ -35,6 +36,9 @@ private object ShellRoutes {
     const val SETUP = "setup"
     const val HOME = "home"
     const val SLIDESHOW = "slideshow"
+    const val APPEARANCE = "appearance"
+    const val PLAYBACK = "playback"
+    const val AMBIENT = "ambient"
 }
 
 private data class ShellState(
@@ -72,9 +76,31 @@ fun KelliKanvasNavHost(
 
     NavHost(
         navController = navController,
-        startDestination = if (state.route == ShellRoute.Setup) ShellRoutes.SETUP else ShellRoutes.HOME,
+        startDestination = ShellRoutes.HOME,
         modifier = modifier,
     ) {
+        composable(ShellRoutes.HOME) {
+            val homeState = shellState ?: return@composable
+            HomeScreen(
+                collectionLabel = homeState.collectionLabel,
+                canStartSlideshow = homeState.roots.isNotEmpty() && homeState.adapter != null,
+                initialFocus = preferences.lastHomeControl,
+                onStartSlideshow = {
+                    if (homeState.roots.isNotEmpty() && homeState.adapter != null) {
+                        navController.navigate(ShellRoutes.SLIDESHOW)
+                    }
+                },
+                onOpenCollection = { navController.navigate(ShellRoutes.SETUP) },
+                onOpenAppearance = { navController.navigate(ShellRoutes.APPEARANCE) },
+                onOpenPlayback = { navController.navigate(ShellRoutes.PLAYBACK) },
+                onOpenAmbient = { navController.navigate(ShellRoutes.AMBIENT) },
+                onUpdateHomeControl = { control ->
+                    scope.launch {
+                        container.preferences.update { it.copy(lastHomeControl = control) }
+                    }
+                },
+            )
+        }
         composable(ShellRoutes.SETUP) {
             SafSetupScreen(
                 controller = SafSetupController(container.database),
@@ -82,28 +108,38 @@ fun KelliKanvasNavHost(
                     scope.launch {
                         shellState = loadShellState(container)
                         navController.navigate(ShellRoutes.HOME) {
-                            popUpTo(ShellRoutes.SETUP) { inclusive = true }
+                            popUpTo(ShellRoutes.HOME) { inclusive = false }
+                            launchSingleTop = true
                         }
+                    }
+                },
+                onOpenMenu = {
+                    navController.navigate(ShellRoutes.HOME) {
+                        popUpTo(ShellRoutes.HOME) { inclusive = false }
+                        launchSingleTop = true
                     }
                 },
             )
         }
-        composable(ShellRoutes.HOME) {
-            val homeState = shellState ?: return@composable
-            HomeScreen(
-                collectionLabel = homeState.collectionLabel,
-                canStartSlideshow = homeState.roots.isNotEmpty(),
-                initialFocus = preferences.lastHomeControl,
-                onStartSlideshow = {
-                    if (homeState.roots.isNotEmpty() && homeState.adapter != null) {
-                        navController.navigate(ShellRoutes.SLIDESHOW)
-                    }
-                },
-                onUpdateHomeControl = { control ->
-                    scope.launch {
-                        container.preferences.update { it.copy(lastHomeControl = control) }
-                    }
-                },
+        composable(ShellRoutes.APPEARANCE) {
+            SettingsPlaceholderScreen(
+                title = "Appearance",
+                body = "Layout, pairing, and transition settings will live here.",
+                onBack = { navController.popBackStack() },
+            )
+        }
+        composable(ShellRoutes.PLAYBACK) {
+            SettingsPlaceholderScreen(
+                title = "Playback",
+                body = "Slide timing, order, and resume settings will live here.",
+                onBack = { navController.popBackStack() },
+            )
+        }
+        composable(ShellRoutes.AMBIENT) {
+            SettingsPlaceholderScreen(
+                title = "Ambient and System",
+                body = "Brightness, presence timeout, and system options will live here.",
+                onBack = { navController.popBackStack() },
             )
         }
         composable(ShellRoutes.SLIDESHOW) {
@@ -127,8 +163,9 @@ private suspend fun loadShellState(container: AppContainer): ShellState {
     val database = container.database
     val collections = database.collections.list()
     val rootsByCollection = collections.associate { it.id to database.selectedRoots.list(it.id) }
-    val startupRoute = ShellStartup.startRoute(collections, rootsByCollection)
-    if (startupRoute == ShellRoute.Setup) return ShellState(route = ShellRoute.Setup)
+    if (!ShellStartup.hasPlayableRoots(collections, rootsByCollection)) {
+        return ShellState(route = ShellRoute.Home, collectionLabel = "KelliKanvas")
+    }
 
     val activeCollection = collections.first { rootsByCollection[it.id].orEmpty().isNotEmpty() }
     val roots = rootsByCollection.getValue(activeCollection.id)
@@ -154,5 +191,5 @@ private suspend fun loadShellState(container: AppContainer): ShellState {
             adapter = container.safAdapter(profile),
         )
     }
-    return ShellState(ShellRoute.Setup)
+    return ShellState(route = ShellRoute.Home, collectionLabel = "KelliKanvas")
 }

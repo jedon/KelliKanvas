@@ -8,6 +8,11 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.material3.Button
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Switch
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -18,22 +23,19 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import androidx.tv.material3.Button
-import androidx.tv.material3.MaterialTheme
-import androidx.tv.material3.Switch
-import androidx.tv.material3.Text
 import com.jedon.kellikanvas.model.SourceProfileId
 import com.jedon.kellikanvas.source.saf.SafProfile
 import com.jedon.kellikanvas.source.saf.SafTreeGrant
 import com.jedon.kellikanvas.source.saf.SafTreePickerContract
-import java.util.UUID
 import kotlinx.coroutines.launch
+import java.util.UUID
 
 @Suppress("ktlint:standard:function-naming")
 @Composable
 fun SafSetupScreen(
     controller: SafSetupController,
     onFinished: (collectionId: String) -> Unit,
+    onOpenMenu: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -41,12 +43,18 @@ fun SafSetupScreen(
     var grant by remember { mutableStateOf<SafTreeGrant?>(null) }
     var displayName by remember { mutableStateOf<String?>(null) }
     var includeDescendants by remember { mutableStateOf(true) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
 
     val picker = rememberLauncherForActivityResult(
         contract = SafTreePickerContract(context.contentResolver),
     ) { selectedGrant ->
+        if (selectedGrant == null) {
+            errorMessage = "No folder selected"
+            return@rememberLauncherForActivityResult
+        }
         grant = selectedGrant
-        displayName = selectedGrant?.treeUri?.displayName()
+        displayName = selectedGrant.treeUri.displayName()
+        errorMessage = null
     }
 
     Column(
@@ -59,9 +67,12 @@ fun SafSetupScreen(
     ) {
         Text(
             text = "Choose a photos folder",
-            style = MaterialTheme.typography.displaySmall,
+            style = MaterialTheme.typography.headlineMedium,
         )
-        Button(onClick = { picker.launch(null) }) {
+        Button(onClick = {
+            errorMessage = null
+            picker.launch(null)
+        }) {
             Text(text = displayName ?: "Choose folder")
         }
         Row(
@@ -80,24 +91,43 @@ fun SafSetupScreen(
                 val selectedGrant = grant ?: return@Button
                 val selectedName = displayName ?: return@Button
                 scope.launch {
-                    val collectionId = controller.complete(
-                        profile = SafProfile(
-                            id = SourceProfileId("saf-${UUID.randomUUID()}"),
-                            grant = selectedGrant,
-                        ),
-                        displayName = selectedName,
-                        includeDescendants = includeDescendants,
-                    )
-                    onFinished(collectionId)
+                    runCatching {
+                        controller.complete(
+                            profile = SafProfile(
+                                id = SourceProfileId("saf-${UUID.randomUUID()}"),
+                                grant = selectedGrant,
+                            ),
+                            displayName = selectedName,
+                            includeDescendants = includeDescendants,
+                        )
+                    }.onSuccess(onFinished)
+                        .onFailure {
+                            errorMessage = "Could not save folder selection"
+                        }
                 }
             },
         ) {
             Text(text = "Confirm")
         }
+        if (onOpenMenu != null) {
+            TextButton(onClick = onOpenMenu) {
+                Text(text = "Open menu")
+            }
+        }
+        errorMessage?.let {
+            Text(
+                text = it,
+                color = MaterialTheme.colorScheme.error,
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        }
     }
 }
 
-private fun Uri.displayName(): String? =
-    lastPathSegment
-        ?.substringAfterLast(':')
-        ?.takeIf { it.isNotBlank() }
+private fun Uri.displayName(): String {
+    val segment = lastPathSegment ?: return "Photos"
+    val decoded = Uri.decode(segment)
+    return decoded.substringAfterLast(':').takeIf { it.isNotBlank() }
+        ?: decoded.takeIf { it.isNotBlank() }
+        ?: "Photos"
+}

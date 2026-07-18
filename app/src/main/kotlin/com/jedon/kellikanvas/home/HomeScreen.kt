@@ -14,16 +14,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
@@ -36,6 +32,10 @@ fun HomeScreen(
     canStartSlideshow: Boolean,
     initialFocus: HomeControl,
     onStartSlideshow: () -> Unit,
+    onOpenCollection: () -> Unit,
+    onOpenAppearance: () -> Unit,
+    onOpenPlayback: () -> Unit,
+    onOpenAmbient: () -> Unit,
     onUpdateHomeControl: (HomeControl) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -43,7 +43,6 @@ fun HomeScreen(
     BackHandler {
         activity?.finish()
     }
-    var message by remember { mutableStateOf<String?>(null) }
     val controls = remember {
         listOf(
             HomeControl.START_OR_RESUME to "Start or Resume Slideshow",
@@ -68,7 +67,7 @@ fun HomeScreen(
         verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterVertically),
     ) {
         Text(
-            text = collectionLabel,
+            text = collectionLabel.ifBlank { "KelliKanvas" },
             style = MaterialTheme.typography.headlineMedium,
             color = MaterialTheme.colorScheme.onBackground,
         )
@@ -77,6 +76,13 @@ fun HomeScreen(
             style = MaterialTheme.typography.displaySmall,
             color = MaterialTheme.colorScheme.onBackground,
         )
+        if (!canStartSlideshow) {
+            Text(
+                text = "Add a photos folder in Collection to start the slideshow.",
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onBackground,
+            )
+        }
         controls.forEach { (control, label) ->
             val enabled = control != HomeControl.START_OR_RESUME || canStartSlideshow
             Row(
@@ -89,10 +95,12 @@ fun HomeScreen(
                     .focusable(enabled = enabled)
                     .clickable(enabled = enabled) {
                         onUpdateHomeControl(control)
-                        if (control == HomeControl.START_OR_RESUME) {
-                            onStartSlideshow()
-                        } else {
-                            message = "$label — Coming next"
+                        when (control) {
+                            HomeControl.START_OR_RESUME -> onStartSlideshow()
+                            HomeControl.COLLECTION -> onOpenCollection()
+                            HomeControl.APPEARANCE -> onOpenAppearance()
+                            HomeControl.PLAYBACK -> onOpenPlayback()
+                            HomeControl.AMBIENT_AND_SYSTEM -> onOpenAmbient()
                         }
                     }
                     .background(
@@ -104,7 +112,6 @@ fun HomeScreen(
                     )
                     .padding(horizontal = 24.dp, vertical = 18.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
             ) {
                 Text(
                     text = label,
@@ -115,21 +122,7 @@ fun HomeScreen(
                         MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f)
                     },
                 )
-                if (control != HomeControl.START_OR_RESUME && message?.startsWith(label) == true) {
-                    Text(
-                        text = "Coming next",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
             }
-        }
-        message?.let {
-            Text(
-                text = it,
-                color = Color.LightGray,
-                style = MaterialTheme.typography.bodyLarge,
-            )
         }
     }
 }

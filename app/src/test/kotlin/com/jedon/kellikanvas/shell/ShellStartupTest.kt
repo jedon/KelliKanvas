@@ -9,13 +9,14 @@ import org.junit.Test
 
 class ShellStartupTest {
     @Test
-    fun needsSetupWhenNoRoots() {
+    fun opensHomeMenuEvenWithoutRoots() {
         assertThat(ShellStartup.startRoute(collections = emptyList(), rootsByCollection = emptyMap()))
-            .isEqualTo(ShellRoute.Setup)
+            .isEqualTo(ShellRoute.Home)
+        assertThat(ShellStartup.hasPlayableRoots(emptyList(), emptyMap())).isFalse()
     }
 
     @Test
-    fun homeWhenAnyCollectionHasRoot() {
+    fun detectsPlayableRootsForSlideshow() {
         val roots = listOf(
             SelectedRoot(
                 collectionId = "c1",
@@ -25,11 +26,10 @@ class ShellStartupTest {
                 includeDescendants = true,
             ),
         )
-        assertThat(
-            ShellStartup.startRoute(
-                collections = listOf(CatalogCollection(id = "c1", label = "Main")),
-                rootsByCollection = mapOf("c1" to roots),
-            ),
-        ).isEqualTo(ShellRoute.Home)
+        val collections = listOf(CatalogCollection(id = "c1", label = "Main"))
+        val rootsByCollection = mapOf("c1" to roots)
+        assertThat(ShellStartup.startRoute(collections, rootsByCollection)).isEqualTo(ShellRoute.Home)
+        assertThat(ShellStartup.hasPlayableRoots(collections, rootsByCollection)).isTrue()
+        assertThat(ShellStartup.activeCollectionId(collections, rootsByCollection)).isEqualTo("c1")
     }
 }
