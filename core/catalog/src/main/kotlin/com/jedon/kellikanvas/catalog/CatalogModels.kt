@@ -245,6 +245,7 @@ class SafConnection(
 ) {
     init {
         require(treeUri.isNotBlank()) { "Tree URI must not be blank" }
+        require(!treeUri.contains('\n')) { "SAF tree URI must be single-line" }
     }
 
     override fun equals(other: Any?): Boolean =

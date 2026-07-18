@@ -33,4 +33,13 @@ class SafConnectionDaoTest {
         assertThat(db.collections.list().map { it.id }).containsExactly("c1")
         db.close()
     }
+
+    @Test
+    fun rejectsMultilineTreeUri() {
+        val failure = runCatching {
+            SafConnection(SourceProfileId("saf-1"), "content://foo\nbar")
+        }.exceptionOrNull()
+
+        assertThat(failure).isInstanceOf(IllegalArgumentException::class.java)
+    }
 }
