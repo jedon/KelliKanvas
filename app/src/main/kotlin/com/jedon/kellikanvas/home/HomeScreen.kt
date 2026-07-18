@@ -14,9 +14,11 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -46,74 +48,88 @@ fun HomeScreen(
         activity?.finish()
     }
 
-    Scaffold(
-        modifier = modifier,
-        topBar = {
-            TopAppBar(
-                title = { Text(collectionLabel.ifBlank { "KelliKanvas" }) },
-                actions = {
-                    var expanded by remember { mutableStateOf(false) }
-                    IconButton(onClick = { expanded = true }) {
-                        Icon(Icons.Default.MoreVert, contentDescription = "Menu")
-                    }
-                    DropdownMenu(
-                        expanded = expanded,
-                        onDismissRequest = { expanded = false },
-                    ) {
-                        DropdownMenuItem(
-                            text = { Text("Collection") },
-                            onClick = {
-                                expanded = false
-                                onOpenCollection()
-                            },
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Appearance") },
-                            onClick = {
-                                expanded = false
-                                onOpenAppearance()
-                            },
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Playback") },
-                            onClick = {
-                                expanded = false
-                                onOpenPlayback()
-                            },
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Ambient and System") },
-                            onClick = {
-                                expanded = false
-                                onOpenAmbient()
-                            },
-                        )
-                    }
-                },
-            )
-        },
-    ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .padding(32.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterVertically),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            if (!canStartSlideshow) {
-                Text(
-                    text = "Add a photos folder in Collection to start the slideshow.",
+    // Provide phone Material3 colors; app root only wraps TV MaterialTheme.
+    MaterialTheme {
+        val menuTint = MaterialTheme.colorScheme.onSurface
+        Scaffold(
+            modifier = modifier,
+            containerColor = MaterialTheme.colorScheme.background,
+            topBar = {
+                TopAppBar(
+                    title = { Text(collectionLabel.ifBlank { "KelliKanvas" }) },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.surface,
+                        titleContentColor = menuTint,
+                        actionIconContentColor = menuTint,
+                    ),
+                    actions = {
+                        var expanded by remember { mutableStateOf(false) }
+                        IconButton(onClick = { expanded = true }) {
+                            Icon(
+                                imageVector = Icons.Default.MoreVert,
+                                contentDescription = "Menu",
+                                tint = menuTint,
+                            )
+                        }
+                        DropdownMenu(
+                            expanded = expanded,
+                            onDismissRequest = { expanded = false },
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("Collection") },
+                                onClick = {
+                                    expanded = false
+                                    onOpenCollection()
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Appearance") },
+                                onClick = {
+                                    expanded = false
+                                    onOpenAppearance()
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Playback") },
+                                onClick = {
+                                    expanded = false
+                                    onOpenPlayback()
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Ambient and System") },
+                                onClick = {
+                                    expanded = false
+                                    onOpenAmbient()
+                                },
+                            )
+                        }
+                    },
                 )
-            }
-            Button(
-                onClick = {
-                    onUpdateHomeControl(HomeControl.START_OR_RESUME)
-                    onStartSlideshow()
-                },
-                enabled = canStartSlideshow,
+            },
+        ) { padding ->
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding)
+                    .padding(32.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterVertically),
+                horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                Text("Start or Resume Slideshow")
+                if (!canStartSlideshow) {
+                    Text(
+                        text = "Add a photos folder in Collection to start the slideshow.",
+                    )
+                }
+                Button(
+                    onClick = {
+                        onUpdateHomeControl(HomeControl.START_OR_RESUME)
+                        onStartSlideshow()
+                    },
+                    enabled = canStartSlideshow,
+                ) {
+                    Text("Start or Resume Slideshow")
+                }
             }
         }
     }
