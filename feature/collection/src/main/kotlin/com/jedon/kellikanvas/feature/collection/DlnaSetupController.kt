@@ -12,12 +12,14 @@ import com.jedon.kellikanvas.model.SourceEntry
 import com.jedon.kellikanvas.model.SourceKind
 import com.jedon.kellikanvas.source.DEFAULT_PAGE_LIMIT
 import com.jedon.kellikanvas.source.SourceAdapter
+import com.jedon.kellikanvas.source.dlna.BuiltInResolveResult
 import com.jedon.kellikanvas.source.dlna.DlnaProfile
 
 class DlnaSetupController(
     private val database: KelliKanvasDatabase,
     private val discoverProfiles: suspend () -> List<Pair<String, DlnaProfile>>,
     private val resolveManual: suspend (String) -> DlnaProfile,
+    private val resolveBuiltIn: suspend () -> BuiltInResolveResult,
     private val adapterFactory: (DlnaProfile) -> SourceAdapter,
     private val nowMillis: () -> Long = { System.currentTimeMillis() },
 ) {
@@ -29,6 +31,16 @@ class DlnaSetupController(
         val profile = resolveManual(input)
         val friendlyName = input.trim().ifBlank { profile.id.value }
         return DiscoveredServer(friendlyName, profile)
+    }
+
+    /** Tries baked-in household NAS hosts when SSDP finds nothing. */
+    suspend fun tryKnownHosts(): DiscoveredServer {
+        val result = resolveBuiltIn()
+        return DiscoveredServer(
+            friendlyName = result.matchedHost,
+            profile = result.profile,
+            matchedHost = result.matchedHost,
+        )
     }
 
     suspend fun listChildren(
@@ -113,6 +125,7 @@ class DlnaSetupController(
 data class DiscoveredServer(
     val friendlyName: String,
     val profile: DlnaProfile,
+    val matchedHost: String? = null,
 )
 
 data class BrowseEntry(

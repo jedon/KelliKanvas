@@ -35,22 +35,62 @@ class DlnaManualResolver(
         throw DlnaSourceUnavailableException(lastFailure)
     }
 
+    /**
+     * Tries each [BUILT_IN_HOST_CANDIDATES] entry via [resolve] until one succeeds.
+     * Returns the matched host input along with the profile.
+     */
+    suspend fun resolveBuiltIn(): BuiltInResolveResult {
+        var lastFailure: Throwable? = null
+        for (host in BUILT_IN_HOST_CANDIDATES) {
+            try {
+                return BuiltInResolveResult(matchedHost = host, profile = resolve(host))
+            } catch (failure: CancellationException) {
+                throw failure
+            } catch (failure: Exception) {
+                lastFailure = failure
+            }
+        }
+        throw DlnaSourceUnavailableException(lastFailure)
+    }
+
     companion object {
+        /**
+         * Household QNAP hosts to try when SSDP discovery fails.
+         * Ordered with the probe-proven description URL first to avoid slow port-80 timeouts.
+         */
+        val BUILT_IN_HOST_CANDIDATES: List<String> =
+            listOf(
+                "http://192.168.68.81:8200/rootDesc.xml",
+                "192.168.68.81:8200",
+                "192.168.68.81",
+                "darklingnas",
+                "darklingnas.local",
+                "DarklingNAS",
+            )
+
+        fun builtInDescriptionCandidates(): List<String> =
+            BUILT_IN_HOST_CANDIDATES
+                .flatMap(::descriptionCandidates)
+                .distinct()
+
         fun descriptionCandidates(input: String): List<String> {
             val trimmed = input.trim()
             if (trimmed.contains("://")) {
                 return listOf(trimmed)
             }
             val hostPort = trimmed
-            val candidates =
-                mutableListOf(
-                    "http://$hostPort/rootDesc.xml",
-                    "http://$hostPort/description.xml",
-                )
+            val candidates = mutableListOf<String>()
             if (!hostPort.contains(':')) {
                 candidates += "http://$hostPort:8200/rootDesc.xml"
             }
+            candidates += "http://$hostPort/rootDesc.xml"
+            candidates += "http://$hostPort/description.xml"
             return candidates
         }
     }
 }
+
+data class BuiltInResolveResult(
+    val matchedHost: String,
+    val profile: DlnaProfile,
+)

@@ -58,10 +58,51 @@ fun DlnaSetupScreen(
                 DlnaSetupAction.Discover -> {
                     phase = DlnaSetupPhase.Discovering
                     runCatching { controller.discover() }
-                        .onSuccess { phase = DlnaSetupPhase.ServerList(it) }
+                        .onSuccess { servers ->
+                            if (servers.isNotEmpty()) {
+                                phase = DlnaSetupPhase.ServerList(servers)
+                            } else {
+                                runCatching { controller.tryKnownHosts() }
+                                    .onSuccess { known ->
+                                        phase = DlnaSetupPhase.ServerList(
+                                            servers = listOf(known),
+                                            statusMessage = "Connected via ${known.matchedHost ?: known.friendlyName}",
+                                        )
+                                    }
+                                    .onFailure {
+                                        phase = DlnaSetupPhase.ServerList(emptyList())
+                                    }
+                            }
+                        }
+                        .onFailure {
+                            runCatching { controller.tryKnownHosts() }
+                                .onSuccess { known ->
+                                    phase = DlnaSetupPhase.ServerList(
+                                        servers = listOf(known),
+                                        statusMessage = "Connected via ${known.matchedHost ?: known.friendlyName}",
+                                    )
+                                }
+                                .onFailure {
+                                    phase = DlnaSetupPhase.Error(
+                                        message = "Could not discover QNAP servers.",
+                                        retryAction = action,
+                                    )
+                                }
+                        }
+                }
+
+                DlnaSetupAction.TryKnown -> {
+                    phase = DlnaSetupPhase.Discovering
+                    runCatching { controller.tryKnownHosts() }
+                        .onSuccess { known ->
+                            phase = DlnaSetupPhase.ServerList(
+                                servers = listOf(known),
+                                statusMessage = "Connected via ${known.matchedHost ?: known.friendlyName}",
+                            )
+                        }
                         .onFailure {
                             phase = DlnaSetupPhase.Error(
-                                message = "Could not discover QNAP servers.",
+                                message = "Could not reach any known NAS address.",
                                 retryAction = action,
                             )
                         }
@@ -159,6 +200,12 @@ fun DlnaSetupScreen(
                     ) {
                         Text("Discover servers")
                     }
+                    Button(
+                        onClick = { submit(DlnaSetupAction.TryKnown) },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text("Try known NAS")
+                    }
                 }
 
                 DlnaSetupPhase.Discovering -> ProgressMessage("Discovering servers…")
@@ -167,11 +214,12 @@ fun DlnaSetupScreen(
 
                 is DlnaSetupPhase.ServerList -> {
                     Text(
-                        text = if (currentPhase.servers.isEmpty()) {
-                            "No servers found. Enter a host name or IP address."
-                        } else {
-                            "Choose a server."
-                        },
+                        text = currentPhase.statusMessage
+                            ?: if (currentPhase.servers.isEmpty()) {
+                                "No servers found. Enter a host name or IP address, or try known NAS."
+                            } else {
+                                "Choose a server."
+                            },
                         style = MaterialTheme.typography.titleMedium,
                     )
                     currentPhase.servers.forEach { server ->
@@ -182,7 +230,14 @@ fun DlnaSetupScreen(
                             },
                             modifier = Modifier.fillMaxWidth(),
                         ) {
-                            Text(server.friendlyName)
+                            Text(
+                                when {
+                                    server.matchedHost != null &&
+                                        server.matchedHost != server.friendlyName ->
+                                        "${server.friendlyName} (${server.matchedHost})"
+                                    else -> server.friendlyName
+                                },
+                            )
                         }
                     }
                     OutlinedTextField(
@@ -200,6 +255,12 @@ fun DlnaSetupScreen(
                         Text("Connect")
                     }
                     TextButton(
+                        onClick = { submit(DlnaSetupAction.TryKnown) },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text("Try known NAS")
+                    }
+                    TextButton(
                         onClick = { submit(DlnaSetupAction.Discover) },
                         modifier = Modifier.fillMaxWidth(),
                     ) {
@@ -208,6 +269,12 @@ fun DlnaSetupScreen(
                 }
 
                 is DlnaSetupPhase.Browsing -> {
+                    val via = currentPhase.server.matchedHost ?: currentPhase.server.friendlyName
+                    Text(
+                        text = "Connected via $via",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                     Text(
                         text = "Select one or more photo folders.",
                         style = MaterialTheme.typography.titleMedium,
@@ -310,6 +377,12 @@ fun DlnaSetupScreen(
                     ) {
                         Text("Retry")
                     }
+                    TextButton(
+                        onClick = { submit(DlnaSetupAction.TryKnown) },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text("Try known NAS")
+                    }
                 }
             }
         }
@@ -368,6 +441,7 @@ private sealed interface DlnaSetupPhase {
 
     data class ServerList(
         val servers: List<DiscoveredServer>,
+        val statusMessage: String? = null,
     ) : DlnaSetupPhase
 
     data class Browsing(
@@ -388,6 +462,8 @@ private sealed interface DlnaSetupPhase {
 
 private sealed interface DlnaSetupAction {
     data object Discover : DlnaSetupAction
+
+    data object TryKnown : DlnaSetupAction
 
     data class Resolve(
         val input: String,

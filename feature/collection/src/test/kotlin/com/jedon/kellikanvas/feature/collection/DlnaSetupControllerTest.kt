@@ -22,6 +22,7 @@ import com.jedon.kellikanvas.model.SourceProfileId
 import com.jedon.kellikanvas.model.SourceStatus
 import com.jedon.kellikanvas.source.PhotoByteStream
 import com.jedon.kellikanvas.source.SourceAdapter
+import com.jedon.kellikanvas.source.dlna.BuiltInResolveResult
 import com.jedon.kellikanvas.source.dlna.DlnaProfile
 import kotlinx.coroutines.test.runTest
 import org.junit.After
@@ -66,6 +67,20 @@ class DlnaSetupControllerTest {
             .containsExactly(DiscoveredServer("Living room QNAP", profile))
         assertThat(controller.resolveHost("  qnap.local  "))
             .isEqualTo(DiscoveredServer("qnap.local", profile))
+    }
+
+    @Test
+    fun tryKnownHosts_returnsMatchedBuiltInHost() = runTest {
+        val controller = controller()
+
+        assertThat(controller.tryKnownHosts())
+            .isEqualTo(
+                DiscoveredServer(
+                    friendlyName = "http://192.168.68.81:8200/rootDesc.xml",
+                    profile = profile,
+                    matchedHost = "http://192.168.68.81:8200/rootDesc.xml",
+                ),
+            )
     }
 
     @Test
@@ -145,6 +160,12 @@ class DlnaSetupControllerTest {
         database = database,
         discoverProfiles = { listOf("Living room QNAP" to profile) },
         resolveManual = { profile },
+        resolveBuiltIn = {
+            BuiltInResolveResult(
+                matchedHost = "http://192.168.68.81:8200/rootDesc.xml",
+                profile = profile,
+            )
+        },
         adapterFactory = { adapter },
         nowMillis = { 123L },
     )

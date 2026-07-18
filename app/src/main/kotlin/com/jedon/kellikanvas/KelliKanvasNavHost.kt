@@ -207,6 +207,7 @@ fun KelliKanvasNavHost(
                         }
                     },
                     resolveManual = { container.dlnaManualResolver().resolve(it) },
+                    resolveBuiltIn = { container.dlnaManualResolver().resolveBuiltIn() },
                     adapterFactory = { container.dlnaAdapter(it) },
                 ),
                 onFinished = {
