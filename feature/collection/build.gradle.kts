@@ -13,8 +13,12 @@ dependencies {
     implementation(project(":core:source-api"))
     implementation(project(":core:ui-tv"))
     implementation(platform(libs.compose.bom))
+    implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.room.runtime)
+    implementation(libs.compose.foundation)
     implementation(libs.compose.ui)
+    implementation(libs.compose.material3)
+    implementation(libs.compose.material.icons.core)
     implementation(libs.tv.material)
 
     testImplementation(project(":core:testing"))
