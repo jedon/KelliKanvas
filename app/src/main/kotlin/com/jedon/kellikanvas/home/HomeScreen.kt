@@ -1,7 +1,9 @@
 package com.jedon.kellikanvas.home
 
+import android.view.KeyEvent
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.LocalActivity
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -19,10 +21,15 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.jedon.kellikanvas.catalog.SelectedRoot
@@ -31,11 +38,6 @@ import com.jedon.kellikanvas.feature.collection.CollectionHubScreen
 import com.jedon.kellikanvas.model.SourceProfileId
 import com.jedon.kellikanvas.ui.PhoneMaterialTheme
 import kotlinx.coroutines.launch
-
-private const val PAGE_MENU = 0
-private const val PAGE_HOME = 1
-private const val PAGE_COLLECTION = 2
-private const val PAGE_COUNT = 3
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Suppress("ktlint:standard:function-naming")
@@ -57,6 +59,7 @@ fun HomeScreen(
 ) {
     val activity = LocalActivity.current
     val scope = rememberCoroutineScope()
+    val pagerFocusRequester = remember { FocusRequester() }
     val pagerState = rememberPagerState(
         initialPage = PAGE_HOME,
         pageCount = { PAGE_COUNT },
@@ -64,6 +67,10 @@ fun HomeScreen(
 
     fun scrollTo(page: Int) {
         scope.launch { pagerState.animateScrollToPage(page) }
+    }
+
+    LaunchedEffect(Unit) {
+        pagerFocusRequester.requestFocus()
     }
 
     BackHandler(enabled = pagerState.currentPage != PAGE_COLLECTION) {
@@ -78,7 +85,26 @@ fun HomeScreen(
         val menuTint = Color.Black
         HorizontalPager(
             state = pagerState,
-            modifier = modifier.fillMaxSize(),
+            modifier = modifier
+                .fillMaxSize()
+                .focusRequester(pagerFocusRequester)
+                .focusable()
+                .onPreviewKeyEvent { event ->
+                    if (event.nativeKeyEvent.action != KeyEvent.ACTION_DOWN) {
+                        return@onPreviewKeyEvent false
+                    }
+                    val target = targetPageForDpad(
+                        currentPage = pagerState.currentPage,
+                        pageCount = PAGE_COUNT,
+                        keyCode = event.nativeKeyEvent.keyCode,
+                    )
+                    if (target != null) {
+                        scrollTo(target)
+                        true
+                    } else {
+                        false
+                    }
+                },
             beyondViewportPageCount = 0,
         ) { page ->
             when (page) {
@@ -161,9 +187,15 @@ private fun HomeCenterPage(
             Text("Start or Resume Slideshow")
         }
         Text(
-            text = "Swipe for menu / collection",
+            text = "← Menu · Home · Collection →",
             textAlign = TextAlign.Center,
             style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(
+            text = "Use Left/Right on remote or swipe",
+            textAlign = TextAlign.Center,
+            style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
