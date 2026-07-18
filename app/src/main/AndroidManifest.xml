@@ -17,6 +17,7 @@
   <uses-permission android:name="android.permission.ACCESS_LOCAL_NETWORK" />
 
   <application
+    android:name=".KelliKanvasApp"
     android:allowBackup="false"
     android:banner="@drawable/app_banner"
     android:dataExtractionRules="@xml/data_extraction_rules"
