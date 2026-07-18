@@ -222,3 +222,15 @@ internal interface RoomSafConnectionDao {
     suspend fun delete(profileId: String)
 }
 
+@Dao
+internal interface RoomDlnaConnectionDao {
+    @Upsert
+    suspend fun upsert(entity: DlnaConnectionEntity)
+
+    @Query("SELECT * FROM dlna_connections WHERE profile_id = :profileId")
+    suspend fun get(profileId: String): DlnaConnectionEntity?
+
+    @Query("DELETE FROM dlna_connections WHERE profile_id = :profileId")
+    suspend fun delete(profileId: String)
+}
+

@@ -26,6 +26,16 @@ class SafConnectionDao internal constructor(
     suspend fun delete(id: SourceProfileId) = roomDao.delete(id.value)
 }
 
+class DlnaConnectionDao internal constructor(
+    private val roomDao: RoomDlnaConnectionDao,
+) {
+    suspend fun upsert(connection: DlnaConnection) = roomDao.upsert(connection.toEntity())
+
+    suspend fun get(id: SourceProfileId): DlnaConnection? = roomDao.get(id.value)?.toDomain()
+
+    suspend fun delete(id: SourceProfileId) = roomDao.delete(id.value)
+}
+
 class CollectionDao internal constructor(
     private val roomDao: RoomCollectionDao,
 ) {
@@ -340,5 +350,23 @@ private fun SafConnection.toEntity() = SafConnectionEntity(
 private fun SafConnectionEntity.toDomain() = SafConnection(
     profileId = SourceProfileId(profileId),
     treeUri = treeUri,
+)
+
+private fun DlnaConnection.toEntity() = DlnaConnectionEntity(
+    profileId = profileId.value,
+    serverUdn = serverUdn,
+    descriptionLocation = descriptionLocation,
+    controlUrl = controlUrl,
+    contentDirectoryVersion = contentDirectoryVersion,
+    displayName = displayName,
+)
+
+private fun DlnaConnectionEntity.toDomain() = DlnaConnection(
+    profileId = SourceProfileId(profileId),
+    serverUdn = serverUdn,
+    descriptionLocation = descriptionLocation,
+    controlUrl = controlUrl,
+    contentDirectoryVersion = contentDirectoryVersion,
+    displayName = displayName,
 )
 

@@ -20,8 +20,9 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         SlideshowSessionEntity::class,
         SlideshowSessionLastPresentedEntity::class,
         SafConnectionEntity::class,
+        DlnaConnectionEntity::class,
     ],
-    version = 2,
+    version = 3,
     exportSchema = true,
 )
 abstract class KelliKanvasDatabase : RoomDatabase() {
@@ -42,6 +43,8 @@ abstract class KelliKanvasDatabase : RoomDatabase() {
     internal abstract fun roomSlideshowSessions(): RoomSlideshowSessionDao
 
     internal abstract fun roomSafConnections(): RoomSafConnectionDao
+
+    internal abstract fun roomDlnaConnections(): RoomDlnaConnectionDao
 
     val sourceProfiles: SourceProfileDao by lazy {
         SourceProfileDao(roomSourceProfiles())
@@ -70,6 +73,9 @@ abstract class KelliKanvasDatabase : RoomDatabase() {
     val safConnections: SafConnectionDao by lazy {
         SafConnectionDao(roomSafConnections())
     }
+    val dlnaConnections: DlnaConnectionDao by lazy {
+        DlnaConnectionDao(roomDlnaConnections())
+    }
     val cycleSnapshots: CycleSnapshotDao by lazy {
         CycleSnapshotDao(this)
     }
@@ -86,7 +92,7 @@ object KelliKanvasDatabaseFactory {
         KelliKanvasDatabase::class.java,
         databaseName,
     )
-        .addMigrations(MIGRATION_1_2)
+        .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
         .build()
 
     fun inMemory(context: Context): KelliKanvasDatabase = Room.inMemoryDatabaseBuilder(
@@ -106,6 +112,26 @@ val MIGRATION_1_2 = object : Migration(1, 2) {
                 FOREIGN KEY(`profile_id`) REFERENCES `source_profiles`(`profile_id`) ON UPDATE NO ACTION ON DELETE CASCADE
             )
             """.trimIndent()
+        )
+    }
+}
+
+val MIGRATION_2_3 = object : Migration(2, 3) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS `dlna_connections` (
+                `profile_id` TEXT NOT NULL,
+                `server_udn` TEXT NOT NULL,
+                `description_location` TEXT NOT NULL,
+                `control_url` TEXT NOT NULL,
+                `content_directory_version` INTEGER NOT NULL,
+                `display_name` TEXT NOT NULL,
+                PRIMARY KEY(`profile_id`),
+                FOREIGN KEY(`profile_id`) REFERENCES `source_profiles`(`profile_id`)
+                    ON UPDATE NO ACTION ON DELETE CASCADE
+            )
+            """.trimIndent(),
         )
     }
 }

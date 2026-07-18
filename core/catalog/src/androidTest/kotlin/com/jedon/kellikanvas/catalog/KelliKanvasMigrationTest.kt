@@ -31,7 +31,7 @@ class KelliKanvasMigrationTest {
                 KelliKanvasDatabase::class.java,
                 DATABASE_NAME,
             )
-                .addMigrations(MIGRATION_1_2)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
                 .build()
         try {
             database.openHelper.writableDatabase
@@ -49,6 +49,22 @@ class KelliKanvasMigrationTest {
         val tableExists =
             database.query(
                 "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'saf_connections'",
+            ).use { cursor ->
+                cursor.moveToFirst()
+            }
+        assertThat(tableExists).isTrue()
+        database.close()
+    }
+
+    @Test
+    fun migrate2To3CreatesDlnaConnectionsTable() {
+        helper.createDatabase(DATABASE_NAME, 2).close()
+
+        val database = helper.runMigrationsAndValidate(DATABASE_NAME, 3, true, MIGRATION_2_3)
+
+        val tableExists =
+            database.query(
+                "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'dlna_connections'",
             ).use { cursor ->
                 cursor.moveToFirst()
             }

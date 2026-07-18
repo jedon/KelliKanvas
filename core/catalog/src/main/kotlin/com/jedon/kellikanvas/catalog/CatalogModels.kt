@@ -260,3 +260,44 @@ class SafConnection(
         "SafConnection(profileId=$profileId, treeUri=<redacted>)"
 }
 
+class DlnaConnection(
+    val profileId: SourceProfileId,
+    val serverUdn: String,
+    val descriptionLocation: String,
+    val controlUrl: String,
+    val contentDirectoryVersion: Int,
+    val displayName: String,
+) {
+    init {
+        require(serverUdn.startsWith("uuid:", ignoreCase = true))
+        require(descriptionLocation.isNotBlank() && !descriptionLocation.contains('\n'))
+        require(controlUrl.isNotBlank() && !controlUrl.contains('\n'))
+        require(contentDirectoryVersion in 1..2)
+        require(displayName.isNotBlank())
+    }
+
+    override fun equals(other: Any?): Boolean =
+        other is DlnaConnection &&
+            profileId == other.profileId &&
+            serverUdn == other.serverUdn &&
+            descriptionLocation == other.descriptionLocation &&
+            controlUrl == other.controlUrl &&
+            contentDirectoryVersion == other.contentDirectoryVersion &&
+            displayName == other.displayName
+
+    override fun hashCode(): Int =
+        listOf(
+            profileId,
+            serverUdn,
+            descriptionLocation,
+            controlUrl,
+            contentDirectoryVersion,
+            displayName,
+        ).hashCode()
+
+    override fun toString(): String =
+        "DlnaConnection(profileId=$profileId, serverUdn=$serverUdn, " +
+            "descriptionLocation=<redacted>, controlUrl=<redacted>, " +
+            "contentDirectoryVersion=$contentDirectoryVersion, displayName=$displayName)"
+}
+
