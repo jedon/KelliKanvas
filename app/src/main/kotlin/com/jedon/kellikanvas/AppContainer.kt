@@ -21,9 +21,8 @@ class AppContainer(appContext: Context) {
 
     val contentResolver = appContext.contentResolver
     val httpClient = OkHttpClient()
-    private val wifiManager = requireNotNull(
-        appContext.applicationContext.getSystemService(WifiManager::class.java),
-    )
+    private val wifiManager: WifiManager? =
+        appContext.applicationContext.getSystemService(WifiManager::class.java)
 
     fun safAdapter(profile: SafProfile): SafSourceAdapter = SafSourceAdapter(
         profile = profile,
@@ -32,10 +31,13 @@ class AppContainer(appContext: Context) {
 
     fun dlnaAdapter(profile: DlnaProfile): DlnaSourceAdapter = DlnaSourceAdapter.network(profile, httpClient)
 
-    fun dlnaDiscovery(): DlnaProfileDiscovery = DlnaProfileDiscovery(
-        discoverer = SsdpDiscoverer(multicastLock = AndroidMulticastLock(wifiManager)),
-        httpClient = httpClient,
-    )
+    fun dlnaDiscovery(): DlnaProfileDiscovery {
+        val wifi = wifiManager ?: throw IllegalStateException("Wi-Fi is required for DLNA discovery")
+        return DlnaProfileDiscovery(
+            discoverer = SsdpDiscoverer(multicastLock = AndroidMulticastLock(wifi)),
+            httpClient = httpClient,
+        )
+    }
 
     fun dlnaManualResolver(): DlnaManualResolver = DlnaManualResolver(httpClient)
 }
