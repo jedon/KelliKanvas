@@ -11,7 +11,7 @@ class AppContainer(appContext: Context) {
     val database = KelliKanvasDatabaseFactory.create(appContext)
     val preferences = DataStoreAppPreferencesRepository.create(appContext)
 
-    private val contentResolver = appContext.contentResolver
+    val contentResolver = appContext.contentResolver
 
     fun safAdapter(profile: SafProfile): SafSourceAdapter =
         SafSourceAdapter(
