@@ -1,5 +1,7 @@
 package com.jedon.kellikanvas.home
 
+import androidx.activity.compose.BackHandler
+import androidx.activity.compose.LocalActivity
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
@@ -37,6 +39,10 @@ fun HomeScreen(
     onUpdateHomeControl: (HomeControl) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val activity = LocalActivity.current
+    BackHandler {
+        activity?.finish()
+    }
     var message by remember { mutableStateOf<String?>(null) }
     val controls = remember {
         listOf(

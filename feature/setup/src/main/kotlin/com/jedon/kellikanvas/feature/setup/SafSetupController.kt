@@ -35,15 +35,24 @@ class SafSetupController(
             ),
         )
         database.collections.upsert(CatalogCollection(collectionId, displayName))
-        database.selectedRoots.replace(
-            SelectedRoot(
-                collectionId = collectionId,
-                profileId = profile.id,
-                objectId = ProviderObjectId(profile.grant.documentId),
-                displayLabel = displayName,
-                includeDescendants = includeDescendants,
+        val previousRoots = database.selectedRoots.list(collectionId)
+        database.selectedRoots.replaceAllForCollection(
+            collectionId = collectionId,
+            roots = listOf(
+                SelectedRoot(
+                    collectionId = collectionId,
+                    profileId = profile.id,
+                    objectId = ProviderObjectId(profile.grant.documentId),
+                    displayLabel = displayName,
+                    includeDescendants = includeDescendants,
+                ),
             ),
         )
+        for (staleProfileId in previousRoots.map { it.profileId }.distinct()) {
+            if (staleProfileId != profile.id) {
+                database.sourceProfiles.delete(staleProfileId)
+            }
+        }
         return collectionId
     }
 

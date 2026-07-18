@@ -63,4 +63,41 @@ class SafSetupControllerTest {
         assertThat(root.objectId.value).isEqualTo(grant.documentId)
         assertThat(root.includeDescendants).isFalse()
     }
+
+    @Test
+    fun `complete replaces previous collection roots and retires stale profiles`() = runTest {
+        val firstId = SourceProfileId("saf-old")
+        val secondId = SourceProfileId("saf-new")
+        val firstGrant = SafTreeGrant(
+            treeUri = Uri.parse("content://com.example.documents/tree/primary%3AOld"),
+            documentId = "primary:Old",
+            flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION,
+        )
+        val secondGrant = SafTreeGrant(
+            treeUri = Uri.parse("content://com.example.documents/tree/primary%3ANew"),
+            documentId = "primary:New",
+            flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION,
+        )
+        val controller = SafSetupController(database)
+
+        controller.complete(
+            profile = SafProfile(firstId, firstGrant),
+            displayName = "Old",
+            includeDescendants = true,
+        )
+        controller.complete(
+            profile = SafProfile(secondId, secondGrant),
+            displayName = "New",
+            includeDescendants = false,
+        )
+
+        val roots = database.selectedRoots.list(SafSetupController.DEFAULT_COLLECTION_ID)
+        assertThat(roots).hasSize(1)
+        assertThat(roots.single().profileId).isEqualTo(secondId)
+        assertThat(database.sourceProfiles.get(firstId)).isNull()
+        assertThat(database.safConnections.get(firstId)).isNull()
+        assertThat(database.sourceProfiles.get(secondId)).isNotNull()
+    }
 }

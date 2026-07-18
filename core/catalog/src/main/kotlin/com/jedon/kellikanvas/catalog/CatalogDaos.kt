@@ -49,6 +49,24 @@ class SelectedRootDao internal constructor(
         }
     }
 
+    suspend fun replaceAllForCollection(
+        collectionId: String,
+        roots: List<SelectedRoot>,
+    ) {
+        require(roots.all { it.collectionId == collectionId }) {
+            "All selected roots must belong to the target collection"
+        }
+        database.withTransaction {
+            roomDao.deleteAllFilters(collectionId)
+            roomDao.deleteAll(collectionId)
+            for (root in roots) {
+                val entity = root.toEntity()
+                roomDao.upsert(entity)
+                roomDao.insertFilters(root.toFilterEntities())
+            }
+        }
+    }
+
     suspend fun list(collectionId: String): List<SelectedRoot> = roomDao.listAggregates(collectionId).map { aggregate ->
         aggregate.root.toDomain(
             aggregate.filters.mapTo(

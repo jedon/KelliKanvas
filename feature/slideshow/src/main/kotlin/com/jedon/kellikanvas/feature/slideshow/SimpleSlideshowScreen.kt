@@ -4,9 +4,11 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -21,19 +23,18 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
-import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.tv.material3.Text
 import com.jedon.kellikanvas.catalog.SelectedRoot
 import com.jedon.kellikanvas.model.AssetRef
 import com.jedon.kellikanvas.source.SourceAdapter
 import kotlinx.coroutines.delay
 
+@Suppress("ktlint:standard:function-naming")
 @Composable
 fun SimpleSlideshowScreen(
     adapter: SourceAdapter,
@@ -48,8 +49,15 @@ fun SimpleSlideshowScreen(
     var player by remember { mutableStateOf<SlideshowPlayerState?>(null) }
     var bitmap by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
     var loadFailure by remember { mutableStateOf(false) }
+    var photoLoadError by remember { mutableStateOf(false) }
 
     BackHandler(onBack = onExit)
+    DisposableEffect(Unit) {
+        onDispose {
+            bitmap?.recycle()
+            bitmap = null
+        }
+    }
     LaunchedEffect(Unit) {
         playlist = runCatching { SafPhotoPlaylist.build(adapter, roots) }.getOrElse {
             loadFailure = true
@@ -71,9 +79,14 @@ fun SimpleSlideshowScreen(
         val activePlaylist = playlist ?: return@LaunchedEffect
         val activePlayer = player ?: return@LaunchedEffect
         val asset = activePlaylist.getOrNull(activePlayer.index) ?: return@LaunchedEffect
-        bitmap = runCatching {
+        photoLoadError = false
+        val decoded = runCatching {
             PhotoBitmapLoader.decode(adapter.open(asset), maxEdgePx)
         }.getOrNull()
+        val previous = bitmap
+        bitmap = decoded
+        previous?.recycle()
+        photoLoadError = decoded == null
     }
 
     val contentModifier = modifier
@@ -95,13 +108,20 @@ fun SimpleSlideshowScreen(
         modifier = contentModifier
             .onKeyAction(Key.DirectionLeft) { player?.prev() }
             .onKeyAction(Key.DirectionRight) { player?.next() }
-            .onKeyAction(Key.DirectionCenter) { player?.togglePause() },
+            .onKeyAction(Key.DirectionCenter) { player?.togglePause() }
+            .onKeyAction(Key.Enter) { player?.togglePause() }
+            .onKeyAction(Key.NumPadEnter) { player?.togglePause() },
         contentAlignment = Alignment.Center,
     ) {
         when {
             playlist == null -> Text(text = "Loading…", color = Color.White)
             playlist?.isEmpty() == true -> Text(
                 text = if (loadFailure) "Unable to load slideshow" else "No photos in this collection",
+                color = Color.White,
+                textAlign = TextAlign.Center,
+            )
+            photoLoadError -> Text(
+                text = "Unable to display this photo",
                 color = Color.White,
                 textAlign = TextAlign.Center,
             )

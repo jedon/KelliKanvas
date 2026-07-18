@@ -132,25 +132,27 @@ private suspend fun loadShellState(container: AppContainer): ShellState {
 
     val activeCollection = collections.first { rootsByCollection[it.id].orEmpty().isNotEmpty() }
     val roots = rootsByCollection.getValue(activeCollection.id)
-    val profileId = roots.first().profileId
-    val connection = database.safConnections.get(profileId) ?: return ShellState(ShellRoute.Setup)
-    val treeUri = connection.treeUri.toUri()
     val resolver = container.contentResolver
-    val hasReadPermission = resolver.persistedUriPermissions.any {
-        it.uri == treeUri && it.isReadPermission
-    }
-    if (!hasReadPermission) return ShellState(ShellRoute.Setup)
+    for (root in roots) {
+        val connection = database.safConnections.get(root.profileId) ?: continue
+        val treeUri = connection.treeUri.toUri()
+        val hasReadPermission = resolver.persistedUriPermissions.any {
+            it.uri == treeUri && it.isReadPermission
+        }
+        if (!hasReadPermission) continue
 
-    val grant = SafTreeGrant(
-        treeUri = treeUri,
-        documentId = DocumentsContract.getTreeDocumentId(treeUri),
-        flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION,
-    )
-    val profile = SafProfile(profileId, grant)
-    return ShellState(
-        route = ShellRoute.Home,
-        collectionLabel = activeCollection.label,
-        roots = roots,
-        adapter = container.safAdapter(profile),
-    )
+        val grant = SafTreeGrant(
+            treeUri = treeUri,
+            documentId = DocumentsContract.getTreeDocumentId(treeUri),
+            flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION,
+        )
+        val profile = SafProfile(root.profileId, grant)
+        return ShellState(
+            route = ShellRoute.Home,
+            collectionLabel = activeCollection.label,
+            roots = listOf(root),
+            adapter = container.safAdapter(profile),
+        )
+    }
+    return ShellState(ShellRoute.Setup)
 }
