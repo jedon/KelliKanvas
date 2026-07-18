@@ -70,6 +70,7 @@ dependencies {
     implementation(libs.compose.ui)
     implementation(libs.compose.ui.tooling.preview)
     implementation(libs.compose.material3)
+    implementation(libs.compose.material.icons.core)
     implementation(libs.tv.material)
 
     debugImplementation(libs.compose.ui.tooling)

@@ -84,7 +84,6 @@ fun KelliKanvasNavHost(
             HomeScreen(
                 collectionLabel = homeState.collectionLabel,
                 canStartSlideshow = homeState.roots.isNotEmpty() && homeState.adapter != null,
-                initialFocus = preferences.lastHomeControl,
                 onStartSlideshow = {
                     if (homeState.roots.isNotEmpty() && homeState.adapter != null) {
                         navController.navigate(ShellRoutes.SLIDESHOW)
