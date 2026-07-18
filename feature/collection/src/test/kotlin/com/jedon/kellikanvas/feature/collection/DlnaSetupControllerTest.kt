@@ -90,7 +90,16 @@ class DlnaSetupControllerTest {
         assertThat(entries)
             .containsExactly(BrowseEntry(objectId = "photos", title = "Family photos", isFolder = true))
         assertThat(adapter.requestedFolder)
-            .isEqualTo(FolderRef(profile.id, ProviderObjectId("0")))
+            .isEqualTo(FolderRef(profile.id, profile.stableObjectId("0")))
+    }
+
+    @Test
+    fun listChildren_doesNotDoubleEncodeAlreadyStableObjectIds() = runTest {
+        val stable = profile.stableObjectId("photos").value
+        controller().listChildren(profile, folderObjectId = stable)
+
+        assertThat(adapter.requestedFolder)
+            .isEqualTo(FolderRef(profile.id, ProviderObjectId(stable)))
     }
 
     @Test

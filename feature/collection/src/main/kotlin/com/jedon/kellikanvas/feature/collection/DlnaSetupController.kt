@@ -48,7 +48,7 @@ class DlnaSetupController(
         folderObjectId: String = "0",
     ): List<BrowseEntry> = adapterFactory(profile)
         .listChildren(
-            folder = FolderRef(profile.id, ProviderObjectId(folderObjectId)),
+            folder = FolderRef(profile.id, profile.stableObjectId(folderObjectId)),
             cursor = null,
             limit = DEFAULT_PAGE_LIMIT,
         )

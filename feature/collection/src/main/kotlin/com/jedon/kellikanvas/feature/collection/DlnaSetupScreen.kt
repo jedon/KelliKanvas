@@ -5,9 +5,12 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
@@ -35,6 +38,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.jedon.kellikanvas.model.SourceFailure
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -136,9 +140,12 @@ fun DlnaSetupScreen(
                             folderObjectId = action.folderObjectId,
                             folders = folders,
                         )
-                    }.onFailure {
+                    }.onFailure { failure ->
                         phase = DlnaSetupPhase.Error(
-                            message = "Could not load folders from this server.",
+                            message = dlnaSetupFailureMessage(
+                                fallback = "Could not load folders from this server.",
+                                failure = failure,
+                            ),
                             retryAction = action,
                         )
                     }
@@ -167,9 +174,11 @@ fun DlnaSetupScreen(
     BackHandler(onBack = onBack)
     Scaffold(
         modifier = modifier,
+        contentWindowInsets = WindowInsets.safeDrawing,
         topBar = {
             TopAppBar(
                 title = { Text("Add QNAP") },
+                windowInsets = WindowInsets.statusBars,
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(
@@ -478,4 +487,20 @@ private sealed interface DlnaSetupAction {
         val server: DiscoveredServer,
         val folders: List<SelectedFolder>,
     ) : DlnaSetupAction
+}
+
+internal fun dlnaSetupFailureMessage(
+    fallback: String,
+    failure: Throwable,
+): String {
+    val detail =
+        when (failure) {
+            is SourceFailure -> failure.safeDetail
+            else -> failure.message?.takeIf { it.isNotBlank() }?.take(120)
+        }
+    return if (detail.isNullOrBlank() || detail == fallback) {
+        fallback
+    } else {
+        "$fallback ($detail)"
+    }
 }
