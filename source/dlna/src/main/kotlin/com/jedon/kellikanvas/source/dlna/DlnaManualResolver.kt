@@ -3,7 +3,6 @@ package com.jedon.kellikanvas.source.dlna
 import com.jedon.kellikanvas.model.SourceProfileId
 import kotlinx.coroutines.CancellationException
 import okhttp3.OkHttpClient
-import java.io.IOException
 import java.net.URI
 
 class DlnaManualResolver(
@@ -29,7 +28,7 @@ class DlnaManualResolver(
                 )
             } catch (failure: CancellationException) {
                 throw failure
-            } catch (failure: Throwable) {
+            } catch (failure: Exception) {
                 lastFailure = failure
             }
         }

@@ -103,6 +103,7 @@ class DlnaManualResolverTest {
         assertThat(failure).isSameInstanceAs(cancellation)
     }
 
-    private fun fixture(path: String): ByteArray =
-        requireNotNull(javaClass.classLoader?.getResourceAsStream(path)).use { it.readBytes() }
+    private fun fixture(path: String): ByteArray = requireNotNull(
+        javaClass.classLoader?.getResourceAsStream(path),
+    ).use { it.readBytes() }
 }
