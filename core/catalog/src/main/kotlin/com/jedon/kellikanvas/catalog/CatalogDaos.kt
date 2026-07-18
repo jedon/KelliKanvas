@@ -85,6 +85,17 @@ class SelectedRootDao internal constructor(
             ),
         )
     }
+
+    suspend fun delete(
+        collectionId: String,
+        profileId: SourceProfileId,
+        objectId: ProviderObjectId,
+    ) {
+        database.withTransaction {
+            roomDao.deleteFilters(collectionId, profileId.value, objectId.value)
+            roomDao.deleteRoot(collectionId, profileId.value, objectId.value)
+        }
+    }
 }
 
 class CatalogAssetDao internal constructor(

@@ -52,6 +52,16 @@ internal interface RoomSelectedRootDao {
     @Query("DELETE FROM selected_roots WHERE collection_id = :collectionId")
     suspend fun deleteAll(collectionId: String)
 
+    @Query(
+        "DELETE FROM selected_roots WHERE collection_id = :collectionId " +
+            "AND profile_id = :profileId AND object_id = :objectId",
+    )
+    suspend fun deleteRoot(
+        collectionId: String,
+        profileId: String,
+        objectId: String,
+    )
+
     @Insert
     suspend fun insertFilters(entities: List<SelectedRootFilterEntity>)
 
