@@ -50,7 +50,7 @@ interface DlnaBackend {
 
 class DlnaObjectMissingException : Exception("DLNA object missing")
 
-class DlnaSourceUnavailableException : Exception("DLNA source unavailable")
+class DlnaSourceUnavailableException(cause: Throwable? = null) : Exception("DLNA source unavailable", cause)
 
 class DlnaSourceAdapter(
     private val profile: DlnaProfile,

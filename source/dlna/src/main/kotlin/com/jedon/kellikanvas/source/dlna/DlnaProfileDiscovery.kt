@@ -63,7 +63,7 @@ class DlnaProfileDiscovery(
     }
 }
 
-private fun stableDlnaProfileId(udn: String): SourceProfileId {
+internal fun stableDlnaProfileId(udn: String): SourceProfileId {
     val digest = MessageDigest.getInstance("SHA-256").digest(udn.lowercase().encodeToByteArray())
     val token =
         digest.take(PROFILE_ID_DIGEST_BYTES)
