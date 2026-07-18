@@ -60,6 +60,7 @@ fun HomeScreen(
     val activity = LocalActivity.current
     val scope = rememberCoroutineScope()
     val pagerFocusRequester = remember { FocusRequester() }
+    val startFocusRequester = remember { FocusRequester() }
     val pagerState = rememberPagerState(
         initialPage = PAGE_HOME,
         pageCount = { PAGE_COUNT },
@@ -69,8 +70,20 @@ fun HomeScreen(
         scope.launch { pagerState.animateScrollToPage(page) }
     }
 
+    fun scrollToFromDpad(page: Int) {
+        scope.launch {
+            pagerState.animateScrollToPage(page)
+            // Child focusables on the old page are disposed when beyondViewportPageCount=0;
+            // restore pager focus so subsequent Left/Right still reach onPreviewKeyEvent.
+            pagerFocusRequester.requestFocus()
+        }
+    }
+
     LaunchedEffect(Unit) {
-        pagerFocusRequester.requestFocus()
+        // Prefer the primary CTA; fall back to the pager when Start cannot take focus.
+        if (!startFocusRequester.requestFocus()) {
+            pagerFocusRequester.requestFocus()
+        }
     }
 
     BackHandler(enabled = pagerState.currentPage != PAGE_COLLECTION) {
@@ -90,16 +103,17 @@ fun HomeScreen(
                 .focusRequester(pagerFocusRequester)
                 .focusable()
                 .onPreviewKeyEvent { event ->
-                    if (event.nativeKeyEvent.action != KeyEvent.ACTION_DOWN) {
+                    val native = event.nativeKeyEvent
+                    if (native.action != KeyEvent.ACTION_DOWN || native.repeatCount != 0) {
                         return@onPreviewKeyEvent false
                     }
                     val target = targetPageForDpad(
                         currentPage = pagerState.currentPage,
                         pageCount = PAGE_COUNT,
-                        keyCode = event.nativeKeyEvent.keyCode,
+                        keyCode = native.keyCode,
                     )
                     if (target != null) {
-                        scrollTo(target)
+                        scrollToFromDpad(target)
                         true
                     } else {
                         false
@@ -139,6 +153,7 @@ fun HomeScreen(
                             onUpdateHomeControl(HomeControl.START_OR_RESUME)
                             onStartSlideshow()
                         },
+                        startFocusRequester = startFocusRequester,
                         modifier = Modifier.padding(padding),
                     )
                 }
@@ -161,6 +176,7 @@ fun HomeScreen(
 private fun HomeCenterPage(
     canStartSlideshow: Boolean,
     onStartSlideshow: () -> Unit,
+    startFocusRequester: FocusRequester,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -182,7 +198,8 @@ private fun HomeCenterPage(
             enabled = canStartSlideshow,
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(min = 56.dp),
+                .heightIn(min = 56.dp)
+                .focusRequester(startFocusRequester),
         ) {
             Text("Start or Resume Slideshow")
         }
