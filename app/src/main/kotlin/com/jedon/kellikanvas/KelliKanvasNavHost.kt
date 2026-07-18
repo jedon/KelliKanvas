@@ -242,6 +242,7 @@ fun KelliKanvasNavHost(
                 onUpdatePreferences = updateAppPreferences,
                 onUpdateReducedMotion = updateReducedMotion,
                 onBack = { navController.popBackStack() },
+                updateCheckController = container.updateCheckController,
             )
         }
         composable(ShellRoutes.SLIDESHOW) {

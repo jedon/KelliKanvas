@@ -19,9 +19,11 @@ dependencies {
     implementation(libs.compose.ui)
     implementation(libs.compose.material3)
     implementation(libs.compose.material.icons.core)
+    implementation(libs.kotlinx.coroutines.core)
     implementation(libs.tv.material)
 
     testImplementation(project(":core:testing"))
     testImplementation(libs.junit4)
+    testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.truth)
 }

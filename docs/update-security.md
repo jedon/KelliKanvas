@@ -43,8 +43,12 @@ channel or trusted time, neither of which this private LAN design provides.
 ## Transport boundary
 
 Remote/OVH origins must use an explicitly configured HTTPS origin. The QNAP
-LAN endpoint remains exactly `http://darklingnas:8088`; HTTP is not described
-as TLS. For that endpoint the signed canonical manifest, streamed SHA-256 and
-size checks, independent checksum, exact package/version inspection, and match
-to the currently installed APK signer are the trust boundary. Redirects,
-userinfo, query/fragment tricks, and any unconfigured origin are rejected.
+LAN trust set is `http://darklingnas:8088` (canonical published origin) and the
+LAN IP alias `http://192.168.68.81:8088` for devices whose DNS does not resolve
+`darklingnas`. HTTP is not described as TLS. For those endpoints the signed
+canonical manifest, streamed SHA-256 and size checks, independent checksum,
+exact package/version inspection, and match to the currently installed APK
+signer are the trust boundary. Redirects, userinfo, query/fragment tricks, and
+any unconfigured origin are rejected. Control-file fetch tries the hostname
+first, then the LAN IP. Published envelope APK and checksum URLs must still use
+an allowed origin the device can reach (prefer `darklingnas` when LAN DNS works).

@@ -37,8 +37,18 @@ class UpdateOriginPolicy private constructor(private val allowed: Set<UpdateOrig
     }
 
     companion object {
-        val QNAP_LAN = UpdateOriginPolicy(setOf(UpdateOrigin("http", "darklingnas", 8088)))
+        /** Canonical QNAP LAN hostname used by published envelopes. */
+        val QNAP_LAN =
+            UpdateOriginPolicy(
+                setOf(
+                    UpdateOrigin("http", "darklingnas", 8088),
+                    // LAN IP alias when TV DNS does not resolve darklingnas.
+                    UpdateOrigin("http", "192.168.68.81", 8088),
+                ),
+            )
         val CONTROL_URI: URI = URI("http://darklingnas:8088/update-envelope.json")
+        val CONTROL_URI_LAN_IP: URI = URI("http://192.168.68.81:8088/update-envelope.json")
+        val CONTROL_URIS: List<URI> = listOf(CONTROL_URI, CONTROL_URI_LAN_IP)
 
         fun remoteHttps(host: String, port: Int = 443): UpdateOriginPolicy = UpdateOriginPolicy(
             setOf(UpdateOrigin("https", host.lowercase(), port)),

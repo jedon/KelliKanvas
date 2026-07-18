@@ -237,6 +237,22 @@ class AndroidAuthenticatedReleaseStore(context: Context) : AuthenticatedReleaseS
     }
 }
 
+class AndroidCheckTimestampStore(context: Context) : CheckTimestampStore {
+    private val preferences =
+        context.applicationContext.getSharedPreferences("kellikanvas-update-check", Context.MODE_PRIVATE)
+
+    override fun lastCheckMillis(): Long? {
+        if (!preferences.contains("lastCheckMillis")) return null
+        return preferences.getLong("lastCheckMillis", -1).takeIf { it >= 0 }
+    }
+
+    override fun recordCheck(timestampMillis: Long) {
+        preferences.edit(commit = true) {
+            putLong("lastCheckMillis", timestampMillis)
+        }
+    }
+}
+
 enum class ReplayDecision {
     NEW_RELEASE,
     IDEMPOTENT_RETRY,

@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.wifi.WifiManager
 import com.jedon.kellikanvas.catalog.KelliKanvasDatabaseFactory
 import com.jedon.kellikanvas.catalog.preferences.DataStoreAppPreferencesRepository
+import com.jedon.kellikanvas.feature.settings.UpdateCheckController
 import com.jedon.kellikanvas.source.dlna.AndroidMulticastLock
 import com.jedon.kellikanvas.source.dlna.DlnaManualResolver
 import com.jedon.kellikanvas.source.dlna.DlnaProfile
@@ -13,16 +14,18 @@ import com.jedon.kellikanvas.source.dlna.SsdpDiscoverer
 import com.jedon.kellikanvas.source.saf.ContentResolverSafDocuments
 import com.jedon.kellikanvas.source.saf.SafProfile
 import com.jedon.kellikanvas.source.saf.SafSourceAdapter
+import com.jedon.kellikanvas.update.createUpdateCheckController
 import okhttp3.OkHttpClient
 
 class AppContainer(appContext: Context) {
     val database = KelliKanvasDatabaseFactory.create(appContext)
     val preferences = DataStoreAppPreferencesRepository.create(appContext)
-
     val contentResolver = appContext.contentResolver
     val httpClient = OkHttpClient()
     private val wifiManager: WifiManager? =
         appContext.applicationContext.getSystemService(WifiManager::class.java)
+    val updateCheckController: UpdateCheckController? =
+        runCatching { createUpdateCheckController(appContext, httpClient) }.getOrNull()
 
     fun safAdapter(profile: SafProfile): SafSourceAdapter = SafSourceAdapter(
         profile = profile,
