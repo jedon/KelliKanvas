@@ -1,7 +1,6 @@
 package com.jedon.kellikanvas
 
 import android.content.Intent
-import android.net.Uri
 import android.provider.DocumentsContract
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -14,6 +13,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.core.net.toUri
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
@@ -134,7 +134,7 @@ private suspend fun loadShellState(container: AppContainer): ShellState {
     val roots = rootsByCollection.getValue(activeCollection.id)
     val profileId = roots.first().profileId
     val connection = database.safConnections.get(profileId) ?: return ShellState(ShellRoute.Setup)
-    val treeUri = Uri.parse(connection.treeUri)
+    val treeUri = connection.treeUri.toUri()
     val resolver = container.contentResolver
     val hasReadPermission = resolver.persistedUriPermissions.any {
         it.uri == treeUri && it.isReadPermission
