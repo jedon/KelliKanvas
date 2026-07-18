@@ -149,7 +149,7 @@ fun KelliKanvasNavHost(
                 Text(text = "No photos in this collection")
             } else {
                 SimpleSlideshowScreen(
-                    adapter = adapter,
+                    adapters = mapOf(adapter.profileId to adapter),
                     roots = slideshowState.roots,
                     slideDurationMillis = preferences.appPreferences.slideDurationMillis,
                     onExit = { navController.popBackStack() },

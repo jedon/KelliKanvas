@@ -31,13 +31,14 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.tv.material3.Text
 import com.jedon.kellikanvas.catalog.SelectedRoot
 import com.jedon.kellikanvas.model.AssetRef
+import com.jedon.kellikanvas.model.SourceProfileId
 import com.jedon.kellikanvas.source.SourceAdapter
 import kotlinx.coroutines.delay
 
 @Suppress("ktlint:standard:function-naming")
 @Composable
 fun SimpleSlideshowScreen(
-    adapter: SourceAdapter,
+    adapters: Map<SourceProfileId, SourceAdapter>,
     roots: List<SelectedRoot>,
     slideDurationMillis: Long = 15_000,
     onExit: () -> Unit,
@@ -59,7 +60,7 @@ fun SimpleSlideshowScreen(
         }
     }
     LaunchedEffect(Unit) {
-        playlist = runCatching { SafPhotoPlaylist.build(adapter, roots) }.getOrElse {
+        playlist = runCatching { CollectionPhotoPlaylist.build(adapters, roots) }.getOrElse {
             loadFailure = true
             emptyList()
         }
@@ -81,7 +82,7 @@ fun SimpleSlideshowScreen(
         val asset = activePlaylist.getOrNull(activePlayer.index) ?: return@LaunchedEffect
         photoLoadError = false
         val decoded = runCatching {
-            PhotoBitmapLoader.decode(adapter.open(asset), maxEdgePx)
+            PhotoBitmapLoader.decode(adapters.getValue(asset.profileId).open(asset), maxEdgePx)
         }.getOrNull()
         val previous = bitmap
         bitmap = decoded

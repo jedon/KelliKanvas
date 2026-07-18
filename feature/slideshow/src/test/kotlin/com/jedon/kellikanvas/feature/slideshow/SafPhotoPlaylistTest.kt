@@ -16,7 +16,6 @@ import com.jedon.kellikanvas.model.SourceStatus
 import com.jedon.kellikanvas.source.PhotoByteStream
 import com.jedon.kellikanvas.source.SourceAdapter
 import kotlinx.coroutines.test.runTest
-import org.junit.Assert.assertThrows
 import org.junit.Test
 
 class SafPhotoPlaylistTest {
@@ -30,9 +29,7 @@ class SafPhotoPlaylistTest {
         override val kind = SourceKind.SAF
         override val capabilities = SourceCapabilities(supportsPaging = true)
 
-        override suspend fun probe(): SourceStatus {
-            return SourceStatus(available = true, summary = "Fake active")
-        }
+        override suspend fun probe(): SourceStatus = SourceStatus(available = true, summary = "Fake active")
 
         override suspend fun listChildrenPage(
             folder: FolderRef,
@@ -50,28 +47,20 @@ class SafPhotoPlaylistTest {
             return Page(items, nextCursor)
         }
 
-        override suspend fun metadataFor(asset: AssetRef): PhotoMetadata {
-            return PhotoMetadata(asset)
-        }
+        override suspend fun metadataFor(asset: AssetRef): PhotoMetadata = PhotoMetadata(asset)
 
-        override suspend fun openStream(asset: AssetRef): PhotoByteStream {
-            throw UnsupportedOperationException()
-        }
+        override suspend fun openStream(asset: AssetRef): PhotoByteStream = throw UnsupportedOperationException()
     }
 
-    private fun createPhoto(id: String, mimeType: String = "image/jpeg"): SourceEntry.Photo {
-        return SourceEntry.Photo(
-            asset = AssetRef(profileId, ProviderObjectId(id), mimeType),
-            name = id
-        )
-    }
+    private fun createPhoto(id: String, mimeType: String = "image/jpeg"): SourceEntry.Photo = SourceEntry.Photo(
+        asset = AssetRef(profileId, ProviderObjectId(id), mimeType),
+        name = id,
+    )
 
-    private fun createFolder(id: String): SourceEntry.Folder {
-        return SourceEntry.Folder(
-            ref = FolderRef(profileId, ProviderObjectId(id)),
-            name = id
-        )
-    }
+    private fun createFolder(id: String): SourceEntry.Folder = SourceEntry.Folder(
+        ref = FolderRef(profileId, ProviderObjectId(id)),
+        name = id,
+    )
 
     @Test
     fun build_withoutDescendants_onlyDirectPhotos() = runTest {
@@ -87,13 +76,13 @@ class SafPhotoPlaylistTest {
         val childrenMap = mapOf(
             root1Ref to listOf(photo1, folder1),
             root2Ref to listOf(photo2),
-            folder1Ref to listOf(photo3)
+            folder1Ref to listOf(photo3),
         )
 
         val adapter = FakeSourceAdapter(profileId, childrenMap)
         val roots = listOf(
             SelectedRoot("col1", profileId, ProviderObjectId("root1"), "Root 1", includeDescendants = false),
-            SelectedRoot("col1", profileId, ProviderObjectId("root2"), "Root 2", includeDescendants = false)
+            SelectedRoot("col1", profileId, ProviderObjectId("root2"), "Root 2", includeDescendants = false),
         )
 
         val result = SafPhotoPlaylist.build(adapter, roots)
@@ -119,12 +108,12 @@ class SafPhotoPlaylistTest {
         val childrenMap = mapOf(
             root1Ref to listOf(photo1, folder1, photo4),
             folder1Ref to listOf(photo2, folder2),
-            folder2Ref to listOf(photo3)
+            folder2Ref to listOf(photo3),
         )
 
         val adapter = FakeSourceAdapter(profileId, childrenMap)
         val roots = listOf(
-            SelectedRoot("col1", profileId, ProviderObjectId("root1"), "Root 1", includeDescendants = true)
+            SelectedRoot("col1", profileId, ProviderObjectId("root1"), "Root 1", includeDescendants = true),
         )
 
         val result = SafPhotoPlaylist.build(adapter, roots)
@@ -142,7 +131,7 @@ class SafPhotoPlaylistTest {
         val photoGif = createPhoto("photoGif", "image/gif")
 
         val childrenMap = mapOf(
-            rootRef to listOf(photoJpeg, photoPng, photoGif)
+            rootRef to listOf(photoJpeg, photoPng, photoGif),
         )
 
         val adapter = FakeSourceAdapter(profileId, childrenMap)
@@ -153,8 +142,8 @@ class SafPhotoPlaylistTest {
                 objectId = ProviderObjectId("root"),
                 displayLabel = "Root",
                 includeDescendants = false,
-                fileTypeFilters = setOf("image/jpeg", "image/png")
-            )
+                fileTypeFilters = setOf("image/jpeg", "image/png"),
+            ),
         )
 
         val result = SafPhotoPlaylist.build(adapter, roots)
@@ -171,7 +160,7 @@ class SafPhotoPlaylistTest {
 
         val adapter = FakeSourceAdapter(profileId, childrenMap)
         val roots = listOf(
-            SelectedRoot("col1", profileId, ProviderObjectId("root"), "Root", includeDescendants = false)
+            SelectedRoot("col1", profileId, ProviderObjectId("root"), "Root", includeDescendants = false),
         )
 
         var exception: IllegalStateException? = null
