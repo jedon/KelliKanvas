@@ -1,0 +1,729 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 2,
+    "identityHash": "3852c8ea02b7c01970df08d97bdb6f2a",
+    "entities": [
+      {
+        "tableName": "source_profiles",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`profile_id` TEXT NOT NULL, `source_kind_code` TEXT NOT NULL, `display_name` TEXT NOT NULL, `status_code` TEXT NOT NULL, `last_successful_refresh_millis` INTEGER, `created_at_millis` INTEGER NOT NULL, PRIMARY KEY(`profile_id`))",
+        "fields": [
+          {
+            "fieldPath": "profileId",
+            "columnName": "profile_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sourceKindCode",
+            "columnName": "source_kind_code",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "displayName",
+            "columnName": "display_name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "statusCode",
+            "columnName": "status_code",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastSuccessfulRefreshMillis",
+            "columnName": "last_successful_refresh_millis",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "createdAtMillis",
+            "columnName": "created_at_millis",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "profile_id"
+          ]
+        }
+      },
+      {
+        "tableName": "collections",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`collection_id` TEXT NOT NULL, `label` TEXT NOT NULL, `index_status_code` TEXT NOT NULL, `last_indexed_at_millis` INTEGER, PRIMARY KEY(`collection_id`))",
+        "fields": [
+          {
+            "fieldPath": "collectionId",
+            "columnName": "collection_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "label",
+            "columnName": "label",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "indexStatusCode",
+            "columnName": "index_status_code",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastIndexedAtMillis",
+            "columnName": "last_indexed_at_millis",
+            "affinity": "INTEGER"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "collection_id"
+          ]
+        }
+      },
+      {
+        "tableName": "selected_roots",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`collection_id` TEXT NOT NULL, `profile_id` TEXT NOT NULL, `object_id` TEXT NOT NULL, `display_label` TEXT NOT NULL, `include_descendants` INTEGER NOT NULL, PRIMARY KEY(`collection_id`, `profile_id`, `object_id`), FOREIGN KEY(`collection_id`) REFERENCES `collections`(`collection_id`) ON UPDATE NO ACTION ON DELETE CASCADE , FOREIGN KEY(`profile_id`) REFERENCES `source_profiles`(`profile_id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "collectionId",
+            "columnName": "collection_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "profileId",
+            "columnName": "profile_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "objectId",
+            "columnName": "object_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "displayLabel",
+            "columnName": "display_label",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "includeDescendants",
+            "columnName": "include_descendants",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "collection_id",
+            "profile_id",
+            "object_id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_selected_roots_profile_id",
+            "unique": false,
+            "columnNames": [
+              "profile_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_selected_roots_profile_id` ON `${TABLE_NAME}` (`profile_id`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "collections",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "collection_id"
+            ],
+            "referencedColumns": [
+              "collection_id"
+            ]
+          },
+          {
+            "table": "source_profiles",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "profile_id"
+            ],
+            "referencedColumns": [
+              "profile_id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "selected_root_filters",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`collection_id` TEXT NOT NULL, `profile_id` TEXT NOT NULL, `object_id` TEXT NOT NULL, `filter_value` TEXT NOT NULL, PRIMARY KEY(`collection_id`, `profile_id`, `object_id`, `filter_value`), FOREIGN KEY(`collection_id`, `profile_id`, `object_id`) REFERENCES `selected_roots`(`collection_id`, `profile_id`, `object_id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "collectionId",
+            "columnName": "collection_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "profileId",
+            "columnName": "profile_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "objectId",
+            "columnName": "object_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "filterValue",
+            "columnName": "filter_value",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "collection_id",
+            "profile_id",
+            "object_id",
+            "filter_value"
+          ]
+        },
+        "foreignKeys": [
+          {
+            "table": "selected_roots",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "collection_id",
+              "profile_id",
+              "object_id"
+            ],
+            "referencedColumns": [
+              "collection_id",
+              "profile_id",
+              "object_id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "catalog_assets",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`profile_id` TEXT NOT NULL, `object_id` TEXT NOT NULL, `mime_type` TEXT NOT NULL, `display_name` TEXT NOT NULL, `width` INTEGER, `height` INTEGER, `capture_time_millis` INTEGER, `modified_at_millis` INTEGER, `version_tag` TEXT, PRIMARY KEY(`profile_id`, `object_id`), FOREIGN KEY(`profile_id`) REFERENCES `source_profiles`(`profile_id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "profileId",
+            "columnName": "profile_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "objectId",
+            "columnName": "object_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "mimeType",
+            "columnName": "mime_type",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "displayName",
+            "columnName": "display_name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "width",
+            "columnName": "width",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "height",
+            "columnName": "height",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "captureTimeMillis",
+            "columnName": "capture_time_millis",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "modifiedAtMillis",
+            "columnName": "modified_at_millis",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "versionTag",
+            "columnName": "version_tag",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "profile_id",
+            "object_id"
+          ]
+        },
+        "foreignKeys": [
+          {
+            "table": "source_profiles",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "profile_id"
+            ],
+            "referencedColumns": [
+              "profile_id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "playlist_cycles",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`cycle_id` TEXT NOT NULL, `collection_id` TEXT NOT NULL, `shuffle_seed` TEXT NOT NULL, `created_at_millis` INTEGER NOT NULL, PRIMARY KEY(`cycle_id`), FOREIGN KEY(`collection_id`) REFERENCES `collections`(`collection_id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "cycleId",
+            "columnName": "cycle_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "collectionId",
+            "columnName": "collection_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "shuffleSeed",
+            "columnName": "shuffle_seed",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAtMillis",
+            "columnName": "created_at_millis",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "cycle_id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_playlist_cycles_collection_id_cycle_id",
+            "unique": true,
+            "columnNames": [
+              "collection_id",
+              "cycle_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_playlist_cycles_collection_id_cycle_id` ON `${TABLE_NAME}` (`collection_id`, `cycle_id`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "collections",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "collection_id"
+            ],
+            "referencedColumns": [
+              "collection_id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "playlist_cycle_items",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`cycle_id` TEXT NOT NULL, `ordinal` INTEGER NOT NULL, `profile_id` TEXT NOT NULL, `object_id` TEXT NOT NULL, PRIMARY KEY(`cycle_id`, `ordinal`), FOREIGN KEY(`cycle_id`) REFERENCES `playlist_cycles`(`cycle_id`) ON UPDATE NO ACTION ON DELETE CASCADE , FOREIGN KEY(`profile_id`, `object_id`) REFERENCES `catalog_assets`(`profile_id`, `object_id`) ON UPDATE NO ACTION ON DELETE RESTRICT )",
+        "fields": [
+          {
+            "fieldPath": "cycleId",
+            "columnName": "cycle_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "ordinal",
+            "columnName": "ordinal",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "profileId",
+            "columnName": "profile_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "objectId",
+            "columnName": "object_id",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "cycle_id",
+            "ordinal"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_playlist_cycle_items_cycle_id_profile_id_object_id",
+            "unique": true,
+            "columnNames": [
+              "cycle_id",
+              "profile_id",
+              "object_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_playlist_cycle_items_cycle_id_profile_id_object_id` ON `${TABLE_NAME}` (`cycle_id`, `profile_id`, `object_id`)"
+          },
+          {
+            "name": "index_playlist_cycle_items_cycle_id_ordinal_profile_id_object_id",
+            "unique": true,
+            "columnNames": [
+              "cycle_id",
+              "ordinal",
+              "profile_id",
+              "object_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_playlist_cycle_items_cycle_id_ordinal_profile_id_object_id` ON `${TABLE_NAME}` (`cycle_id`, `ordinal`, `profile_id`, `object_id`)"
+          },
+          {
+            "name": "index_playlist_cycle_items_profile_id_object_id",
+            "unique": false,
+            "columnNames": [
+              "profile_id",
+              "object_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_playlist_cycle_items_profile_id_object_id` ON `${TABLE_NAME}` (`profile_id`, `object_id`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "playlist_cycles",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "cycle_id"
+            ],
+            "referencedColumns": [
+              "cycle_id"
+            ]
+          },
+          {
+            "table": "catalog_assets",
+            "onDelete": "RESTRICT",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "profile_id",
+              "object_id"
+            ],
+            "referencedColumns": [
+              "profile_id",
+              "object_id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "consumed_portrait_partners",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`cycle_id` TEXT NOT NULL, `profile_id` TEXT NOT NULL, `object_id` TEXT NOT NULL, PRIMARY KEY(`cycle_id`, `profile_id`, `object_id`), FOREIGN KEY(`cycle_id`, `profile_id`, `object_id`) REFERENCES `playlist_cycle_items`(`cycle_id`, `profile_id`, `object_id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "cycleId",
+            "columnName": "cycle_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "profileId",
+            "columnName": "profile_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "objectId",
+            "columnName": "object_id",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "cycle_id",
+            "profile_id",
+            "object_id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_consumed_portrait_partners_cycle_id_profile_id_object_id",
+            "unique": false,
+            "columnNames": [
+              "cycle_id",
+              "profile_id",
+              "object_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_consumed_portrait_partners_cycle_id_profile_id_object_id` ON `${TABLE_NAME}` (`cycle_id`, `profile_id`, `object_id`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "playlist_cycle_items",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "cycle_id",
+              "profile_id",
+              "object_id"
+            ],
+            "referencedColumns": [
+              "cycle_id",
+              "profile_id",
+              "object_id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "slideshow_sessions",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`collection_id` TEXT NOT NULL, `cycle_id` TEXT NOT NULL, `current_ordinal` INTEGER NOT NULL, `current_profile_id` TEXT NOT NULL, `current_object_id` TEXT NOT NULL, PRIMARY KEY(`collection_id`), FOREIGN KEY(`collection_id`, `cycle_id`) REFERENCES `playlist_cycles`(`collection_id`, `cycle_id`) ON UPDATE NO ACTION ON DELETE RESTRICT , FOREIGN KEY(`cycle_id`, `current_ordinal`, `current_profile_id`, `current_object_id`) REFERENCES `playlist_cycle_items`(`cycle_id`, `ordinal`, `profile_id`, `object_id`) ON UPDATE NO ACTION ON DELETE RESTRICT )",
+        "fields": [
+          {
+            "fieldPath": "collectionId",
+            "columnName": "collection_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "cycleId",
+            "columnName": "cycle_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "currentOrdinal",
+            "columnName": "current_ordinal",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "currentProfileId",
+            "columnName": "current_profile_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "currentObjectId",
+            "columnName": "current_object_id",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "collection_id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_slideshow_sessions_collection_id_cycle_id",
+            "unique": false,
+            "columnNames": [
+              "collection_id",
+              "cycle_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_slideshow_sessions_collection_id_cycle_id` ON `${TABLE_NAME}` (`collection_id`, `cycle_id`)"
+          },
+          {
+            "name": "index_slideshow_sessions_cycle_id_current_ordinal_current_profile_id_current_object_id",
+            "unique": false,
+            "columnNames": [
+              "cycle_id",
+              "current_ordinal",
+              "current_profile_id",
+              "current_object_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_slideshow_sessions_cycle_id_current_ordinal_current_profile_id_current_object_id` ON `${TABLE_NAME}` (`cycle_id`, `current_ordinal`, `current_profile_id`, `current_object_id`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "playlist_cycles",
+            "onDelete": "RESTRICT",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "collection_id",
+              "cycle_id"
+            ],
+            "referencedColumns": [
+              "collection_id",
+              "cycle_id"
+            ]
+          },
+          {
+            "table": "playlist_cycle_items",
+            "onDelete": "RESTRICT",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "cycle_id",
+              "current_ordinal",
+              "current_profile_id",
+              "current_object_id"
+            ],
+            "referencedColumns": [
+              "cycle_id",
+              "ordinal",
+              "profile_id",
+              "object_id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "slideshow_session_last_presented",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`collection_id` TEXT NOT NULL, `profile_id` TEXT NOT NULL, `object_id` TEXT NOT NULL, PRIMARY KEY(`collection_id`), FOREIGN KEY(`collection_id`) REFERENCES `slideshow_sessions`(`collection_id`) ON UPDATE NO ACTION ON DELETE CASCADE , FOREIGN KEY(`profile_id`, `object_id`) REFERENCES `catalog_assets`(`profile_id`, `object_id`) ON UPDATE NO ACTION ON DELETE RESTRICT )",
+        "fields": [
+          {
+            "fieldPath": "collectionId",
+            "columnName": "collection_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "profileId",
+            "columnName": "profile_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "objectId",
+            "columnName": "object_id",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "collection_id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_slideshow_session_last_presented_profile_id_object_id",
+            "unique": false,
+            "columnNames": [
+              "profile_id",
+              "object_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_slideshow_session_last_presented_profile_id_object_id` ON `${TABLE_NAME}` (`profile_id`, `object_id`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "slideshow_sessions",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "collection_id"
+            ],
+            "referencedColumns": [
+              "collection_id"
+            ]
+          },
+          {
+            "table": "catalog_assets",
+            "onDelete": "RESTRICT",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "profile_id",
+              "object_id"
+            ],
+            "referencedColumns": [
+              "profile_id",
+              "object_id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "saf_connections",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`profile_id` TEXT NOT NULL, `tree_uri` TEXT NOT NULL, PRIMARY KEY(`profile_id`), FOREIGN KEY(`profile_id`) REFERENCES `source_profiles`(`profile_id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "profileId",
+            "columnName": "profile_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "treeUri",
+            "columnName": "tree_uri",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "profile_id"
+          ]
+        },
+        "foreignKeys": [
+          {
+            "table": "source_profiles",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "profile_id"
+            ],
+            "referencedColumns": [
+              "profile_id"
+            ]
+          }
+        ]
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '3852c8ea02b7c01970df08d97bdb6f2a')"
+    ]
+  }
+}

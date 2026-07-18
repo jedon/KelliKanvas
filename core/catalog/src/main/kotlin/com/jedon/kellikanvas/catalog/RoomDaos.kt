@@ -26,6 +26,9 @@ internal interface RoomCollectionDao {
 
     @Query("SELECT * FROM collections WHERE collection_id = :collectionId")
     suspend fun get(collectionId: String): CatalogCollectionEntity?
+
+    @Query("SELECT * FROM collections")
+    suspend fun list(): List<CatalogCollectionEntity>
 }
 
 @Dao
@@ -200,3 +203,16 @@ internal data class SlideshowSessionAggregate(
     val session: SlideshowSessionEntity,
     val lastPresented: SlideshowSessionLastPresentedEntity?,
 )
+
+@Dao
+internal interface RoomSafConnectionDao {
+    @Upsert
+    suspend fun upsert(entity: SafConnectionEntity)
+
+    @Query("SELECT * FROM saf_connections WHERE profile_id = :profileId")
+    suspend fun get(profileId: String): SafConnectionEntity?
+
+    @Query("DELETE FROM saf_connections WHERE profile_id = :profileId")
+    suspend fun delete(profileId: String)
+}
+

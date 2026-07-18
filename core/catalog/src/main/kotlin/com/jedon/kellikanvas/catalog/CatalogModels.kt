@@ -238,3 +238,24 @@ class CycleSnapshot(
         session = session,
     )
 }
+
+class SafConnection(
+    val profileId: SourceProfileId,
+    val treeUri: String,
+) {
+    init {
+        require(treeUri.isNotBlank()) { "Tree URI must not be blank" }
+    }
+
+    override fun equals(other: Any?): Boolean =
+        other is SafConnection &&
+            profileId == other.profileId &&
+            treeUri == other.treeUri
+
+    override fun hashCode(): Int =
+        listOf(profileId, treeUri).hashCode()
+
+    override fun toString(): String =
+        "SafConnection(profileId=$profileId, treeUri=<redacted>)"
+}
+

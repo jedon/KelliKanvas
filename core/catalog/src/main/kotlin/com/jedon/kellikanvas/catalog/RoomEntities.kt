@@ -236,3 +236,21 @@ internal data class SlideshowSessionLastPresentedEntity(
     @ColumnInfo(name = "profile_id") val profileId: String,
     @ColumnInfo(name = "object_id") val objectId: String,
 )
+
+@Entity(
+    tableName = "saf_connections",
+    primaryKeys = ["profile_id"],
+    foreignKeys = [
+        ForeignKey(
+            entity = SourceProfileEntity::class,
+            parentColumns = ["profile_id"],
+            childColumns = ["profile_id"],
+            onDelete = ForeignKey.CASCADE,
+        ),
+    ],
+)
+internal data class SafConnectionEntity(
+    @ColumnInfo(name = "profile_id") val profileId: String,
+    @ColumnInfo(name = "tree_uri") val treeUri: String,
+)
+

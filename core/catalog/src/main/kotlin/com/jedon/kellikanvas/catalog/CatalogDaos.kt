@@ -16,12 +16,24 @@ class SourceProfileDao internal constructor(
     suspend fun delete(id: SourceProfileId) = roomDao.delete(id.value)
 }
 
+class SafConnectionDao internal constructor(
+    private val roomDao: RoomSafConnectionDao,
+) {
+    suspend fun upsert(connection: SafConnection) = roomDao.upsert(connection.toEntity())
+
+    suspend fun get(id: SourceProfileId): SafConnection? = roomDao.get(id.value)?.toDomain()
+
+    suspend fun delete(id: SourceProfileId) = roomDao.delete(id.value)
+}
+
 class CollectionDao internal constructor(
     private val roomDao: RoomCollectionDao,
 ) {
     suspend fun upsert(collection: CatalogCollection) = roomDao.upsert(collection.toEntity())
 
     suspend fun get(collectionId: String): CatalogCollection? = roomDao.get(collectionId)?.toDomain()
+
+    suspend fun list(): List<CatalogCollection> = roomDao.list().map(CatalogCollectionEntity::toDomain)
 }
 
 class SelectedRootDao internal constructor(
@@ -301,3 +313,14 @@ private fun assetKey(
     profileId: String,
     objectId: String,
 ) = AssetKey(SourceProfileId(profileId), ProviderObjectId(objectId))
+
+private fun SafConnection.toEntity() = SafConnectionEntity(
+    profileId = profileId.value,
+    treeUri = treeUri,
+)
+
+private fun SafConnectionEntity.toDomain() = SafConnection(
+    profileId = SourceProfileId(profileId),
+    treeUri = treeUri,
+)
+

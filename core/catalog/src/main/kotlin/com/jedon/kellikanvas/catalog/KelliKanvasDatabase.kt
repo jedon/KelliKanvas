@@ -4,6 +4,8 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [
@@ -17,8 +19,9 @@ import androidx.room.RoomDatabase
         ConsumedPortraitPartnerEntity::class,
         SlideshowSessionEntity::class,
         SlideshowSessionLastPresentedEntity::class,
+        SafConnectionEntity::class,
     ],
-    version = 1,
+    version = 2,
     exportSchema = true,
 )
 abstract class KelliKanvasDatabase : RoomDatabase() {
@@ -37,6 +40,8 @@ abstract class KelliKanvasDatabase : RoomDatabase() {
     internal abstract fun roomConsumedPortraitPartners(): RoomConsumedPortraitPartnerDao
 
     internal abstract fun roomSlideshowSessions(): RoomSlideshowSessionDao
+
+    internal abstract fun roomSafConnections(): RoomSafConnectionDao
 
     val sourceProfiles: SourceProfileDao by lazy {
         SourceProfileDao(roomSourceProfiles())
@@ -62,6 +67,9 @@ abstract class KelliKanvasDatabase : RoomDatabase() {
     val slideshowSessions: SlideshowSessionDao by lazy {
         SlideshowSessionDao(roomSlideshowSessions())
     }
+    val safConnections: SafConnectionDao by lazy {
+        SafConnectionDao(roomSafConnections())
+    }
     val cycleSnapshots: CycleSnapshotDao by lazy {
         CycleSnapshotDao(this)
     }
@@ -77,10 +85,28 @@ object KelliKanvasDatabaseFactory {
         context.applicationContext,
         KelliKanvasDatabase::class.java,
         databaseName,
-    ).build()
+    )
+        .addMigrations(MIGRATION_1_2)
+        .build()
 
     fun inMemory(context: Context): KelliKanvasDatabase = Room.inMemoryDatabaseBuilder(
         context.applicationContext,
         KelliKanvasDatabase::class.java,
     ).build()
 }
+
+val MIGRATION_1_2 = object : Migration(1, 2) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS `saf_connections` (
+                `profile_id` TEXT NOT NULL,
+                `tree_uri` TEXT NOT NULL,
+                PRIMARY KEY(`profile_id`),
+                FOREIGN KEY(`profile_id`) REFERENCES `source_profiles`(`profile_id`) ON UPDATE NO ACTION ON DELETE CASCADE
+            )
+            """.trimIndent()
+        )
+    }
+}
+
