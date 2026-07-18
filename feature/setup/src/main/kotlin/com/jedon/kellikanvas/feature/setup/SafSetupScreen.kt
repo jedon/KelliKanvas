@@ -29,6 +29,7 @@ import com.jedon.kellikanvas.source.saf.SafTreePickerContract
 import java.util.UUID
 import kotlinx.coroutines.launch
 
+@Suppress("ktlint:standard:function-naming")
 @Composable
 fun SafSetupScreen(
     controller: SafSetupController,

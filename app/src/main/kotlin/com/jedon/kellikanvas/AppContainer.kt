@@ -13,9 +13,8 @@ class AppContainer(appContext: Context) {
 
     val contentResolver = appContext.contentResolver
 
-    fun safAdapter(profile: SafProfile): SafSourceAdapter =
-        SafSourceAdapter(
-            profile = profile,
-            documents = ContentResolverSafDocuments(contentResolver),
-        )
+    fun safAdapter(profile: SafProfile): SafSourceAdapter = SafSourceAdapter(
+        profile = profile,
+        documents = ContentResolverSafDocuments(contentResolver),
+    )
 }

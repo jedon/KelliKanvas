@@ -27,6 +27,7 @@ import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import com.jedon.kellikanvas.catalog.preferences.HomeControl
 
+@Suppress("ktlint:standard:function-naming")
 @Composable
 fun HomeScreen(
     collectionLabel: String,
@@ -89,8 +90,11 @@ fun HomeScreen(
                         }
                     }
                     .background(
-                        if (enabled) MaterialTheme.colorScheme.surface
-                        else MaterialTheme.colorScheme.surface.copy(alpha = 0.45f),
+                        if (enabled) {
+                            MaterialTheme.colorScheme.surface
+                        } else {
+                            MaterialTheme.colorScheme.surface.copy(alpha = 0.45f)
+                        },
                     )
                     .padding(horizontal = 24.dp, vertical = 18.dp),
                 verticalAlignment = Alignment.CenterVertically,

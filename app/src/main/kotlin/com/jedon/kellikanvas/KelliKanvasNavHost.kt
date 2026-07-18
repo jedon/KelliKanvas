@@ -44,6 +44,7 @@ private data class ShellState(
     val adapter: com.jedon.kellikanvas.source.SourceAdapter? = null,
 )
 
+@Suppress("ktlint:standard:function-naming")
 @Composable
 fun KelliKanvasNavHost(
     container: AppContainer,
