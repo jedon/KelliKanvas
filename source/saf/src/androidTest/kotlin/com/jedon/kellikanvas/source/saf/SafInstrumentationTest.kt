@@ -125,13 +125,17 @@ class SafInstrumentationTest {
             )
 
         assertTargetCanQueryChildren()
-        assertThat(callGrantBroker(SafGrantBrokerProvider.METHOD_REVOKE)).isTrue()
-        assertThat(targetReadPermission()).isEqualTo(PackageManager.PERMISSION_DENIED)
-        expectSyncFailure<SecurityException> {
-            queryTargetChildren()
+        // URI grant revoke isolation only applies across packages; library androidTest hosts
+        // broker + client in one APK.
+        if (targetPackageName != providerContext.packageName) {
+            assertThat(callGrantBroker(SafGrantBrokerProvider.METHOD_REVOKE)).isTrue()
+            assertThat(targetReadPermission()).isEqualTo(PackageManager.PERMISSION_DENIED)
+            expectSyncFailure<SecurityException> {
+                queryTargetChildren()
+            }
+            assertThat(callGrantBroker(SafGrantBrokerProvider.METHOD_GRANT)).isTrue()
+            assertTargetCanQueryChildren()
         }
-        assertThat(callGrantBroker(SafGrantBrokerProvider.METHOD_GRANT)).isTrue()
-        assertTargetCanQueryChildren()
 
         resolver.openFileDescriptor(documentUri, "r").use {
             assertThat(it).isNotNull()
