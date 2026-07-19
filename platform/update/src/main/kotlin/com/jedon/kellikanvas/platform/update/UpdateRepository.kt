@@ -233,7 +233,7 @@ class AuthenticatedManifestRepository(
         when (val error = lastError) {
             null -> throw UpdateRejected("update check failed")
             is UpdateRejected -> throw error
-            else -> throw UpdateRejected("update check failed", error)
+            else -> throw error
         }
     }
 
