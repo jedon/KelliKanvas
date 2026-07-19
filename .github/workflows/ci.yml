@@ -99,43 +99,18 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a # v4
 
-      - name: Install API 34 emulator
-        run: |
-          set -euo pipefail
-          export PATH="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$ANDROID_SDK_ROOT/platform-tools:$ANDROID_SDK_ROOT/emulator:$PATH"
-          sudo chmod 666 /dev/kvm
-          sdkmanager \
-            "platform-tools" "emulator" "platforms;android-34" \
-            "system-images;android-34;google_apis;x86_64"
-          # --device skips the interactive custom hardware profile prompt.
-          avdmanager create avd --force --name ci-api34 \
-            --package "system-images;android-34;google_apis;x86_64" \
-            --device pixel_6
-          test -f "$HOME/.android/avd/ci-api34.ini"
-          emulator -list-avds | grep -Fx ci-api34
-          command -v adb
-
       - name: Run instrumented tests on API 34
-        run: |
-          set -euo pipefail
-          export PATH="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$ANDROID_SDK_ROOT/platform-tools:$ANDROID_SDK_ROOT/emulator:$PATH"
-          cleanup() { adb emu kill >/dev/null 2>&1 || true; }
-          trap cleanup EXIT
-          emulator -avd ci-api34 \
-            -no-window -no-audio -no-boot-anim -no-snapshot -gpu swiftshader_indirect &
-          adb wait-for-device
-          for attempt in $(seq 1 60); do
-            if [[ "$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" == "1" ]]; then
-              break
-            fi
-            sleep 5
-          done
-          [[ "$(adb shell getprop sys.boot_completed | tr -d '\r')" == "1" ]]
-          adb shell settings put global window_animation_scale 0
-          adb shell settings put global transition_animation_scale 0
-          adb shell settings put global animator_duration_scale 0
-          ./gradlew --dependency-verification strict \
-            :source:saf:connectedDebugAndroidTest \
-            :core:catalog:connectedDebugAndroidTest \
-            :core:security:connectedDebugAndroidTest \
-            --stacktrace
+        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
+        with:
+          api-level: 34
+          arch: x86_64
+          target: google_apis
+          force-avd-creation: true
+          emulator-options: -no-snapshot -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim
+          disable-animations: true
+          script: |
+            ./gradlew --dependency-verification strict \
+              :source:saf:connectedDebugAndroidTest \
+              :core:catalog:connectedDebugAndroidTest \
+              :core:security:connectedDebugAndroidTest \
+              --stacktrace
