@@ -102,20 +102,25 @@ jobs:
       - name: Install API 34 emulator
         run: |
           set -euo pipefail
+          export PATH="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$ANDROID_SDK_ROOT/platform-tools:$ANDROID_SDK_ROOT/emulator:$PATH"
           sudo chmod 666 /dev/kvm
-          "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" \
+          sdkmanager \
             "platform-tools" "emulator" "platforms;android-34" \
             "system-images;android-34;google_apis;x86_64"
-          printf 'no\n' | "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/avdmanager" \
+          printf 'no\n' | avdmanager \
             create avd --force --name ci-api34 \
             --package "system-images;android-34;google_apis;x86_64"
+          test -f "$HOME/.android/avd/ci-api34.ini"
+          emulator -list-avds | grep -Fx ci-api34
+          command -v adb
 
       - name: Run instrumented tests on API 34
         run: |
           set -euo pipefail
+          export PATH="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$ANDROID_SDK_ROOT/platform-tools:$ANDROID_SDK_ROOT/emulator:$PATH"
           cleanup() { adb emu kill >/dev/null 2>&1 || true; }
           trap cleanup EXIT
-          "$ANDROID_SDK_ROOT/emulator/emulator" -avd ci-api34 \
+          emulator -avd ci-api34 \
             -no-window -no-audio -no-boot-anim -no-snapshot -gpu swiftshader_indirect &
           adb wait-for-device
           for attempt in $(seq 1 60); do
