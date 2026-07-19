@@ -107,9 +107,10 @@ jobs:
           sdkmanager \
             "platform-tools" "emulator" "platforms;android-34" \
             "system-images;android-34;google_apis;x86_64"
-          printf 'no\n' | avdmanager \
-            create avd --force --name ci-api34 \
-            --package "system-images;android-34;google_apis;x86_64"
+          # --device skips the interactive custom hardware profile prompt.
+          avdmanager create avd --force --name ci-api34 \
+            --package "system-images;android-34;google_apis;x86_64" \
+            --device pixel_6
           test -f "$HOME/.android/avd/ci-api34.ini"
           emulator -list-avds | grep -Fx ci-api34
           command -v adb
