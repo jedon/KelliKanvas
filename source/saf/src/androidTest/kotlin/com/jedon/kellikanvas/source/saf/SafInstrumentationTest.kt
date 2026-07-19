@@ -18,6 +18,7 @@ import org.junit.After
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
+import java.io.FileNotFoundException
 import java.util.concurrent.atomic.AtomicInteger
 
 @RunWith(AndroidJUnit4::class)
@@ -135,9 +136,15 @@ class SafInstrumentationTest {
         resolver.openFileDescriptor(documentUri, "r").use {
             assertThat(it).isNotNull()
         }
-        expectSyncFailure<SecurityException> {
-            resolver.openFileDescriptor(documentUri, "w")
-        }
+        // DocumentsContract wraps provider SecurityException as FileNotFoundException on some APIs.
+        val writeFailure =
+            runCatching { resolver.openFileDescriptor(documentUri, "w") }.exceptionOrNull()
+        assertThat(writeFailure).isNotNull()
+        assertThat(
+            writeFailure is SecurityException ||
+                writeFailure is FileNotFoundException ||
+                writeFailure?.cause is SecurityException,
+        ).isTrue()
 
         val masked =
             SafTreeGrant.maskFlags(
