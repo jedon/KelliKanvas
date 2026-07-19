@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Cleartext base-config is required for IP-literal DLNA (Android domain-config
+  does not match IP URLs). Destination safety is enforced in-app; see
+  app/src/main/res/xml/network_security_config.xml.
+-->
+<lint>
+    <issue id="InsecureBaseConfiguration" severity="ignore" />
+</lint>
