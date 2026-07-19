@@ -27,7 +27,7 @@ class DlnaSecurityException(message: String) : SecurityException(message)
 
 class DlnaEndpointPolicy(
     discoveredLocation: URI,
-    private val privateAddressPredicate: (InetAddress) -> Boolean = ::isPrivateOrLinkLocal,
+    private val privateAddressPredicate: (InetAddress) -> Boolean = ::isPrivateLanAddress,
 ) {
     private val scheme = discoveredLocation.scheme?.lowercase()
         ?: throw DlnaSecurityException("Endpoint scheme missing")
@@ -39,7 +39,7 @@ class DlnaEndpointPolicy(
         validateShape(discoveredLocation)
         val addresses = resolve(discoveredLocation)
         if (addresses.isEmpty() || addresses.any { !privateAddressPredicate(it) }) {
-            throw DlnaSecurityException("Discovered endpoint is not private or link-local")
+            throw DlnaSecurityException("Discovered endpoint is not a private LAN address")
         }
         discoveredAddresses = addresses.toSet()
     }
@@ -261,16 +261,21 @@ internal val NO_CREDENTIALS_INTERCEPTOR =
         )
     }
 
-private fun isPrivateOrLinkLocal(address: InetAddress): Boolean {
-    if (address.isAnyLocalAddress || address.isMulticastAddress || address.isLoopbackAddress) return false
-    if (address.isLinkLocalAddress || address.isSiteLocalAddress) return true
+/** RFC1918 IPv4 and unique-local IPv6 only; denies link-local, loopback, multicast, and public. */
+internal fun isPrivateLanAddress(address: InetAddress): Boolean {
+    if (address.isAnyLocalAddress ||
+        address.isMulticastAddress ||
+        address.isLoopbackAddress ||
+        address.isLinkLocalAddress
+    ) {
+        return false
+    }
     return when (address) {
         is Inet4Address -> {
             val octets = address.address.map { it.toInt() and 0xff }
             octets[0] == 10 ||
                 (octets[0] == 172 && octets[1] in 16..31) ||
-                (octets[0] == 192 && octets[1] == 168) ||
-                (octets[0] == 169 && octets[1] == 254)
+                (octets[0] == 192 && octets[1] == 168)
         }
         is Inet6Address -> {
             val first = address.address[0].toInt() and 0xff

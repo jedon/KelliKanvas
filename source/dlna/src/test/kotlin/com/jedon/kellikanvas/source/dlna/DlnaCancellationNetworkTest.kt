@@ -97,7 +97,7 @@ class DlnaCancellationNetworkTest {
                     "M-SEARCH * HTTP/1.1\r\n\r\n".encodeToByteArray(),
                     SSDP_MAX_DATAGRAM_BYTES,
                     30_000,
-                ) { _, _ -> }
+                ) { _, _, _ -> }
             }
         delay(100)
 
