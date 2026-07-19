@@ -68,6 +68,10 @@ enum class CollectionIndexStatus {
     UNKNOWN,
 }
 
+object CatalogIds {
+    const val DEFAULT_COLLECTION_ID = "default"
+}
+
 data class CatalogCollection(
     val id: String,
     val label: String,
@@ -237,4 +241,93 @@ class CycleSnapshot(
         consumedPartners = consumedPartners,
         session = session,
     )
+}
+
+class SafConnection(
+    val profileId: SourceProfileId,
+    val treeUri: String,
+) {
+    init {
+        require(treeUri.isNotBlank()) { "Tree URI must not be blank" }
+        require(!treeUri.contains('\n')) { "SAF tree URI must be single-line" }
+    }
+
+    override fun equals(other: Any?): Boolean = other is SafConnection &&
+        profileId == other.profileId &&
+        treeUri == other.treeUri
+
+    override fun hashCode(): Int = listOf(profileId, treeUri).hashCode()
+
+    override fun toString(): String = "SafConnection(profileId=$profileId, treeUri=<redacted>)"
+}
+
+class DlnaConnection(
+    val profileId: SourceProfileId,
+    val serverUdn: String,
+    val descriptionLocation: String,
+    val controlUrl: String,
+    val contentDirectoryVersion: Int,
+    val displayName: String,
+) {
+    init {
+        require(serverUdn.startsWith("uuid:", ignoreCase = true))
+        require(descriptionLocation.isNotBlank() && !descriptionLocation.contains('\n'))
+        require(controlUrl.isNotBlank() && !controlUrl.contains('\n'))
+        require(contentDirectoryVersion in 1..2)
+        require(displayName.isNotBlank())
+    }
+
+    override fun equals(other: Any?): Boolean = other is DlnaConnection &&
+        profileId == other.profileId &&
+        serverUdn == other.serverUdn &&
+        descriptionLocation == other.descriptionLocation &&
+        controlUrl == other.controlUrl &&
+        contentDirectoryVersion == other.contentDirectoryVersion &&
+        displayName == other.displayName
+
+    override fun hashCode(): Int = listOf(
+        profileId,
+        serverUdn,
+        descriptionLocation,
+        controlUrl,
+        contentDirectoryVersion,
+        displayName,
+    ).hashCode()
+
+    override fun toString(): String = "DlnaConnection(profileId=$profileId, serverUdn=$serverUdn, " +
+        "descriptionLocation=<redacted>, controlUrl=<redacted>, " +
+        "contentDirectoryVersion=$contentDirectoryVersion, displayName=$displayName)"
+}
+
+class SmbConnection(
+    val profileId: SourceProfileId,
+    val host: String,
+    val port: Int,
+    val share: String,
+    val domain: String,
+    val username: String,
+    val displayName: String,
+) {
+    init {
+        require(host.isNotBlank() && !host.contains('\n'))
+        require(port in 1..65535)
+        require(share.isNotBlank() && !share.contains('/') && !share.contains('\\'))
+        require(!domain.contains('\n'))
+        require(username.isNotBlank() && !username.contains('\n'))
+        require(displayName.isNotBlank())
+    }
+
+    override fun equals(other: Any?): Boolean = other is SmbConnection &&
+        profileId == other.profileId &&
+        host == other.host &&
+        port == other.port &&
+        share == other.share &&
+        domain == other.domain &&
+        username == other.username &&
+        displayName == other.displayName
+
+    override fun hashCode(): Int = listOf(profileId, host, port, share, domain, username, displayName).hashCode()
+
+    override fun toString(): String = "SmbConnection(profileId=$profileId, host=$host, port=$port, share=$share, " +
+        "domain=<redacted>, username=<redacted>, displayName=$displayName)"
 }

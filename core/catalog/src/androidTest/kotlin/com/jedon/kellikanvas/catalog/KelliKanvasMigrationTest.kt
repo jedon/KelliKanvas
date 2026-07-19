@@ -30,12 +30,62 @@ class KelliKanvasMigrationTest {
                 InstrumentationRegistry.getInstrumentation().targetContext,
                 KelliKanvasDatabase::class.java,
                 DATABASE_NAME,
-            ).build()
+            )
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+                .build()
         try {
             database.openHelper.writableDatabase
         } finally {
             database.close()
         }
+    }
+
+    @Test
+    fun migrate1To2CreatesSafConnectionsTable() {
+        helper.createDatabase(DATABASE_NAME, 1).close()
+
+        val database = helper.runMigrationsAndValidate(DATABASE_NAME, 2, true, MIGRATION_1_2)
+
+        val tableExists =
+            database.query(
+                "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'saf_connections'",
+            ).use { cursor ->
+                cursor.moveToFirst()
+            }
+        assertThat(tableExists).isTrue()
+        database.close()
+    }
+
+    @Test
+    fun migrate2To3CreatesDlnaConnectionsTable() {
+        helper.createDatabase(DATABASE_NAME, 2).close()
+
+        val database = helper.runMigrationsAndValidate(DATABASE_NAME, 3, true, MIGRATION_2_3)
+
+        val tableExists =
+            database.query(
+                "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'dlna_connections'",
+            ).use { cursor ->
+                cursor.moveToFirst()
+            }
+        assertThat(tableExists).isTrue()
+        database.close()
+    }
+
+    @Test
+    fun migrate3To4CreatesSmbConnectionsTable() {
+        helper.createDatabase(DATABASE_NAME, 3).close()
+
+        val database = helper.runMigrationsAndValidate(DATABASE_NAME, 4, true, MIGRATION_3_4)
+
+        val tableExists =
+            database.query(
+                "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'smb_connections'",
+            ).use { cursor ->
+                cursor.moveToFirst()
+            }
+        assertThat(tableExists).isTrue()
+        database.close()
     }
 
     @Test

@@ -58,6 +58,10 @@ dist/
 
 # IDE and OS files
 .idea/
+.cursor/
 *.iml
 .DS_Store
 Thumbs.db
+
+# Local JDK copies (never commit toolchains into the repo)
+.jdk17/

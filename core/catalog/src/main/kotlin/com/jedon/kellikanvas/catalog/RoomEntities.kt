@@ -236,3 +236,63 @@ internal data class SlideshowSessionLastPresentedEntity(
     @ColumnInfo(name = "profile_id") val profileId: String,
     @ColumnInfo(name = "object_id") val objectId: String,
 )
+
+@Entity(
+    tableName = "saf_connections",
+    primaryKeys = ["profile_id"],
+    foreignKeys = [
+        ForeignKey(
+            entity = SourceProfileEntity::class,
+            parentColumns = ["profile_id"],
+            childColumns = ["profile_id"],
+            onDelete = ForeignKey.CASCADE,
+        ),
+    ],
+)
+internal data class SafConnectionEntity(
+    @ColumnInfo(name = "profile_id") val profileId: String,
+    @ColumnInfo(name = "tree_uri") val treeUri: String,
+)
+
+@Entity(
+    tableName = "dlna_connections",
+    primaryKeys = ["profile_id"],
+    foreignKeys = [
+        ForeignKey(
+            entity = SourceProfileEntity::class,
+            parentColumns = ["profile_id"],
+            childColumns = ["profile_id"],
+            onDelete = ForeignKey.CASCADE,
+        ),
+    ],
+)
+internal data class DlnaConnectionEntity(
+    @ColumnInfo(name = "profile_id") val profileId: String,
+    @ColumnInfo(name = "server_udn") val serverUdn: String,
+    @ColumnInfo(name = "description_location") val descriptionLocation: String,
+    @ColumnInfo(name = "control_url") val controlUrl: String,
+    @ColumnInfo(name = "content_directory_version") val contentDirectoryVersion: Int,
+    @ColumnInfo(name = "display_name") val displayName: String,
+)
+
+@Entity(
+    tableName = "smb_connections",
+    primaryKeys = ["profile_id"],
+    foreignKeys = [
+        ForeignKey(
+            entity = SourceProfileEntity::class,
+            parentColumns = ["profile_id"],
+            childColumns = ["profile_id"],
+            onDelete = ForeignKey.CASCADE,
+        ),
+    ],
+)
+internal data class SmbConnectionEntity(
+    @ColumnInfo(name = "profile_id") val profileId: String,
+    @ColumnInfo(name = "host") val host: String,
+    @ColumnInfo(name = "port") val port: Int,
+    @ColumnInfo(name = "share") val share: String,
+    @ColumnInfo(name = "domain") val domain: String,
+    @ColumnInfo(name = "username") val username: String,
+    @ColumnInfo(name = "display_name") val displayName: String,
+)

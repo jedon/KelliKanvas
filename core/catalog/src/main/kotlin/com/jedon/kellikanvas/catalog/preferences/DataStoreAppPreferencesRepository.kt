@@ -1,5 +1,6 @@
 package com.jedon.kellikanvas.catalog.preferences
 
+import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
 import androidx.datastore.preferences.core.MutablePreferences
@@ -9,6 +10,8 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
 import com.jedon.kellikanvas.model.AppPreferences
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.map
@@ -46,6 +49,17 @@ class DataStoreAppPreferencesRepository(
                     transitionDurationMillis = transitionDurationMillis,
                 ),
             )
+        }
+    }
+
+    companion object {
+        private const val DATA_STORE_FILE_NAME = "app_preferences.preferences_pb"
+
+        fun create(context: Context): DataStoreAppPreferencesRepository {
+            val applicationContext = context.applicationContext
+            val file = File(applicationContext.filesDir, DATA_STORE_FILE_NAME)
+            val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+            return DataStoreAppPreferencesRepositoryFactory.create(file, scope)
         }
     }
 }

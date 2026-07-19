@@ -16,12 +16,44 @@ class SourceProfileDao internal constructor(
     suspend fun delete(id: SourceProfileId) = roomDao.delete(id.value)
 }
 
+class SafConnectionDao internal constructor(
+    private val roomDao: RoomSafConnectionDao,
+) {
+    suspend fun upsert(connection: SafConnection) = roomDao.upsert(connection.toEntity())
+
+    suspend fun get(id: SourceProfileId): SafConnection? = roomDao.get(id.value)?.toDomain()
+
+    suspend fun delete(id: SourceProfileId) = roomDao.delete(id.value)
+}
+
+class DlnaConnectionDao internal constructor(
+    private val roomDao: RoomDlnaConnectionDao,
+) {
+    suspend fun upsert(connection: DlnaConnection) = roomDao.upsert(connection.toEntity())
+
+    suspend fun get(id: SourceProfileId): DlnaConnection? = roomDao.get(id.value)?.toDomain()
+
+    suspend fun delete(id: SourceProfileId) = roomDao.delete(id.value)
+}
+
+class SmbConnectionDao internal constructor(
+    private val roomDao: RoomSmbConnectionDao,
+) {
+    suspend fun upsert(connection: SmbConnection) = roomDao.upsert(connection.toEntity())
+
+    suspend fun get(id: SourceProfileId): SmbConnection? = roomDao.get(id.value)?.toDomain()
+
+    suspend fun delete(id: SourceProfileId) = roomDao.delete(id.value)
+}
+
 class CollectionDao internal constructor(
     private val roomDao: RoomCollectionDao,
 ) {
     suspend fun upsert(collection: CatalogCollection) = roomDao.upsert(collection.toEntity())
 
     suspend fun get(collectionId: String): CatalogCollection? = roomDao.get(collectionId)?.toDomain()
+
+    suspend fun list(): List<CatalogCollection> = roomDao.list().map(CatalogCollectionEntity::toDomain)
 }
 
 class SelectedRootDao internal constructor(
@@ -37,6 +69,24 @@ class SelectedRootDao internal constructor(
         }
     }
 
+    suspend fun replaceAllForCollection(
+        collectionId: String,
+        roots: List<SelectedRoot>,
+    ) {
+        require(roots.all { it.collectionId == collectionId }) {
+            "All selected roots must belong to the target collection"
+        }
+        database.withTransaction {
+            roomDao.deleteAllFilters(collectionId)
+            roomDao.deleteAll(collectionId)
+            for (root in roots) {
+                val entity = root.toEntity()
+                roomDao.upsert(entity)
+                roomDao.insertFilters(root.toFilterEntities())
+            }
+        }
+    }
+
     suspend fun list(collectionId: String): List<SelectedRoot> = roomDao.listAggregates(collectionId).map { aggregate ->
         aggregate.root.toDomain(
             aggregate.filters.mapTo(
@@ -44,6 +94,17 @@ class SelectedRootDao internal constructor(
                 SelectedRootFilterEntity::filterValue,
             ),
         )
+    }
+
+    suspend fun delete(
+        collectionId: String,
+        profileId: SourceProfileId,
+        objectId: ProviderObjectId,
+    ) {
+        database.withTransaction {
+            roomDao.deleteFilters(collectionId, profileId.value, objectId.value)
+            roomDao.deleteRoot(collectionId, profileId.value, objectId.value)
+        }
     }
 }
 
@@ -301,3 +362,51 @@ private fun assetKey(
     profileId: String,
     objectId: String,
 ) = AssetKey(SourceProfileId(profileId), ProviderObjectId(objectId))
+
+private fun SafConnection.toEntity() = SafConnectionEntity(
+    profileId = profileId.value,
+    treeUri = treeUri,
+)
+
+private fun SafConnectionEntity.toDomain() = SafConnection(
+    profileId = SourceProfileId(profileId),
+    treeUri = treeUri,
+)
+
+private fun DlnaConnection.toEntity() = DlnaConnectionEntity(
+    profileId = profileId.value,
+    serverUdn = serverUdn,
+    descriptionLocation = descriptionLocation,
+    controlUrl = controlUrl,
+    contentDirectoryVersion = contentDirectoryVersion,
+    displayName = displayName,
+)
+
+private fun DlnaConnectionEntity.toDomain() = DlnaConnection(
+    profileId = SourceProfileId(profileId),
+    serverUdn = serverUdn,
+    descriptionLocation = descriptionLocation,
+    controlUrl = controlUrl,
+    contentDirectoryVersion = contentDirectoryVersion,
+    displayName = displayName,
+)
+
+private fun SmbConnection.toEntity() = SmbConnectionEntity(
+    profileId = profileId.value,
+    host = host,
+    port = port,
+    share = share,
+    domain = domain,
+    username = username,
+    displayName = displayName,
+)
+
+private fun SmbConnectionEntity.toDomain() = SmbConnection(
+    profileId = SourceProfileId(profileId),
+    host = host,
+    port = port,
+    share = share,
+    domain = domain,
+    username = username,
+    displayName = displayName,
+)

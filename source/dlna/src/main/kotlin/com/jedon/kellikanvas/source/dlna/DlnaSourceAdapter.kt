@@ -37,6 +37,16 @@ data class DlnaProfile(
         require(contentDirectoryVersion in 1..2) { "Only ContentDirectory v1/v2 are supported" }
     }
 
+    /** Provider object IDs are UDN-prefixed; accepts raw ContentDirectory IDs or already-stable values. */
+    fun stableObjectId(objectId: String): ProviderObjectId {
+        require(objectId.isNotBlank()) { "DLNA object ID must not be blank" }
+        val prefix = "$serverUdn\u0000"
+        val value = if (objectId.startsWith(prefix)) objectId else "$prefix$objectId"
+        return ProviderObjectId(value)
+    }
+
+    val rootFolder: FolderRef get() = FolderRef(id, stableObjectId(rootObjectId))
+
     override fun toString(): String = "DlnaProfile(id=$id, server=<redacted>)"
 }
 
@@ -50,7 +60,7 @@ interface DlnaBackend {
 
 class DlnaObjectMissingException : Exception("DLNA object missing")
 
-class DlnaSourceUnavailableException : Exception("DLNA source unavailable")
+class DlnaSourceUnavailableException(cause: Throwable? = null) : Exception("DLNA source unavailable", cause)
 
 class DlnaSourceAdapter(
     private val profile: DlnaProfile,
@@ -253,6 +263,12 @@ class DlnaSourceAdapter(
         throw SourceFailure.ProtocolFailure(profileId, operation, "DLNA protocol response invalid")
     } catch (_: DlnaSecurityException) {
         throw SourceFailure.ProtocolFailure(profileId, operation, "DLNA endpoint policy rejected request")
+    } catch (failure: IllegalArgumentException) {
+        throw SourceFailure.ProtocolFailure(
+            profileId,
+            operation,
+            failure.message?.takeIf { it.isNotBlank() }?.take(120) ?: "Invalid DLNA object id",
+        )
     } catch (failure: IOException) {
         throwIfCancellation(failure)
         throw SourceFailure.SourceUnavailable(profileId, operation, "DLNA network unavailable")

@@ -5,5 +5,7 @@
   app/src/main/res/xml/network_security_config.xml.
 -->
 <lint>
+    <!-- Adaptive icon XML requires the v26 resource qualifier despite minSdk 29. -->
+    <issue id="ObsoleteSdkInt" severity="ignore" />
     <issue id="InsecureBaseConfiguration" severity="ignore" />
 </lint>

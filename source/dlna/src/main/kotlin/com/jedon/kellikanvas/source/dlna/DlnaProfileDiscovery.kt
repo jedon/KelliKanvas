@@ -9,6 +9,11 @@ import java.net.Proxy
 import java.net.URI
 import java.security.MessageDigest
 
+data class DiscoveredDlnaServer(
+    val friendlyName: String,
+    val profile: DlnaProfile,
+)
+
 class DlnaProfileDiscovery(
     private val discover: suspend () -> List<SsdpDevice>,
     private val loadDescription: suspend (URI) -> ByteArray,
@@ -23,14 +28,16 @@ class DlnaProfileDiscovery(
         loadDescription = DeviceDescriptionClient(httpClient)::load,
     )
 
-    suspend fun setup(): List<DlnaProfile> = discover()
+    suspend fun setup(): List<DlnaProfile> = setupNamed().map(DiscoveredDlnaServer::profile)
+
+    suspend fun setupNamed(): List<DiscoveredDlnaServer> = discover()
         .mapNotNull { device -> resolve(device, profileIdFactory(device.udn)) }
 
     suspend fun repair(profile: DlnaProfile): DlnaProfile {
         discover()
             .filter { it.udn.equals(profile.serverUdn, ignoreCase = true) }
             .forEach { device ->
-                resolve(device, profile.id)?.let { return it }
+                resolve(device, profile.id)?.let { return it.profile }
             }
         throw DlnaSourceUnavailableException()
     }
@@ -38,18 +45,21 @@ class DlnaProfileDiscovery(
     private suspend fun resolve(
         device: SsdpDevice,
         profileId: SourceProfileId,
-    ): DlnaProfile? = try {
+    ): DiscoveredDlnaServer? = try {
         val description = parser.parse(loadDescription(device.location), device.location.toString())
         if (!description.udn.equals(device.udn, ignoreCase = true)) {
             null
         } else {
             DlnaEndpointPolicy(device.location).validateInitial(description.controlUrl)
-            DlnaProfile(
-                id = profileId,
-                serverUdn = device.udn,
-                descriptionLocation = device.location,
-                controlUrl = description.controlUrl,
-                contentDirectoryVersion = description.version,
+            DiscoveredDlnaServer(
+                friendlyName = description.friendlyName,
+                profile = DlnaProfile(
+                    id = profileId,
+                    serverUdn = device.udn,
+                    descriptionLocation = device.location,
+                    controlUrl = description.controlUrl,
+                    contentDirectoryVersion = description.version,
+                ),
             )
         }
     } catch (failure: CancellationException) {
@@ -63,7 +73,7 @@ class DlnaProfileDiscovery(
     }
 }
 
-private fun stableDlnaProfileId(udn: String): SourceProfileId {
+internal fun stableDlnaProfileId(udn: String): SourceProfileId {
     val digest = MessageDigest.getInstance("SHA-256").digest(udn.lowercase().encodeToByteArray())
     val token =
         digest.take(PROFILE_ID_DIGEST_BYTES)

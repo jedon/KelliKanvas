@@ -1,48 +1,64 @@
 package com.jedon.kellikanvas.source.smb
 
 import com.google.common.truth.Truth.assertThat
-import com.jedon.kellikanvas.model.AssetRef
 import com.jedon.kellikanvas.model.FolderRef
 import com.jedon.kellikanvas.model.ProviderObjectId
-import com.jedon.kellikanvas.model.SourceFailure
-import com.jedon.kellikanvas.model.SourceKind
+import com.jedon.kellikanvas.model.SourceEntry
 import com.jedon.kellikanvas.model.SourceProfileId
+import com.jedon.kellikanvas.source.PhotoByteStream
 import kotlinx.coroutines.test.runTest
-import org.junit.Assert.fail
+import okio.Buffer
 import org.junit.Test
 
 class SmbSourceAdapterTest {
-    private val profileId = SourceProfileId("smb-profile")
-    private val folder = FolderRef(profileId, ProviderObjectId("folder"))
-    private val asset =
-        AssetRef(
-            profileId = profileId,
-            objectId = ProviderObjectId("asset"),
-            mimeType = "image/jpeg",
-        )
-
     @Test
-    fun `reports SMB kind and fails closed on every operation`() = runTest {
-        val adapter = SmbSourceAdapter(profileId)
+    fun listChildren_pagesFoldersAndPhotos() = runTest {
+        val profile =
+            SmbProfile(
+                id = SourceProfileId("smb-test"),
+                host = "192.168.0.1",
+                share = "Kelli",
+                username = "fake-user",
+            )
+        val backend =
+            FakeSmbBackend(
+                listOf(
+                    SmbEntry("Digital Photos", "Digital Photos", true, null, null, null),
+                    SmbEntry("readme.txt", "readme.txt", false, 12, 1L, null),
+                    SmbEntry("shot.jpg", "shot.jpg", false, 100, 2L, "image/jpeg"),
+                ),
+            )
+        val adapter = SmbSourceAdapter(profile, backend)
 
-        assertThat(adapter.kind).isEqualTo(SourceKind.SMB)
-        assertThat(adapter.profileId).isEqualTo(profileId)
+        val page =
+            adapter.listChildren(
+                folder = FolderRef(profile.id, ProviderObjectId(SmbSourceAdapter.ROOT_OBJECT_ID)),
+                cursor = null,
+                limit = 10,
+            )
 
-        assertProtocolFailure { adapter.probe() }
-        assertProtocolFailure { adapter.listChildren(folder, null) }
-        assertProtocolFailure { adapter.metadata(asset) }
-        assertProtocolFailure { adapter.open(asset) }
+        assertThat(page.items).hasSize(2)
+        assertThat((page.items[0] as SourceEntry.Folder).name).isEqualTo("Digital Photos")
+        assertThat((page.items[1] as SourceEntry.Photo).name).isEqualTo("shot.jpg")
+        assertThat(adapter.probe().available).isTrue()
     }
 
-    private suspend fun assertProtocolFailure(block: suspend () -> Any?) {
-        try {
-            block()
-            fail("Expected ProtocolFailure for unsupported SMB source")
-        } catch (failure: SourceFailure.ProtocolFailure) {
-            assertThat(failure.profileId).isEqualTo(profileId)
-            assertThat(failure.safeDetail).contains("not implemented")
-        } catch (failure: SourceFailure.AuthenticationRequired) {
-            fail("Must not report AuthenticationRequired: $failure")
+    private class FakeSmbBackend(
+        private val entries: List<SmbEntry>,
+    ) : SmbBackend {
+        override suspend fun probe() = Unit
+
+        override suspend fun list(path: String): List<SmbEntry> = entries
+
+        override suspend fun metadata(path: String): SmbEntry = entries.first { it.path == path }
+
+        override suspend fun open(path: String): PhotoByteStream = object : PhotoByteStream(0) {
+            override suspend fun readAtMostTo(
+                sink: Buffer,
+                byteCount: Long,
+            ): Long = -1
+
+            override fun close() = Unit
         }
     }
 }

@@ -5,6 +5,9 @@ plugins {
 
 android {
     namespace = "com.jedon.kellikanvas.ui.tv"
+    testOptions {
+        unitTests.isIncludeAndroidResources = true
+    }
 }
 
 dependencies {
@@ -13,4 +16,8 @@ dependencies {
     implementation(libs.compose.ui)
     implementation(libs.compose.ui.tooling.preview)
     implementation(libs.tv.material)
+
+    testImplementation(libs.junit4)
+    testImplementation(libs.robolectric)
+    testImplementation(libs.truth)
 }

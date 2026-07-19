@@ -183,13 +183,31 @@ class AuthenticatedManifestRepository(
     private val replayGuard: ReleaseReplayGuard,
     private val timestampStore: CheckTimestampStore,
     private val originPolicy: UpdateOriginPolicy = UpdateOriginPolicy.QNAP_LAN,
-    private val controlUri: URI = UpdateOriginPolicy.CONTROL_URI,
+    private val controlUris: List<URI> = UpdateOriginPolicy.CONTROL_URIS,
     private val nowMillis: () -> Long = System::currentTimeMillis,
 ) {
+    constructor(
+        transport: UpdateTransport,
+        authenticator: ManifestAuthenticator,
+        replayGuard: ReleaseReplayGuard,
+        timestampStore: CheckTimestampStore,
+        originPolicy: UpdateOriginPolicy = UpdateOriginPolicy.QNAP_LAN,
+        controlUri: URI,
+        nowMillis: () -> Long = System::currentTimeMillis,
+    ) : this(
+        transport,
+        authenticator,
+        replayGuard,
+        timestampStore,
+        originPolicy,
+        listOf(controlUri),
+        nowMillis,
+    )
+
     fun check(manual: Boolean, installedVersionCode: Long): UpdateManifest? {
         val now = nowMillis()
         if (!UpdateCheckPolicy.shouldCheck(manual, now, timestampStore.lastCheckMillis())) return null
-        val controlBytes = fetchKnown(controlUri, UpdateLimits.METADATA_MAX_BYTES.toLong())
+        val controlBytes = fetchKnown(controlUris, UpdateLimits.METADATA_MAX_BYTES.toLong())
         val authenticated = authenticator.authenticateEnvelope(controlBytes)
         timestampStore.recordCheck(now)
         if (authenticated.manifest.versionCode <= installedVersionCode) return null
@@ -198,7 +216,28 @@ class AuthenticatedManifestRepository(
         return authenticated.manifest
     }
 
-    private fun fetchKnown(uri: URI, maxBytes: Long): ByteArray {
+    private fun fetchKnown(uris: List<URI>, maxBytes: Long): ByteArray {
+        require(uris.isNotEmpty()) { "at least one control URI is required" }
+        var lastError: Exception? = null
+        for (uri in uris) {
+            try {
+                return fetchOne(uri, maxBytes)
+            } catch (error: UpdateRejected) {
+                // Signature / schema failures are definitive; do not try another host.
+                if (isDefinitiveMetadataFailure(error)) throw error
+                lastError = error
+            } catch (error: Exception) {
+                lastError = error
+            }
+        }
+        when (val error = lastError) {
+            null -> throw UpdateRejected("update check failed")
+            is UpdateRejected -> throw error
+            else -> throw error
+        }
+    }
+
+    private fun fetchOne(uri: URI, maxBytes: Long): ByteArray {
         originPolicy.requireAllowed(uri)
         val response = transport.open(uri, maxBytes)
         response.body.use { body ->
@@ -208,6 +247,16 @@ class AuthenticatedManifestRepository(
             if (response.statusCode != 200) throw UpdateRejected("unexpected HTTP status ${response.statusCode}")
             return body.readBounded(maxBytes)
         }
+    }
+
+    private fun isDefinitiveMetadataFailure(error: UpdateRejected): Boolean {
+        val message = error.message.orEmpty()
+        return message.contains("authentication", ignoreCase = true) ||
+            message.contains("signature", ignoreCase = true) ||
+            message.contains("malformed", ignoreCase = true) ||
+            message.contains("canonical", ignoreCase = true) ||
+            message.contains("unknown metadata", ignoreCase = true) ||
+            message.contains("envelope", ignoreCase = true)
     }
 }
 

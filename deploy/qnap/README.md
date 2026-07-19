@@ -671,6 +671,42 @@ The phone and TV must both resolve and reach the LAN hostname in the copied URL.
 If `darklingnas.local` does not resolve through mDNS or local DNS, open the page
 at `http://192.168.68.81:8088`; **Copy URL** will then copy a URL using that IP.
 
+## Install on Google TV / Hisense (Downloader)
+
+TV Downloader apps typically reject cleartext `http://192.168.68.81:8088/...`
+URLs and often refuse debug-signed APKs. Use a **release-signed** APK over
+**public HTTPS** (GitHub Releases already terminates TLS with a publicly trusted
+certificate; no Let's Encrypt setup is required on the NAS).
+
+Current TV-installable build:
+
+- HTTPS (paste into Downloader):
+  `https://github.com/jedon/KelliKanvas/releases/download/v1.0.11/KelliKanvas-1.0.11.apk`
+- LAN mirror (browsers / phone workflows):
+  `http://192.168.68.81:8088/KelliKanvas-1.0.11.apk`
+
+### Republish a newer TV build
+
+1. Bump `versionCode` / `versionName` in `app/build.gradle.kts`.
+2. Build unsigned release with
+   `KELLIKANVAS_METADATA_PUBLIC_KEY_BASE64` set from
+   `~/.kellikanvas/release/metadata-pin.txt`.
+3. Sign with `apksigner` using
+   `~/.kellikanvas/release/kellikanvas-release.p12` and
+   `release-secrets.env` (never commit those files).
+4. Publish the SemVer file to QNAP (see **Publish an APK**) so the LAN index
+   **Latest** row updates.
+5. Create or update the matching GitHub Release asset
+   (`gh release create vX.Y.Z KelliKanvas-X.Y.Z.apk ...`) so Downloader keeps a
+   trusted `https://github.com/jedon/KelliKanvas/releases/download/...` URL.
+
+### Certificate renewal
+
+GitHub manages the HTTPS certificate for `github.com` / release CDN hosts.
+There is nothing to renew on DarklingNAS for the TV Downloader URL. The QNAP
+host intentionally remains LAN-only HTTP on port 8088 and should not be
+forwarded to the public internet.
+
 ## Verify
 
 Run the container-health check on the NAS:

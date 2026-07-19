@@ -53,12 +53,14 @@ class UpdateManifestPolicyTest {
     @Test
     fun `accepts only exact private origin`() {
         UpdateUrlPolicy.requireAllowed(URI("http://darklingnas:8088/release.apk"))
+        UpdateUrlPolicy.requireAllowed(URI("http://192.168.68.81:8088/release.apk"))
         listOf(
             "https://darklingnas:8088/release.apk",
             "http://darklingnas/release.apk",
             "http://evil:8088/release.apk",
             "http://darklingnas:8088@evil/release.apk",
             "http://darklingnas:8088/release.apk?redirect=http://evil",
+            "http://192.168.68.82:8088/release.apk",
         ).forEach { url ->
             assertThrows(url, UpdateRejected::class.java) {
                 UpdateUrlPolicy.requireAllowed(URI(url))

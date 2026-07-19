@@ -26,6 +26,9 @@ internal interface RoomCollectionDao {
 
     @Query("SELECT * FROM collections WHERE collection_id = :collectionId")
     suspend fun get(collectionId: String): CatalogCollectionEntity?
+
+    @Query("SELECT * FROM collections")
+    suspend fun list(): List<CatalogCollectionEntity>
 }
 
 @Dao
@@ -38,6 +41,22 @@ internal interface RoomSelectedRootDao {
             "AND profile_id = :profileId AND object_id = :objectId",
     )
     suspend fun deleteFilters(
+        collectionId: String,
+        profileId: String,
+        objectId: String,
+    )
+
+    @Query("DELETE FROM selected_root_filters WHERE collection_id = :collectionId")
+    suspend fun deleteAllFilters(collectionId: String)
+
+    @Query("DELETE FROM selected_roots WHERE collection_id = :collectionId")
+    suspend fun deleteAll(collectionId: String)
+
+    @Query(
+        "DELETE FROM selected_roots WHERE collection_id = :collectionId " +
+            "AND profile_id = :profileId AND object_id = :objectId",
+    )
+    suspend fun deleteRoot(
         collectionId: String,
         profileId: String,
         objectId: String,
@@ -200,3 +219,39 @@ internal data class SlideshowSessionAggregate(
     val session: SlideshowSessionEntity,
     val lastPresented: SlideshowSessionLastPresentedEntity?,
 )
+
+@Dao
+internal interface RoomSafConnectionDao {
+    @Upsert
+    suspend fun upsert(entity: SafConnectionEntity)
+
+    @Query("SELECT * FROM saf_connections WHERE profile_id = :profileId")
+    suspend fun get(profileId: String): SafConnectionEntity?
+
+    @Query("DELETE FROM saf_connections WHERE profile_id = :profileId")
+    suspend fun delete(profileId: String)
+}
+
+@Dao
+internal interface RoomDlnaConnectionDao {
+    @Upsert
+    suspend fun upsert(entity: DlnaConnectionEntity)
+
+    @Query("SELECT * FROM dlna_connections WHERE profile_id = :profileId")
+    suspend fun get(profileId: String): DlnaConnectionEntity?
+
+    @Query("DELETE FROM dlna_connections WHERE profile_id = :profileId")
+    suspend fun delete(profileId: String)
+}
+
+@Dao
+internal interface RoomSmbConnectionDao {
+    @Upsert
+    suspend fun upsert(entity: SmbConnectionEntity)
+
+    @Query("SELECT * FROM smb_connections WHERE profile_id = :profileId")
+    suspend fun get(profileId: String): SmbConnectionEntity?
+
+    @Query("DELETE FROM smb_connections WHERE profile_id = :profileId")
+    suspend fun delete(profileId: String)
+}
