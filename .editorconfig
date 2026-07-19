@@ -12,6 +12,7 @@ trim_trailing_whitespace = true
 ij_kotlin_allow_trailing_comma = true
 ij_kotlin_allow_trailing_comma_on_call_site = true
 ktlint_code_style = intellij_idea
+ktlint_function_naming_ignore_when_annotated_with = Composable
 
 [*.{xml,yml,yaml}]
 indent_size = 2

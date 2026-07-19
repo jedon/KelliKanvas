@@ -136,8 +136,7 @@ class PermissionCoordinatorTest {
         sdkInt: Int = 35,
     ): PermissionCoordinator = PermissionCoordinator(context, sdkInt)
 
-    private fun PermissionSnapshot.statusOf(id: PermissionRowId): PermissionStatus =
-        rows.first { it.id == id }.status
+    private fun PermissionSnapshot.statusOf(id: PermissionRowId): PermissionStatus = rows.first { it.id == id }.status
 
     private companion object {
         const val ACCESS_LOCAL_NETWORK = "android.permission.ACCESS_LOCAL_NETWORK"
