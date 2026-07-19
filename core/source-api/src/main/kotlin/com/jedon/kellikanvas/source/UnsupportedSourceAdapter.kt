@@ -37,13 +37,11 @@ open class UnsupportedSourceAdapter(
 
     override suspend fun openStream(asset: AssetRef): PhotoByteStream = unsupported(OPERATION_OPEN)
 
-    private fun unsupported(operation: String): Nothing {
-        throw SourceFailure.ProtocolFailure(
-            profileId = profileId,
-            operation = operation,
-            safeDetail = reason,
-        )
-    }
+    private fun unsupported(operation: String): Nothing = throw SourceFailure.ProtocolFailure(
+        profileId = profileId,
+        operation = operation,
+        safeDetail = reason,
+    )
 
     companion object {
         const val OPERATION_PROBE = "probe"

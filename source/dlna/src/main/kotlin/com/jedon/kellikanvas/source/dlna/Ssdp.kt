@@ -73,8 +73,7 @@ class SsdpResponseParser {
         return resolved.all(::isPrivateLanAddress)
     }
 
-    private fun isIpLiteral(host: String): Boolean =
-        IPV4_LITERAL.matches(host) || host.contains(':')
+    private fun isIpLiteral(host: String): Boolean = IPV4_LITERAL.matches(host) || host.contains(':')
 
     private companion object {
         val IPV4_LITERAL = Regex("""^(?:\d{1,3}\.){3}\d{1,3}$""")

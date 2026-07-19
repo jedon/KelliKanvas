@@ -50,6 +50,7 @@ abstract class KelliKanvasDatabase : RoomDatabase() {
     val catalogAssets: CatalogAssetDao by lazy {
         CatalogAssetDao(roomCatalogAssets())
     }
+
     /**
      * Piecemeal cycle mutation is module-internal only.
      * Outside `core:catalog`, create or replace cycles via [cycleSnapshots].
