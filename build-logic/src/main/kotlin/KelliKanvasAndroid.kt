@@ -3,7 +3,7 @@ import com.android.build.api.dsl.LibraryExtension
 import org.gradle.api.JavaVersion
 
 internal const val KELLIKANVAS_COMPILE_SDK = 37
-internal const val KELLIKANVAS_MIN_SDK = 28
+internal const val KELLIKANVAS_MIN_SDK = 29
 internal const val KELLIKANVAS_TARGET_SDK = 37
 
 internal fun ApplicationExtension.configureKelliKanvasApplication() {
