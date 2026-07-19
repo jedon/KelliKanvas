@@ -115,9 +115,9 @@ jobs:
           emulator-boot-timeout: 600
           emulator-options: -no-snapshot -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim
           disable-animations: true
-          script: |
-            ./gradlew --dependency-verification strict \
-              :source:saf:connectedDebugAndroidTest \
-              :core:catalog:connectedDebugAndroidTest \
-              :core:security:connectedDebugAndroidTest \
-              --stacktrace
+          script: >-
+            ./gradlew --dependency-verification strict
+            :source:saf:connectedDebugAndroidTest
+            :core:catalog:connectedDebugAndroidTest
+            :core:security:connectedDebugAndroidTest
+            --stacktrace
