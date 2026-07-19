@@ -45,6 +45,5 @@ class SmbPhotoByteStream(
         }
     }
 
-    override fun toString(): String =
-        "SmbPhotoByteStream(contentLength=$contentLength, closed=${closed.get()})"
+    override fun toString(): String = "SmbPhotoByteStream(contentLength=$contentLength, closed=${closed.get()})"
 }

@@ -34,21 +34,21 @@ class DlnaQnapBrowseFixtureTest {
                 DlnaSourceAdapter(
                     profile = profile,
                     backend =
-                        NetworkDlnaBackend(
+                    NetworkDlnaBackend(
+                        serverUdn = profile.serverUdn,
+                        contentDirectory =
+                        ContentDirectoryClient(
+                            httpClient = OkHttpClient(),
+                            controlUrl = controlUrl,
                             serverUdn = profile.serverUdn,
-                            contentDirectory =
-                                ContentDirectoryClient(
-                                    httpClient = OkHttpClient(),
-                                    controlUrl = controlUrl,
-                                    serverUdn = profile.serverUdn,
-                                    version = 1,
-                                ),
-                            photoLoader =
-                                DlnaPhotoLoader(
-                                    OkHttpClient(),
-                                    DlnaEndpointPolicy(server.url("/rootDesc.xml").toUri()) { it.isLoopbackAddress },
-                                ),
+                            version = 1,
                         ),
+                        photoLoader =
+                        DlnaPhotoLoader(
+                            OkHttpClient(),
+                            DlnaEndpointPolicy(server.url("/rootDesc.xml").toUri()) { it.isLoopbackAddress },
+                        ),
+                    ),
                 )
 
             val rawFailure =
@@ -80,14 +80,13 @@ class DlnaQnapBrowseFixtureTest {
         }
     }
 
-    private fun sampleProfile(controlUrl: URI) =
-        DlnaProfile(
-            id = SourceProfileId("dlna-qnap-fixture"),
-            serverUdn = "uuid:qnap-fixture",
-            descriptionLocation = URI("http://192.168.1.8:8200/rootDesc.xml"),
-            controlUrl = controlUrl,
-            contentDirectoryVersion = 1,
-        )
+    private fun sampleProfile(controlUrl: URI) = DlnaProfile(
+        id = SourceProfileId("dlna-qnap-fixture"),
+        serverUdn = "uuid:qnap-fixture",
+        descriptionLocation = URI("http://192.168.1.8:8200/rootDesc.xml"),
+        controlUrl = controlUrl,
+        contentDirectoryVersion = 1,
+    )
 
     private companion object {
         // Sanitized from a live QNAP TurboNAS ContentDirectory Browse of object 0.
@@ -109,10 +108,9 @@ class DlnaQnapBrowseFixtureTest {
             </u:BrowseResponse></s:Body></s:Envelope>
             """.trimIndent()
 
-        fun escapeXml(value: String): String =
-            value
-                .replace("&", "&amp;")
-                .replace("<", "&lt;")
-                .replace(">", "&gt;")
+        fun escapeXml(value: String): String = value
+            .replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
     }
 }

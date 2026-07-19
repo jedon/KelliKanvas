@@ -100,24 +100,22 @@ class SmbSourceAdapter(
         backend.open(decodeObjectPath(asset.objectId.value))
     }
 
-    private fun toEntry(entry: SmbEntry): SourceEntry =
-        if (entry.isDirectory) {
-            SourceEntry.Folder(
-                ref = FolderRef(profileId, ProviderObjectId(encodeObjectPath(entry.path))),
-                name = entry.name,
-            )
-        } else {
-            SourceEntry.Photo(asset = entry.toAsset(), name = entry.name)
-        }
-
-    private fun SmbEntry.toAsset(): AssetRef =
-        AssetRef(
-            profileId = profileId,
-            objectId = ProviderObjectId(encodeObjectPath(path)),
-            mimeType = requireNotNull(mimeType),
-            byteLength = size,
-            modifiedAtMillis = modifiedAtMillis,
+    private fun toEntry(entry: SmbEntry): SourceEntry = if (entry.isDirectory) {
+        SourceEntry.Folder(
+            ref = FolderRef(profileId, ProviderObjectId(encodeObjectPath(entry.path))),
+            name = entry.name,
         )
+    } else {
+        SourceEntry.Photo(asset = entry.toAsset(), name = entry.name)
+    }
+
+    private fun SmbEntry.toAsset(): AssetRef = AssetRef(
+        profileId = profileId,
+        objectId = ProviderObjectId(encodeObjectPath(path)),
+        mimeType = requireNotNull(mimeType),
+        byteLength = size,
+        modifiedAtMillis = modifiedAtMillis,
+    )
 
     private fun encodeObjectPath(path: String): String {
         val normalized = SmbPath.normalize(path)
@@ -153,16 +151,15 @@ class SmbSourceAdapter(
     private suspend fun <T> mapFailures(
         operation: String,
         block: suspend () -> T,
-    ): T =
-        try {
-            block()
-        } catch (failure: CancellationException) {
-            throw failure
-        } catch (failure: SourceFailure) {
-            throw failure
-        } catch (failure: Exception) {
-            throw SmbFailureMapper.map(profileId, operation, failure)
-        }
+    ): T = try {
+        block()
+    } catch (failure: CancellationException) {
+        throw failure
+    } catch (failure: SourceFailure) {
+        throw failure
+    } catch (failure: Exception) {
+        throw SmbFailureMapper.map(profileId, operation, failure)
+    }
 
     companion object {
         const val ROOT_OBJECT_ID: String = "."
@@ -189,31 +186,29 @@ class SmbjBackend(
         }
     }
 
-    override suspend fun list(path: String): List<SmbEntry> =
-        withShare { share ->
-            val smbPath = toSmbRelative(path)
-            share.list(smbPath)
-                .asSequence()
-                .filterNot { it.fileName == "." || it.fileName == ".." }
-                .map { info -> toEntry(path, info) }
-                .toList()
-        }
+    override suspend fun list(path: String): List<SmbEntry> = withShare { share ->
+        val smbPath = toSmbRelative(path)
+        share.list(smbPath)
+            .asSequence()
+            .filterNot { it.fileName == "." || it.fileName == ".." }
+            .map { info -> toEntry(path, info) }
+            .toList()
+    }
 
-    override suspend fun metadata(path: String): SmbEntry =
-        withShare { share ->
-            val smbPath = toSmbRelative(path)
-            val info = share.getFileInformation(smbPath)
-            val name = SmbPath.displayName(path).ifEmpty { profile.share }
-            val isDir = info.standardInformation.isDirectory
-            SmbEntry(
-                path = SmbPath.normalize(path),
-                name = name,
-                isDirectory = isDir,
-                size = if (isDir) null else info.standardInformation.endOfFile,
-                modifiedAtMillis = info.basicInformation.changeTime.toEpochMillis(),
-                mimeType = if (isDir) null else SmbMime.mimeForFileName(name),
-            )
-        }
+    override suspend fun metadata(path: String): SmbEntry = withShare { share ->
+        val smbPath = toSmbRelative(path)
+        val info = share.getFileInformation(smbPath)
+        val name = SmbPath.displayName(path).ifEmpty { profile.share }
+        val isDir = info.standardInformation.isDirectory
+        SmbEntry(
+            path = SmbPath.normalize(path),
+            name = name,
+            isDirectory = isDir,
+            size = if (isDir) null else info.standardInformation.endOfFile,
+            modifiedAtMillis = info.basicInformation.changeTime.toEpochMillis(),
+            mimeType = if (isDir) null else SmbMime.mimeForFileName(name),
+        )
+    }
 
     override suspend fun open(path: String): PhotoByteStream {
         coroutineContext.ensureActive()
@@ -243,12 +238,11 @@ class SmbjBackend(
         }
     }
 
-    private suspend fun <T> withShare(block: (com.hierynomus.smbj.share.DiskShare) -> T): T =
-        withContext(Dispatchers.IO) {
-            SmbSessionScope.open(profile, credentials).use { scope ->
-                block(scope.share)
-            }
+    private suspend fun <T> withShare(block: (com.hierynomus.smbj.share.DiskShare) -> T): T = withContext(Dispatchers.IO) {
+        SmbSessionScope.open(profile, credentials).use { scope ->
+            block(scope.share)
         }
+    }
 
     private fun toEntry(
         parentPath: String,
@@ -273,4 +267,3 @@ class SmbjBackend(
         const val FILE_ATTRIBUTE_DIRECTORY = 0x10
     }
 }
-

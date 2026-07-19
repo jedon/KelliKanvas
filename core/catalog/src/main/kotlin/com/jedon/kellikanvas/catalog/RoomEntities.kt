@@ -296,4 +296,3 @@ internal data class SmbConnectionEntity(
     @ColumnInfo(name = "username") val username: String,
     @ColumnInfo(name = "display_name") val displayName: String,
 )
-

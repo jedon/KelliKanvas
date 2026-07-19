@@ -255,4 +255,3 @@ internal interface RoomSmbConnectionDao {
     @Query("DELETE FROM smb_connections WHERE profile_id = :profileId")
     suspend fun delete(profileId: String)
 }
-

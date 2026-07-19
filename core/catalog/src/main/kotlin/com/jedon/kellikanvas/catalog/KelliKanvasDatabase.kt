@@ -61,6 +61,7 @@ abstract class KelliKanvasDatabase : RoomDatabase() {
     val catalogAssets: CatalogAssetDao by lazy {
         CatalogAssetDao(roomCatalogAssets())
     }
+
     /**
      * Piecemeal cycle mutation is module-internal only.
      * Outside `core:catalog`, create or replace cycles via [cycleSnapshots].
@@ -121,7 +122,7 @@ val MIGRATION_1_2 = object : Migration(1, 2) {
                 PRIMARY KEY(`profile_id`),
                 FOREIGN KEY(`profile_id`) REFERENCES `source_profiles`(`profile_id`) ON UPDATE NO ACTION ON DELETE CASCADE
             )
-            """.trimIndent()
+            """.trimIndent(),
         )
     }
 }
@@ -166,4 +167,3 @@ val MIGRATION_3_4 = object : Migration(3, 4) {
         )
     }
 }
-

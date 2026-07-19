@@ -20,8 +20,7 @@ data class SmbProfile(
         require(username.isNotBlank() && !username.contains('\n')) { "SMB username required" }
     }
 
-    override fun toString(): String =
-        "SmbProfile(id=$id, host=$host, port=$port, share=$share, domain=<redacted>, username=<redacted>)"
+    override fun toString(): String = "SmbProfile(id=$id, host=$host, port=$port, share=$share, domain=<redacted>, username=<redacted>)"
 }
 
 data class SmbCredentials(

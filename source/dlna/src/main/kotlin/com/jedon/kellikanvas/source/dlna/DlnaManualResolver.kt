@@ -68,10 +68,9 @@ class DlnaManualResolver(
                 "DarklingNAS",
             )
 
-        fun builtInDescriptionCandidates(): List<String> =
-            BUILT_IN_HOST_CANDIDATES
-                .flatMap(::descriptionCandidates)
-                .distinct()
+        fun builtInDescriptionCandidates(): List<String> = BUILT_IN_HOST_CANDIDATES
+            .flatMap(::descriptionCandidates)
+            .distinct()
 
         fun descriptionCandidates(input: String): List<String> {
             val trimmed = input.trim()

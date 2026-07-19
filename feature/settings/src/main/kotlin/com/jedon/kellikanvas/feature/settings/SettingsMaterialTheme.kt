@@ -1,13 +1,13 @@
 package com.jedon.kellikanvas.feature.settings
 
-import androidx.compose.material3.MaterialTheme as PhoneMaterialTheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.tv.material3.MaterialTheme as TvMaterialTheme
 import androidx.tv.material3.darkColorScheme
 import com.jedon.kellikanvas.ui.tv.isTelevisionUi
+import androidx.compose.material3.MaterialTheme as PhoneMaterialTheme
+import androidx.tv.material3.MaterialTheme as TvMaterialTheme
 
 /**
  * Phone: Material3 light chrome.

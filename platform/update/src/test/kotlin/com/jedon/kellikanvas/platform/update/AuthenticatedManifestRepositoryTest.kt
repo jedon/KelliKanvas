@@ -71,43 +71,40 @@ class AuthenticatedManifestRepositoryTest {
     private fun repository(
         transport: UpdateTransport,
         timestamps: CheckTimestampStore,
-    ): AuthenticatedManifestRepository =
-        AuthenticatedManifestRepository(
-            transport = transport,
-            authenticator = authenticator,
-            replayGuard = ReleaseReplayGuard(InMemoryAuthenticatedReleaseStore()),
-            timestampStore = timestamps,
-            nowMillis = { now },
-        )
+    ): AuthenticatedManifestRepository = AuthenticatedManifestRepository(
+        transport = transport,
+        authenticator = authenticator,
+        replayGuard = ReleaseReplayGuard(InMemoryAuthenticatedReleaseStore()),
+        timestampStore = timestamps,
+        nowMillis = { now },
+    )
 
     private fun manifest(
         sequence: Long = 7,
         versionCode: Long = 2,
-    ): UpdateManifest =
-        UpdateManifest(
-            schema = 1,
-            sequence = sequence,
-            packageName = UpdateLimits.PACKAGE_NAME,
-            versionCode = versionCode,
-            versionName = "0.2.0",
-            apkUrl = URI("http://darklingnas:8088/kellikanvas-$versionCode.apk"),
-            checksumUrl = URI("http://darklingnas:8088/kellikanvas-$versionCode.apk.sha256"),
-            sizeBytes = 10,
-            sha256 = "a".repeat(64),
-            signerSha256 = "B".repeat(64),
-        )
+    ): UpdateManifest = UpdateManifest(
+        schema = 1,
+        sequence = sequence,
+        packageName = UpdateLimits.PACKAGE_NAME,
+        versionCode = versionCode,
+        versionName = "0.2.0",
+        apkUrl = URI("http://darklingnas:8088/kellikanvas-$versionCode.apk"),
+        checksumUrl = URI("http://darklingnas:8088/kellikanvas-$versionCode.apk.sha256"),
+        sizeBytes = 10,
+        sha256 = "a".repeat(64),
+        signerSha256 = "B".repeat(64),
+    )
 
     private fun signedEnvelope(manifest: UpdateManifest): ByteArray {
         val payload = manifest.canonicalBytes()
         return envelope(payload, sign(payload))
     }
 
-    private fun sign(bytes: ByteArray): ByteArray =
-        Signature.getInstance("SHA256withECDSA").run {
-            initSign(keyPair.private)
-            update(bytes)
-            sign()
-        }
+    private fun sign(bytes: ByteArray): ByteArray = Signature.getInstance("SHA256withECDSA").run {
+        initSign(keyPair.private)
+        update(bytes)
+        sign()
+    }
 
     private fun envelope(
         payload: ByteArray,
@@ -139,14 +136,13 @@ class AuthenticatedManifestRepositoryTest {
         private val body: ByteArray,
         private val statusCode: Int = 200,
     ) : UpdateTransport {
-        override fun open(url: URI, maxBytes: Long): UpdateResponse =
-            UpdateResponse(
-                statusCode = statusCode,
-                finalUrl = url,
-                redirected = false,
-                contentLength = body.size.toLong(),
-                body = ByteArrayInputStream(body),
-            )
+        override fun open(url: URI, maxBytes: Long): UpdateResponse = UpdateResponse(
+            statusCode = statusCode,
+            finalUrl = url,
+            redirected = false,
+            contentLength = body.size.toLong(),
+            body = ByteArrayInputStream(body),
+        )
     }
 
     private class FailingTransport(

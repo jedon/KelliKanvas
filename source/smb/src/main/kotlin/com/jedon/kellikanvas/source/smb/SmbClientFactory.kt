@@ -1,12 +1,12 @@
 package com.jedon.kellikanvas.source.smb
 
+import com.hierynomus.mssmb2.SMB2Dialect
 import com.hierynomus.smbj.SMBClient
 import com.hierynomus.smbj.SmbConfig
 import com.hierynomus.smbj.auth.AuthenticationContext
 import com.hierynomus.smbj.connection.Connection
 import com.hierynomus.smbj.session.Session
 import com.hierynomus.smbj.share.DiskShare
-import com.hierynomus.mssmb2.SMB2Dialect
 import java.util.concurrent.TimeUnit
 
 object SmbClientFactory {
@@ -26,12 +26,11 @@ object SmbClientFactory {
         return SMBClient(config)
     }
 
-    fun authenticationContext(credentials: SmbCredentials): AuthenticationContext =
-        AuthenticationContext(
-            credentials.username,
-            credentials.password,
-            credentials.domain.ifBlank { null },
-        )
+    fun authenticationContext(credentials: SmbCredentials): AuthenticationContext = AuthenticationContext(
+        credentials.username,
+        credentials.password,
+        credentials.domain.ifBlank { null },
+    )
 }
 
 /**

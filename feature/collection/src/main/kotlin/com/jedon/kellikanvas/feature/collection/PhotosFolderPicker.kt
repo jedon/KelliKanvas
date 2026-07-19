@@ -9,18 +9,16 @@ object PhotosFolderPicker {
     const val FRAME_TV_MIX_TITLE: String = "Frame TV landscape photos_mix"
     const val FRAME_TV_16X9_TITLE: String = "16X9"
 
-    fun findPhotosFolder(folders: List<BrowseEntry>): BrowseEntry? =
-        folders.firstOrNull { entry ->
-            entry.isFolder && entry.title.equals(PHOTOS_TITLE, ignoreCase = true)
-        }
+    fun findPhotosFolder(folders: List<BrowseEntry>): BrowseEntry? = folders.firstOrNull { entry ->
+        entry.isFolder && entry.title.equals(PHOTOS_TITLE, ignoreCase = true)
+    }
 
     fun findNamedFolder(
         folders: List<BrowseEntry>,
         title: String,
-    ): BrowseEntry? =
-        folders.firstOrNull { entry ->
-            entry.isFolder && entry.title.equals(title, ignoreCase = true)
-        }
+    ): BrowseEntry? = folders.firstOrNull { entry ->
+        entry.isFolder && entry.title.equals(title, ignoreCase = true)
+    }
 
     /**
      * Walks DLNA folders to the Frame TV 16×9 leaf.
@@ -52,5 +50,4 @@ object PhotosFolderPicker {
             includeDescendants = true,
         )
     }
-
 }

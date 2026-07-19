@@ -75,8 +75,7 @@ class DlnaIoFailureTest {
                     override suspend fun browse(objectId: String, start: Int, count: Int): DlnaBrowsePage = error("unused")
                     override suspend fun metadata(objectId: String): DlnaObject = error("unused")
                     override suspend fun open(objectId: String): PhotoByteStream = object : PhotoByteStream(null) {
-                        override suspend fun readAtMostTo(sink: Buffer, byteCount: Long): Long =
-                            throw IOException("Canceled")
+                        override suspend fun readAtMostTo(sink: Buffer, byteCount: Long): Long = throw IOException("Canceled")
 
                         override fun close() = Unit
                     }

@@ -252,16 +252,13 @@ class SafConnection(
         require(!treeUri.contains('\n')) { "SAF tree URI must be single-line" }
     }
 
-    override fun equals(other: Any?): Boolean =
-        other is SafConnection &&
-            profileId == other.profileId &&
-            treeUri == other.treeUri
+    override fun equals(other: Any?): Boolean = other is SafConnection &&
+        profileId == other.profileId &&
+        treeUri == other.treeUri
 
-    override fun hashCode(): Int =
-        listOf(profileId, treeUri).hashCode()
+    override fun hashCode(): Int = listOf(profileId, treeUri).hashCode()
 
-    override fun toString(): String =
-        "SafConnection(profileId=$profileId, treeUri=<redacted>)"
+    override fun toString(): String = "SafConnection(profileId=$profileId, treeUri=<redacted>)"
 }
 
 class DlnaConnection(
@@ -280,29 +277,26 @@ class DlnaConnection(
         require(displayName.isNotBlank())
     }
 
-    override fun equals(other: Any?): Boolean =
-        other is DlnaConnection &&
-            profileId == other.profileId &&
-            serverUdn == other.serverUdn &&
-            descriptionLocation == other.descriptionLocation &&
-            controlUrl == other.controlUrl &&
-            contentDirectoryVersion == other.contentDirectoryVersion &&
-            displayName == other.displayName
+    override fun equals(other: Any?): Boolean = other is DlnaConnection &&
+        profileId == other.profileId &&
+        serverUdn == other.serverUdn &&
+        descriptionLocation == other.descriptionLocation &&
+        controlUrl == other.controlUrl &&
+        contentDirectoryVersion == other.contentDirectoryVersion &&
+        displayName == other.displayName
 
-    override fun hashCode(): Int =
-        listOf(
-            profileId,
-            serverUdn,
-            descriptionLocation,
-            controlUrl,
-            contentDirectoryVersion,
-            displayName,
-        ).hashCode()
+    override fun hashCode(): Int = listOf(
+        profileId,
+        serverUdn,
+        descriptionLocation,
+        controlUrl,
+        contentDirectoryVersion,
+        displayName,
+    ).hashCode()
 
-    override fun toString(): String =
-        "DlnaConnection(profileId=$profileId, serverUdn=$serverUdn, " +
-            "descriptionLocation=<redacted>, controlUrl=<redacted>, " +
-            "contentDirectoryVersion=$contentDirectoryVersion, displayName=$displayName)"
+    override fun toString(): String = "DlnaConnection(profileId=$profileId, serverUdn=$serverUdn, " +
+        "descriptionLocation=<redacted>, controlUrl=<redacted>, " +
+        "contentDirectoryVersion=$contentDirectoryVersion, displayName=$displayName)"
 }
 
 class SmbConnection(
@@ -323,21 +317,17 @@ class SmbConnection(
         require(displayName.isNotBlank())
     }
 
-    override fun equals(other: Any?): Boolean =
-        other is SmbConnection &&
-            profileId == other.profileId &&
-            host == other.host &&
-            port == other.port &&
-            share == other.share &&
-            domain == other.domain &&
-            username == other.username &&
-            displayName == other.displayName
+    override fun equals(other: Any?): Boolean = other is SmbConnection &&
+        profileId == other.profileId &&
+        host == other.host &&
+        port == other.port &&
+        share == other.share &&
+        domain == other.domain &&
+        username == other.username &&
+        displayName == other.displayName
 
-    override fun hashCode(): Int =
-        listOf(profileId, host, port, share, domain, username, displayName).hashCode()
+    override fun hashCode(): Int = listOf(profileId, host, port, share, domain, username, displayName).hashCode()
 
-    override fun toString(): String =
-        "SmbConnection(profileId=$profileId, host=$host, port=$port, share=$share, " +
-            "domain=<redacted>, username=<redacted>, displayName=$displayName)"
+    override fun toString(): String = "SmbConnection(profileId=$profileId, host=$host, port=$port, share=$share, " +
+        "domain=<redacted>, username=<redacted>, displayName=$displayName)"
 }
-

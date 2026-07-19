@@ -410,4 +410,3 @@ private fun SmbConnectionEntity.toDomain() = SmbConnection(
     username = username,
     displayName = displayName,
 )
-

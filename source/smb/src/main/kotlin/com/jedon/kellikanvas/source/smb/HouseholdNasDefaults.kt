@@ -39,8 +39,7 @@ object HouseholdNasDefaults {
     /** Default share used when a single profile is needed. */
     val PRIMARY_SHARE: HouseholdSmbShare = PHOTO_SHARES.first()
 
-    fun isPreferredSmbRoot(objectId: String): Boolean =
-        SmbPath.normalize(objectId).equals(FRAME_TV_16X9_PATH, ignoreCase = true)
+    fun isPreferredSmbRoot(objectId: String): Boolean = SmbPath.normalize(objectId).equals(FRAME_TV_16X9_PATH, ignoreCase = true)
 }
 
 data class HouseholdSmbShare(

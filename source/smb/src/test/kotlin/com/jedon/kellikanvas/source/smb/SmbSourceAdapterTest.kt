@@ -50,17 +50,15 @@ class SmbSourceAdapterTest {
 
         override suspend fun list(path: String): List<SmbEntry> = entries
 
-        override suspend fun metadata(path: String): SmbEntry =
-            entries.first { it.path == path }
+        override suspend fun metadata(path: String): SmbEntry = entries.first { it.path == path }
 
-        override suspend fun open(path: String): PhotoByteStream =
-            object : PhotoByteStream(0) {
-                override suspend fun readAtMostTo(
-                    sink: Buffer,
-                    byteCount: Long,
-                ): Long = -1
+        override suspend fun open(path: String): PhotoByteStream = object : PhotoByteStream(0) {
+            override suspend fun readAtMostTo(
+                sink: Buffer,
+                byteCount: Long,
+            ): Long = -1
 
-                override fun close() = Unit
-            }
+            override fun close() = Unit
+        }
     }
 }
