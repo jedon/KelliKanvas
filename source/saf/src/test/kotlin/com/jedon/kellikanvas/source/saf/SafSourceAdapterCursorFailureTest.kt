@@ -14,7 +14,7 @@ import java.nio.charset.StandardCharsets
 import java.util.Base64
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [28])
+@Config(sdk = [29])
 class SafSourceAdapterCursorFailureTest {
     @Test
     fun `invalid page cursor maps to ProtocolFailure`() = runTest {
