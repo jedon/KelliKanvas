@@ -105,5 +105,4 @@ class PhotoSurfaceView @JvmOverloads constructor(
             }
         }
     }
-
 }
