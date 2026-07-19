@@ -32,51 +32,57 @@ class CatalogDaoInstrumentationTest {
     }
 
     @Test
-    fun sourceCollectionAndRootRoundTrip() = runBlocking {
-        val source = source()
-        val collection = collection()
-        val root =
-            SelectedRoot(
-                collection.id,
-                source.id,
-                ProviderObjectId("photos"),
-                "Photos",
-                includeDescendants = true,
-                fileTypeFilters = setOf("image/jpeg"),
-            )
+    fun sourceCollectionAndRootRoundTrip() {
+        runBlocking {
+            val source = source()
+            val collection = collection()
+            val root =
+                SelectedRoot(
+                    collection.id,
+                    source.id,
+                    ProviderObjectId("photos"),
+                    "Photos",
+                    includeDescendants = true,
+                    fileTypeFilters = setOf("image/jpeg"),
+                )
 
-        database.sourceProfiles.upsert(source)
-        database.collections.upsert(collection)
-        database.selectedRoots.replace(root)
+            database.sourceProfiles.upsert(source)
+            database.collections.upsert(collection)
+            database.selectedRoots.replace(root)
 
-        assertThat(database.sourceProfiles.get(source.id)).isEqualTo(source)
-        assertThat(database.collections.get(collection.id)).isEqualTo(collection)
-        assertThat(database.selectedRoots.list(collection.id)).containsExactly(root)
+            assertThat(database.sourceProfiles.get(source.id)).isEqualTo(source)
+            assertThat(database.collections.get(collection.id)).isEqualTo(collection)
+            assertThat(database.selectedRoots.list(collection.id)).containsExactly(root)
+        }
     }
 
     @Test
-    fun snapshotAndSessionRoundTrip() = runBlocking {
-        prepareCatalog()
-        val snapshot = snapshot(lastPresentedAssetKey = key("photo-2"))
+    fun snapshotAndSessionRoundTrip() {
+        runBlocking {
+            prepareCatalog()
+            val snapshot = snapshot(lastPresentedAssetKey = key("photo-2"))
 
-        database.cycleSnapshots.persist(snapshot)
+            database.cycleSnapshots.persist(snapshot)
 
-        assertThat(database.playlistCycles.get(snapshot.cycle.id)).isEqualTo(snapshot.cycle)
-        assertThat(database.slideshowSessions.get(snapshot.session.collectionId))
-            .isEqualTo(snapshot.session)
+            assertThat(database.playlistCycles.get(snapshot.cycle.id)).isEqualTo(snapshot.cycle)
+            assertThat(database.slideshowSessions.get(snapshot.session.collectionId))
+                .isEqualTo(snapshot.session)
+        }
     }
 
     @Test
-    fun invalidSnapshotRollsBackTransaction() = runBlocking {
-        prepareCatalog()
-        val invalid = snapshot(lastPresentedAssetKey = key("missing"))
+    fun invalidSnapshotRollsBackTransaction() {
+        runBlocking {
+            prepareCatalog()
+            val invalid = snapshot(lastPresentedAssetKey = key("missing"))
 
-        val failure = runCatching { database.cycleSnapshots.persist(invalid) }.exceptionOrNull()
+            val failure = runCatching { database.cycleSnapshots.persist(invalid) }.exceptionOrNull()
 
-        assertThat(failure).isInstanceOf(SQLiteConstraintException::class.java)
-        assertThat(database.playlistCycles.get("cycle-1")).isNull()
-        assertThat(database.playlistCycleItems.list("cycle-1")).isEmpty()
-        assertThat(database.slideshowSessions.get("living-room")).isNull()
+            assertThat(failure).isInstanceOf(SQLiteConstraintException::class.java)
+            assertThat(database.playlistCycles.get("cycle-1")).isNull()
+            assertThat(database.playlistCycleItems.list("cycle-1")).isEmpty()
+            assertThat(database.slideshowSessions.get("living-room")).isNull()
+        }
     }
 
     private suspend fun prepareCatalog() {

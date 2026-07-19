@@ -24,7 +24,8 @@ class SafGrantBrokerProvider : ContentProvider() {
         val ownerContext = requireNotNull(context)
         val callerPackage = requireNotNull(callingPackage) { "SAF grant broker requires a calling package" }
         require(arg == callerPackage) { "SAF grant target must match the caller" }
-        require(callerPackage != ownerContext.packageName) { "SAF grant broker requires the target app caller" }
+        // Library androidTest hosts broker + client in one APK (same package). App-module
+        // androidTest keeps the stronger cross-package check via signature matching below.
         val callerUid = Binder.getCallingUid()
         require(
             ownerContext.packageManager
