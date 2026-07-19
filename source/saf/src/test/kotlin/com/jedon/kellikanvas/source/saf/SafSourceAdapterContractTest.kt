@@ -28,7 +28,7 @@ import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [28])
+@Config(sdk = [29])
 class SafSourceAdapterContractTest : AdapterContract() {
     override fun createHarness(): AdapterHarness {
         val fixture = registerSafProvider()
