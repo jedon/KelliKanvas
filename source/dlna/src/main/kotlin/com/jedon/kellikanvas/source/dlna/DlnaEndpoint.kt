@@ -245,40 +245,38 @@ internal suspend fun Call.readBoundedCancellable(
     source: okio.BufferedSource,
     maxBytes: Int,
     label: String,
-): ByteArray =
-    try {
-        withCanceledCall(this) {
-            readBounded(source, maxBytes, label)
-        }
-    } catch (failure: Throwable) {
-        throwIfCancellation(failure, isCanceled())
-        throw failure
+): ByteArray = try {
+    withCanceledCall(this) {
+        readBounded(source, maxBytes, label)
     }
+} catch (failure: Throwable) {
+    throwIfCancellation(failure, isCanceled())
+    throw failure
+}
 
 private suspend fun <T> withCanceledCall(
     call: Call,
     block: () -> T,
-): T =
-    coroutineScope {
-        val completed = AtomicBoolean(false)
-        // Watch on Default so cancel is not starved behind the blocking IO dispatcher thread.
-        val cancelWatcher =
-            launch(Dispatchers.Default) {
-                try {
-                    awaitCancellation()
-                } finally {
-                    if (!completed.get()) call.cancel()
-                }
+): T = coroutineScope {
+    val completed = AtomicBoolean(false)
+    // Watch on Default so cancel is not starved behind the blocking IO dispatcher thread.
+    val cancelWatcher =
+        launch(Dispatchers.Default) {
+            try {
+                awaitCancellation()
+            } finally {
+                if (!completed.get()) call.cancel()
             }
-        try {
-            withContext(Dispatchers.IO) {
-                block()
-            }.also { completed.set(true) }
-        } finally {
-            completed.set(true)
-            cancelWatcher.cancel()
         }
+    try {
+        withContext(Dispatchers.IO) {
+            block()
+        }.also { completed.set(true) }
+    } finally {
+        completed.set(true)
+        cancelWatcher.cancel()
     }
+}
 
 internal val NO_CREDENTIALS_INTERCEPTOR =
     Interceptor { chain ->
