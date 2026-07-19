@@ -71,11 +71,7 @@ class PhotoSurfaceView @JvmOverloads constructor(
         if (!surfaceReady) return
         val canvas: Canvas =
             try {
-                if (BuildVersion.hasHardwareCanvas) {
-                    holder.lockHardwareCanvas() ?: holder.lockCanvas() ?: return
-                } else {
-                    holder.lockCanvas() ?: return
-                }
+                holder.lockHardwareCanvas() ?: holder.lockCanvas() ?: return
             } catch (_: Exception) {
                 return
             }
@@ -110,8 +106,4 @@ class PhotoSurfaceView @JvmOverloads constructor(
         }
     }
 
-    private object BuildVersion {
-        val hasHardwareCanvas: Boolean =
-            android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O
-    }
 }

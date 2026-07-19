@@ -36,8 +36,8 @@ import java.util.UUID
 fun SafSetupScreen(
     controller: SafSetupController,
     onFinished: (collectionId: String) -> Unit,
-    onOpenMenu: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
+    onOpenMenu: (() -> Unit)? = null,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()

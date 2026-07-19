@@ -1,7 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
   <string name="app_name">KelliKanvas</string>
-  <string name="shell_status">Photo sources and slideshow UI are not wired into this build yet.\nYou should see this placeholder, not a hang.</string>
   <string name="permission_gate_title">Permissions</string>
   <string name="permission_gate_subtitle">Local network access is required for photo sources. Ambient sensors are optional.</string>
   <string name="permission_internet_title">Internet</string>

@@ -59,19 +59,10 @@ private fun Context.currentDisplaySize(windowManager: WindowManager): DisplaySiz
     }
     @Suppress("DEPRECATION")
     val legacyDisplay = windowManager.defaultDisplay
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-        val mode = legacyDisplay.mode
-        return DisplaySize(
-            mode.physicalWidth.coerceAtLeast(1),
-            mode.physicalHeight.coerceAtLeast(1),
-        )
-    }
-    val metrics = android.util.DisplayMetrics()
-    @Suppress("DEPRECATION")
-    legacyDisplay.getRealMetrics(metrics)
+    val mode = legacyDisplay.mode
     return DisplaySize(
-        metrics.widthPixels.coerceAtLeast(1),
-        metrics.heightPixels.coerceAtLeast(1),
+        mode.physicalWidth.coerceAtLeast(1),
+        mode.physicalHeight.coerceAtLeast(1),
     )
 }
 
@@ -83,7 +74,6 @@ private fun Context.supportedDisplaySizes(windowManager: WindowManager): List<Di
             @Suppress("DEPRECATION")
             windowManager.defaultDisplay
         } ?: return emptyList()
-    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return emptyList()
     return resolvedDisplay.supportedModes.map { mode ->
         DisplaySize(
             mode.physicalWidth.coerceAtLeast(1),

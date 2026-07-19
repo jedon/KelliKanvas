@@ -2,6 +2,7 @@ package com.jedon.kellikanvas.feature.slideshow
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import androidx.core.graphics.scale
 import com.jedon.kellikanvas.source.PhotoByteStream
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -101,7 +102,7 @@ object PhotoBitmapLoader {
         val scale = maxEdgePx.toFloat() / maxEdge.toFloat()
         val width = (bitmap.width * scale).toInt().coerceAtLeast(1)
         val height = (bitmap.height * scale).toInt().coerceAtLeast(1)
-        val scaled = Bitmap.createScaledBitmap(bitmap, width, height, true)
+        val scaled = bitmap.scale(width, height, true)
         if (scaled !== bitmap) {
             bitmap.recycle()
         }
