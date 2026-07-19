@@ -18,7 +18,7 @@ import org.robolectric.shadow.api.Shadow
 import java.io.File
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [28, 31, 35])
+@Config(sdk = [29, 31, 35])
 class AndroidUpdateIntegrationTest {
     @Test
     fun `authenticated release state persists across store instances`() {

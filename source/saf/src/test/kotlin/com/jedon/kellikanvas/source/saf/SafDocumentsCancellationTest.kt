@@ -25,7 +25,7 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [28])
+@Config(sdk = [29])
 class SafDocumentsCancellationTest {
     private val executor: ExecutorService =
         Executors.newSingleThreadExecutor {

@@ -11,7 +11,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [28])
+@Config(sdk = [29])
 class SafProfileRecoveryTest {
     @Test
     fun `replacement tree grant reuses profile ID and restores browsing after removal`() = runTest {
