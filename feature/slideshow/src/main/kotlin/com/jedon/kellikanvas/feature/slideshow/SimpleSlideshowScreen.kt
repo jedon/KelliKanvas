@@ -52,9 +52,9 @@ private const val DECODE_ERROR_DWELL_MS = 1_200L
 fun SimpleSlideshowScreen(
     adapters: Map<SourceProfileId, SourceAdapter>,
     roots: List<SelectedRoot>,
-    slideDurationMillis: Long = 15_000,
     onExit: () -> Unit,
     modifier: Modifier = Modifier,
+    slideDurationMillis: Long = 15_000,
     maxEdgePx: Int? = null,
 ) {
     val context = LocalContext.current
