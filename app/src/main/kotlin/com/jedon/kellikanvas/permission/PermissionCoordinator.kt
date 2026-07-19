@@ -37,6 +37,24 @@ class PermissionCoordinator(
         return localNetwork.status == PermissionStatus.Denied
     }
 
+    fun shouldDisplayGate(
+        sessionSkip: Boolean,
+        snapshot: PermissionSnapshot = snapshot(),
+    ): Boolean = shouldShowGate(snapshot) && !sessionSkip
+
+    fun runtimePermission(id: PermissionRowId): String? =
+        when (id) {
+            PermissionRowId.Internet -> null
+            PermissionRowId.LocalNetwork ->
+                if (sdkInt < LOCAL_NETWORK_RUNTIME_SDK) {
+                    null
+                } else {
+                    ACCESS_LOCAL_NETWORK
+                }
+            PermissionRowId.ActivityRecognition -> Manifest.permission.ACTIVITY_RECOGNITION
+            PermissionRowId.BodySensors -> Manifest.permission.BODY_SENSORS
+        }
+
     fun appSettingsIntent(): Intent =
         Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
             data = Uri.fromParts("package", context.packageName, null)

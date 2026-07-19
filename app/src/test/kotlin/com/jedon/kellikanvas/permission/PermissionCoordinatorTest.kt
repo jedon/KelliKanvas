@@ -107,6 +107,30 @@ class PermissionCoordinatorTest {
         assertThat(intent.flags and Intent.FLAG_ACTIVITY_NEW_TASK).isNotEqualTo(0)
     }
 
+    @Test
+    fun `shouldDisplayGate respects sessionSkip when local network denied`() {
+        val coordinator = coordinator(sdkInt = LOCAL_NETWORK_RUNTIME_SDK)
+        val snapshot = coordinator.snapshot()
+
+        assertThat(coordinator.shouldDisplayGate(sessionSkip = false, snapshot)).isTrue()
+        assertThat(coordinator.shouldDisplayGate(sessionSkip = true, snapshot)).isFalse()
+    }
+
+    @Test
+    fun `runtimePermission maps requestable rows and skips internet`() {
+        val requiring = coordinator(sdkInt = LOCAL_NETWORK_RUNTIME_SDK)
+        assertThat(requiring.runtimePermission(PermissionRowId.Internet)).isNull()
+        assertThat(requiring.runtimePermission(PermissionRowId.LocalNetwork))
+            .isEqualTo(ACCESS_LOCAL_NETWORK)
+        assertThat(requiring.runtimePermission(PermissionRowId.ActivityRecognition))
+            .isEqualTo(Manifest.permission.ACTIVITY_RECOGNITION)
+        assertThat(requiring.runtimePermission(PermissionRowId.BodySensors))
+            .isEqualTo(Manifest.permission.BODY_SENSORS)
+
+        val older = coordinator(sdkInt = 35)
+        assertThat(older.runtimePermission(PermissionRowId.LocalNetwork)).isNull()
+    }
+
     private fun coordinator(
         context: android.content.Context = RuntimeEnvironment.getApplication(),
         sdkInt: Int = 35,
