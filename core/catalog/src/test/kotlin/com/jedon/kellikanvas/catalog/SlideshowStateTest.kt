@@ -35,20 +35,23 @@ class SlideshowStateTest {
         database.catalogAssets.upsertAll(
             listOf(catalogAsset("current"), catalogAsset("last")),
         )
-        database.playlistCycles.insert(PlaylistCycle("cycle-7", "living-room", "seed", 1))
-        database.playlistCycleItems.insert(
-            PlaylistCycleItem("cycle-7", 3, assetKey("current")),
-        )
         val session =
             SlideshowSession(
                 collectionId = "living-room",
                 cycleId = "cycle-7",
-                currentOrdinal = 3,
+                currentOrdinal = 0,
                 currentAssetKey = assetKey("current"),
                 lastPresentedAssetKey = assetKey("last"),
             )
 
-        database.slideshowSessions.upsert(session)
+        database.cycleSnapshots.persist(
+            CycleSnapshot(
+                cycle = PlaylistCycle("cycle-7", "living-room", "seed", 1),
+                items = listOf(PlaylistCycleItem("cycle-7", 0, assetKey("current"))),
+                consumedPartners = emptyList(),
+                session = session,
+            ),
+        )
 
         assertThat(database.slideshowSessions.get("living-room")).isEqualTo(session)
     }
@@ -58,12 +61,23 @@ class SlideshowStateTest {
         val partner = ConsumedPortraitPartner("cycle-7", assetKey("partner"))
         prepareSourceAndCollection()
         database.catalogAssets.upsert(catalogAsset("partner"))
-        database.playlistCycles.insert(PlaylistCycle("cycle-7", "living-room", "seed", 1))
-        database.playlistCycleItems.insert(
-            PlaylistCycleItem("cycle-7", 0, assetKey("partner")),
+        database.cycleSnapshots.persist(
+            CycleSnapshot(
+                cycle = PlaylistCycle("cycle-7", "living-room", "seed", 1),
+                items = listOf(PlaylistCycleItem("cycle-7", 0, assetKey("partner"))),
+                consumedPartners = listOf(partner),
+                session =
+                SlideshowSession(
+                    collectionId = "living-room",
+                    cycleId = "cycle-7",
+                    currentOrdinal = 0,
+                    currentAssetKey = assetKey("partner"),
+                    lastPresentedAssetKey = null,
+                ),
+            ),
         )
 
-        database.consumedPortraitPartners.insert(partner)
+        // Idempotent re-insert via module-internal facade (not a public write path).
         database.consumedPortraitPartners.insert(partner)
 
         assertThat(database.consumedPortraitPartners.list("cycle-7"))

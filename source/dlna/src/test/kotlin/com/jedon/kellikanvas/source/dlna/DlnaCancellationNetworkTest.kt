@@ -59,12 +59,34 @@ class DlnaCancellationNetworkTest {
 
         request.cancel(CancellationException("cancel body"))
 
-        withTimeout(1_000) {
-            runCatching { request.await() }
-        }
+        val failure =
+            withTimeout(1_000) {
+                runCatching { request.await() }.exceptionOrNull()
+            }
         assertThat(request.isCancelled).isTrue()
         assertThat(call.isCanceled()).isTrue()
         assertThat(source.closed.get()).isTrue()
+        assertThat(failure).isInstanceOf(CancellationException::class.java)
+    }
+
+    @Test
+    fun `canceled call IOException surfaces as CancellationException from awaitResponse`() = runBlocking {
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse().setSocketPolicy(SocketPolicy.NO_RESPONSE))
+            val client = OkHttpClient()
+            val call = client.newCall(Request.Builder().url(server.url("/slow").newBuilder().host("127.0.0.1").build()).build())
+            val request = async(Dispatchers.IO) { call.awaitResponse() }
+            assertThat(server.takeRequest(5, TimeUnit.SECONDS)).isNotNull()
+
+            request.cancel(CancellationException("cancel await"))
+
+            val failure =
+                withTimeout(1_000) {
+                    runCatching { request.await() }.exceptionOrNull()
+                }
+            assertThat(call.isCanceled()).isTrue()
+            assertThat(failure).isInstanceOf(CancellationException::class.java)
+        }
     }
 
     @Test
@@ -97,7 +119,7 @@ class DlnaCancellationNetworkTest {
                     "M-SEARCH * HTTP/1.1\r\n\r\n".encodeToByteArray(),
                     SSDP_MAX_DATAGRAM_BYTES,
                     30_000,
-                ) { _, _ -> }
+                ) { _, _, _ -> }
             }
         delay(100)
 

@@ -39,11 +39,27 @@ jobs:
           test -f "$ANDROID_SDK_ROOT/platforms/android-37.0/android.jar"
           test -f "$ANDROID_SDK_ROOT/build-tools/36.0.0/aapt2"
 
+      - name: Guard uncovered androidTest modules
+        run: |
+          set -euo pipefail
+          uncovered="$(
+            find . -type f -name '*.kt' -path '*/src/androidTest/*' \
+              | sed 's|^\./||' \
+              | sort -u \
+              | grep -Ev '^(app|core/catalog|core/security|platform/update|source/saf)/src/androidTest/' \
+              || true
+          )"
+          if [[ -n "$uncovered" ]]; then
+            echo "::error::Uncovered androidTest sources found. Add the owning module to CI connectedAndroidTest runs (or extend the allowlist only if another workflow already runs them)."
+            printf '%s\n' "$uncovered"
+            exit 1
+          fi
+
       - name: Test convention plugins
-        run: ./gradlew :build-logic:test --stacktrace
+        run: ./gradlew --dependency-verification strict :build-logic:test --stacktrace
 
       - name: Check and assemble
-        run: ./gradlew ktlintCheck lintDebug testDebugUnitTest assembleDebug assembleDebugAndroidTest --stacktrace
+        run: ./gradlew --dependency-verification strict ktlintCheck lintDebug testDebugUnitTest assembleDebug assembleDebugAndroidTest --stacktrace
 
       - name: Upload debug APK
         if: success()
@@ -62,3 +78,58 @@ jobs:
             **/build/reports/**
             **/build/test-results/**
           if-no-files-found: warn
+
+  instrumented:
+    needs: android
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@c1e323688fd81a25caa38c78aa6df2d33d3e20d9 # v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a # v4
+
+      - name: Install API 34 emulator
+        run: |
+          set -euo pipefail
+          sudo chmod 666 /dev/kvm
+          "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" \
+            "platform-tools" "emulator" "platforms;android-34" \
+            "system-images;android-34;google_apis;x86_64"
+          printf 'no\n' | "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/avdmanager" \
+            create avd --force --name ci-api34 \
+            --package "system-images;android-34;google_apis;x86_64"
+
+      - name: Run instrumented tests on API 34
+        run: |
+          set -euo pipefail
+          cleanup() { adb emu kill >/dev/null 2>&1 || true; }
+          trap cleanup EXIT
+          "$ANDROID_SDK_ROOT/emulator/emulator" -avd ci-api34 \
+            -no-window -no-audio -no-boot-anim -no-snapshot -gpu swiftshader_indirect &
+          adb wait-for-device
+          for attempt in $(seq 1 60); do
+            if [[ "$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" == "1" ]]; then
+              break
+            fi
+            sleep 5
+          done
+          [[ "$(adb shell getprop sys.boot_completed | tr -d '\r')" == "1" ]]
+          adb shell settings put global window_animation_scale 0
+          adb shell settings put global transition_animation_scale 0
+          adb shell settings put global animator_duration_scale 0
+          ./gradlew --dependency-verification strict \
+            :source:saf:connectedDebugAndroidTest \
+            :core:catalog:connectedDebugAndroidTest \
+            :core:security:connectedDebugAndroidTest \
+            --stacktrace

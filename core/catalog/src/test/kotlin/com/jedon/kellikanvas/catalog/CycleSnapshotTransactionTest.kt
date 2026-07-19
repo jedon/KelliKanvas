@@ -49,9 +49,11 @@ class CycleSnapshotTransactionTest {
     }
 
     @Test
-    fun `cycle snapshot persists header items consumed partners and session atomically`() = runTest {
+    fun `cycleSnapshots persist is the supported atomic write path for cycles`() = runTest {
         val snapshot = snapshot()
 
+        // Public facade: only cycleSnapshots (and slideshowSessions) write cycles.
+        // playlistCycles / playlistCycleItems / consumedPortraitPartners are internal.
         database.cycleSnapshots.persist(snapshot)
 
         assertThat(database.playlistCycles.get(snapshot.cycle.id)).isEqualTo(snapshot.cycle)

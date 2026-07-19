@@ -100,11 +100,23 @@ class CatalogDatabaseTest {
         val second = catalogAsset("photo-2")
         prepareCollection()
         database.catalogAssets.upsertAll(listOf(first, second))
-        database.playlistCycles.insert(PlaylistCycle("cycle-1", "collection-1", "seed", 20))
-        database.playlistCycleItems.insert(
-            PlaylistCycleItem("cycle-1", 0, first.key),
+        database.cycleSnapshots.persist(
+            CycleSnapshot(
+                cycle = PlaylistCycle("cycle-1", "collection-1", "seed", 20),
+                items = listOf(PlaylistCycleItem("cycle-1", 0, first.key)),
+                consumedPartners = emptyList(),
+                session =
+                SlideshowSession(
+                    collectionId = "collection-1",
+                    cycleId = "cycle-1",
+                    currentOrdinal = 0,
+                    currentAssetKey = first.key,
+                    lastPresentedAssetKey = null,
+                ),
+            ),
         )
 
+        // Schema uniqueness is enforced even on module-internal piecemeal inserts.
         val duplicateOrdinal =
             runCatching {
                 database.playlistCycleItems.insert(
@@ -127,8 +139,21 @@ class CatalogDatabaseTest {
         val asset = catalogAsset("photo-1")
         prepareCollection()
         database.catalogAssets.upsert(asset)
-        database.playlistCycles.insert(PlaylistCycle("cycle-1", "collection-1", "seed", 20))
-        database.playlistCycleItems.insert(PlaylistCycleItem("cycle-1", 0, asset.key))
+        database.cycleSnapshots.persist(
+            CycleSnapshot(
+                cycle = PlaylistCycle("cycle-1", "collection-1", "seed", 20),
+                items = listOf(PlaylistCycleItem("cycle-1", 0, asset.key)),
+                consumedPartners = emptyList(),
+                session =
+                SlideshowSession(
+                    collectionId = "collection-1",
+                    cycleId = "cycle-1",
+                    currentOrdinal = 0,
+                    currentAssetKey = asset.key,
+                    lastPresentedAssetKey = null,
+                ),
+            ),
+        )
 
         val failure = runCatching { database.catalogAssets.delete(asset.key) }.exceptionOrNull()
 

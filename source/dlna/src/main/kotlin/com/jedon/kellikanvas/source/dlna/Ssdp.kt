@@ -29,6 +29,7 @@ class SsdpResponseParser {
     fun parse(
         datagram: ByteArray,
         length: Int,
+        sender: InetAddress,
     ): SsdpDevice? {
         if (length !in 1..SSDP_MAX_DATAGRAM_BYTES || length > datagram.size) {
             throw SsdpProtocolException("Invalid SSDP datagram size")
@@ -53,9 +54,30 @@ class SsdpResponseParser {
         if (!st.contains("MediaServer:1", ignoreCase = true)) return null
         val uri = runCatching { URI(location) }.getOrNull() ?: return null
         if (uri.scheme?.lowercase() !in setOf("http", "https") || uri.host.isNullOrBlank()) return null
+        if (!locationMatchesSender(uri.host, sender)) return null
         val udn = usn.substringBefore("::").trim()
         if (!udn.startsWith("uuid:", ignoreCase = true) || udn.length <= 5) return null
         return SsdpDevice(uri, usn, st, udn.lowercase())
+    }
+
+    private fun locationMatchesSender(
+        host: String,
+        sender: InetAddress,
+    ): Boolean {
+        if (isIpLiteral(host)) {
+            val literal = runCatching { InetAddress.getByName(host) }.getOrNull() ?: return false
+            return literal == sender && isPrivateLanAddress(literal)
+        }
+        val resolved = runCatching { InetAddress.getAllByName(host).toList() }.getOrElse { return false }
+        if (resolved.isEmpty() || sender !in resolved) return false
+        return resolved.all(::isPrivateLanAddress)
+    }
+
+    private fun isIpLiteral(host: String): Boolean =
+        IPV4_LITERAL.matches(host) || host.contains(':')
+
+    private companion object {
+        val IPV4_LITERAL = Regex("""^(?:\d{1,3}\.){3}\d{1,3}$""")
     }
 }
 
@@ -82,7 +104,7 @@ interface SsdpTransport : AutoCloseable {
         request: ByteArray,
         maxDatagramBytes: Int,
         windowMillis: Long,
-        receive: (ByteArray, Int) -> Unit,
+        receive: (ByteArray, Int, InetAddress) -> Unit,
     )
 }
 
@@ -93,7 +115,7 @@ class UdpSsdpTransport : SsdpTransport {
         request: ByteArray,
         maxDatagramBytes: Int,
         windowMillis: Long,
-        receive: (ByteArray, Int) -> Unit,
+        receive: (ByteArray, Int, InetAddress) -> Unit,
     ) = suspendCancellableCoroutine { continuation ->
         val activeSocket = DatagramSocket()
         socket.set(activeSocket)
@@ -119,18 +141,23 @@ class UdpSsdpTransport : SsdpTransport {
                     try {
                         val packet = DatagramPacket(buffer, buffer.size)
                         activeSocket.receive(packet)
-                        receive(packet.data.copyOf(packet.length), packet.length)
+                        val source = packet.address ?: continue
+                        receive(packet.data.copyOf(packet.length), packet.length, source)
                     } catch (_: SocketTimeoutException) {
                         break
                     }
                 }
-                continuation.resume(Unit)
+                if (continuation.isActive) {
+                    continuation.resume(Unit)
+                }
             } catch (failure: SocketException) {
                 if (continuation.isActive) {
                     continuation.resumeWithException(failure)
                 }
             } catch (failure: Throwable) {
-                continuation.resumeWithException(failure)
+                if (continuation.isActive) {
+                    continuation.resumeWithException(failure)
+                }
             } finally {
                 activeSocket.close()
                 socket.compareAndSet(activeSocket, null)
@@ -157,10 +184,10 @@ class SsdpDiscoverer(
                 request = SEARCH_REQUEST.encodeToByteArray(),
                 maxDatagramBytes = SSDP_MAX_DATAGRAM_BYTES,
                 windowMillis = SSDP_DISCOVERY_WINDOW_MILLIS,
-            ) { bytes, length ->
+            ) { bytes, length, sender ->
                 if (devices.size < MAX_DISCOVERED_DEVICES) {
                     try {
-                        parser.parse(bytes, length)?.let { devices.putIfAbsent(it.udn, it) }
+                        parser.parse(bytes, length, sender)?.let { devices.putIfAbsent(it.udn, it) }
                     } catch (_: SsdpProtocolException) {
                         // One hostile response must not abort the bounded discovery window.
                     }

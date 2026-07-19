@@ -269,7 +269,8 @@ class DlnaSourceAdapter(
             operation,
             failure.message?.takeIf { it.isNotBlank() }?.take(120) ?: "Invalid DLNA object id",
         )
-    } catch (_: IOException) {
+    } catch (failure: IOException) {
+        throwIfCancellation(failure)
         throw SourceFailure.SourceUnavailable(profileId, operation, "DLNA network unavailable")
     }
 
@@ -344,11 +345,41 @@ private class NormalizingDlnaPhotoByteStream(
         throw failure
     } catch (failure: SourceFailure) {
         throw failure
-    } catch (_: IOException) {
+    } catch (failure: IOException) {
+        throwIfCancellation(failure)
         throw SourceFailure.SourceUnavailable(profileId, "read", "DLNA network unavailable")
     }
 
     override fun close() = delegate.close()
+}
+
+/**
+ * OkHttp and blocking sockets often surface cancel as [IOException] ("Canceled", "Socket closed", …).
+ * Prefer [okhttp3.Call.isCanceled] at the call site when a Call is available; this handles exception-only paths.
+ */
+internal fun throwIfCancellation(failure: Throwable, callCanceled: Boolean = false) {
+    if (callCanceled || failure is CancellationException || failure.isCancellationSignal()) {
+        if (failure is CancellationException) throw failure
+        throw CancellationException(failure.message ?: "Canceled").apply { initCause(failure) }
+    }
+}
+
+private fun Throwable.isCancellationSignal(): Boolean {
+    var current: Throwable? = this
+    val seen = HashSet<Throwable>()
+    while (current != null && seen.add(current)) {
+        if (current is CancellationException) return true
+        if (current is IOException && current.messageIndicatesCanceled()) return true
+        current = current.cause
+    }
+    return false
+}
+
+private fun IOException.messageIndicatesCanceled(): Boolean {
+    val message = message ?: return false
+    return message.equals("Canceled", ignoreCase = true) ||
+        message.equals("Socket closed", ignoreCase = true) ||
+        message.contains("socket closed", ignoreCase = true)
 }
 
 internal fun DlnaBrowsePage.validateForRequest(

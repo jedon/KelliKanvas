@@ -61,13 +61,17 @@ abstract class KelliKanvasDatabase : RoomDatabase() {
     val catalogAssets: CatalogAssetDao by lazy {
         CatalogAssetDao(roomCatalogAssets())
     }
-    val playlistCycles: PlaylistCycleDao by lazy {
+    /**
+     * Piecemeal cycle mutation is module-internal only.
+     * Outside `core:catalog`, create or replace cycles via [cycleSnapshots].
+     */
+    internal val playlistCycles: PlaylistCycleDao by lazy {
         PlaylistCycleDao(roomPlaylistCycles())
     }
-    val playlistCycleItems: PlaylistCycleItemDao by lazy {
+    internal val playlistCycleItems: PlaylistCycleItemDao by lazy {
         PlaylistCycleItemDao(roomPlaylistCycleItems())
     }
-    val consumedPortraitPartners: ConsumedPortraitPartnerDao by lazy {
+    internal val consumedPortraitPartners: ConsumedPortraitPartnerDao by lazy {
         ConsumedPortraitPartnerDao(roomConsumedPortraitPartners())
     }
     val slideshowSessions: SlideshowSessionDao by lazy {

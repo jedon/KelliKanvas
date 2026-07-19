@@ -129,6 +129,46 @@ class DreamIntegrationTest {
     }
 
     @Test
+    fun `double onDreamingStarted stops previous lifecycle before replace`() {
+        val firstHost = RecordingDreamHost(hasCollection = true)
+        val secondHost = RecordingDreamHost(hasCollection = true)
+        val root = FrameLayout(RuntimeEnvironment.getApplication())
+        val service =
+            InjectableDreamService(
+                hosts = ArrayDeque(listOf(firstHost, secondHost)),
+                container = root,
+            )
+
+        service.beginDreamSession()
+        assertThat(firstHost.attachCount).isEqualTo(1)
+        assertThat(firstHost.detachCount).isEqualTo(0)
+
+        service.beginDreamSession()
+        assertThat(firstHost.detachCount).isEqualTo(1)
+        assertThat(secondHost.attachCount).isEqualTo(1)
+
+        service.endDreamSession()
+        assertThat(firstHost.detachCount).isEqualTo(1)
+        assertThat(secondHost.detachCount).isEqualTo(1)
+    }
+
+    @Test
+    fun `dream service finishes immediately when slideshow host is unavailable`() {
+        val root = FrameLayout(RuntimeEnvironment.getApplication())
+        var finished = false
+        val service =
+            InjectableDreamService(
+                hosts = ArrayDeque(listOf(DreamSlideshowHost.Unavailable)),
+                container = root,
+                onFinish = { finished = true },
+            )
+
+        service.beginDreamSession()
+
+        assertThat(finished).isTrue()
+    }
+
+    @Test
     fun `dream window configuration is fullscreen without wake flags`() {
         val activity = Robolectric.buildActivity(android.app.Activity::class.java).setup().get()
         activity.window.addFlags(
@@ -166,5 +206,22 @@ class DreamIntegrationTest {
     ) : Application(),
         DreamSlideshowHostProvider {
         override fun dreamSlideshowHost() = host
+    }
+
+    /**
+     * Exercises [KelliKanvasDreamService] lifecycle replacement without full DreamService window setup.
+     */
+    private class InjectableDreamService(
+        private val hosts: ArrayDeque<DreamSlideshowHost>,
+        private val container: ViewGroup,
+        private val onFinish: () -> Unit = {},
+    ) : KelliKanvasDreamService() {
+        override fun createSlideshowHost(): DreamSlideshowHost = hosts.removeFirst()
+
+        override fun dreamContainer(): ViewGroup = container
+
+        override fun finishDream() {
+            onFinish()
+        }
     }
 }

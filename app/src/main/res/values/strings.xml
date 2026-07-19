@@ -1,4 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
   <string name="app_name">KelliKanvas</string>
+  <string name="shell_status">Photo sources and slideshow UI are not wired into this build yet.\nYou should see this placeholder, not a hang.</string>
+  <string name="permission_gate_title">Permissions</string>
+  <string name="permission_gate_subtitle">Local network access is required for photo sources. Ambient sensors are optional.</string>
+  <string name="permission_internet_title">Internet</string>
+  <string name="permission_local_network_title">Local network</string>
+  <string name="permission_activity_title">Activity recognition</string>
+  <string name="permission_body_sensors_title">Body sensors</string>
+  <string name="permission_status_granted_at_install">Granted at install</string>
+  <string name="permission_status_granted">Granted</string>
+  <string name="permission_status_denied">Not granted</string>
+  <string name="permission_status_not_applicable">Not required on this Android version</string>
+  <string name="permission_grant">Grant</string>
+  <string name="permission_open_settings">Open app settings</string>
+  <string name="permission_not_now">Not now</string>
 </resources>

@@ -33,6 +33,13 @@ class DlnaEndpointPolicyTest {
     }
 
     @Test
+    fun `rejects link-local discovered endpoints at construction`() {
+        assertThrows(DlnaSecurityException::class.java) {
+            DlnaEndpointPolicy(URI("http://169.254.169.254/latest/meta-data/"))
+        }
+    }
+
+    @Test
     fun `redirects cannot cross security or leave discovered endpoint`() {
         val policy = DlnaEndpointPolicy(URI("http://192.168.1.8:8200/root.xml"))
         val from = URI("http://192.168.1.8:8200/photo.jpg")
