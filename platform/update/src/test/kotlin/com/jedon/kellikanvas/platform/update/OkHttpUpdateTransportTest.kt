@@ -2,14 +2,21 @@ package com.jedon.kellikanvas.platform.update
 
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
 import org.junit.Test
 import java.io.InterruptedIOException
+import java.net.Proxy
 import java.nio.file.Files
 import java.security.MessageDigest
 
 class OkHttpUpdateTransportTest {
     private val server = MockWebServer()
+
+    @Test
+    fun `default client disables HTTP proxy`() {
+        assertEquals(Proxy.NO_PROXY, OkHttpUpdateTransport().client.proxy)
+    }
 
     @Test
     fun `does not follow redirects across origins`() {

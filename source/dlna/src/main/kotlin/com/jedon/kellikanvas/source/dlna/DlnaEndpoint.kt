@@ -1,12 +1,15 @@
 package com.jedon.kellikanvas.source.dlna
 
 import com.jedon.kellikanvas.source.PhotoByteStream
-import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
 import okhttp3.Call
 import okhttp3.Callback
 import okhttp3.Interceptor
@@ -20,6 +23,7 @@ import java.net.Inet6Address
 import java.net.InetAddress
 import java.net.Proxy
 import java.net.URI
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
@@ -27,7 +31,7 @@ class DlnaSecurityException(message: String) : SecurityException(message)
 
 class DlnaEndpointPolicy(
     discoveredLocation: URI,
-    private val privateAddressPredicate: (InetAddress) -> Boolean = ::isPrivateOrLinkLocal,
+    private val privateAddressPredicate: (InetAddress) -> Boolean = ::isPrivateLanAddress,
 ) {
     private val scheme = discoveredLocation.scheme?.lowercase()
         ?: throw DlnaSecurityException("Endpoint scheme missing")
@@ -39,7 +43,7 @@ class DlnaEndpointPolicy(
         validateShape(discoveredLocation)
         val addresses = resolve(discoveredLocation)
         if (addresses.isEmpty() || addresses.any { !privateAddressPredicate(it) }) {
-            throw DlnaSecurityException("Discovered endpoint is not private or link-local")
+            throw DlnaSecurityException("Discovered endpoint is not a private LAN address")
         }
         discoveredAddresses = addresses.toSet()
     }
@@ -179,22 +183,19 @@ class DlnaPhotoByteStream internal constructor(
         sink: Buffer,
         byteCount: Long,
     ): Long {
-        val result =
-            suspendCancellableCoroutine { continuation ->
-                check(!closed) { "Stream is closed" }
-                continuation.invokeOnCancellation { call.cancel() }
-                CoroutineScope(Dispatchers.IO).launch {
-                    val temporary = Buffer()
-                    try {
-                        val read = source.read(temporary, byteCount)
-                        continuation.resume(ByteRead(read, temporary.readByteArray())) { _, _, _ -> }
-                    } catch (failure: Throwable) {
-                        continuation.resumeWithException(failure)
-                    }
+        check(!closed) { "Stream is closed" }
+        val temporary = Buffer()
+        val read =
+            try {
+                withCanceledCall(call) {
+                    source.read(temporary, byteCount)
                 }
+            } catch (failure: Throwable) {
+                throwIfCancellation(failure, call.isCanceled())
+                throw failure
             }
-        if (result.count > 0) sink.write(result.bytes)
-        return result.count
+        if (read > 0) sink.write(temporary, read)
+        return read
     }
 
     override fun close() {
@@ -204,11 +205,6 @@ class DlnaPhotoByteStream internal constructor(
             response.close()
         }
     }
-
-    private data class ByteRead(
-        val count: Long,
-        val bytes: ByteArray,
-    )
 }
 
 internal suspend fun Call.awaitResponse(): Response = suspendCancellableCoroutine { continuation ->
@@ -221,6 +217,13 @@ internal suspend fun Call.awaitResponse(): Response = suspendCancellableCoroutin
                 call: Call,
                 e: IOException,
             ) {
+                if (!continuation.isActive) return
+                try {
+                    throwIfCancellation(e, call.isCanceled())
+                } catch (cancel: CancellationException) {
+                    continuation.resumeWithException(cancel)
+                    return
+                }
                 continuation.resumeWithException(e)
             }
 
@@ -228,6 +231,10 @@ internal suspend fun Call.awaitResponse(): Response = suspendCancellableCoroutin
                 call: Call,
                 response: Response,
             ) {
+                if (!continuation.isActive) {
+                    response.close()
+                    return
+                }
                 continuation.resume(response) { _, lateResponse, _ -> lateResponse.close() }
             }
         },
@@ -238,17 +245,40 @@ internal suspend fun Call.readBoundedCancellable(
     source: okio.BufferedSource,
     maxBytes: Int,
     label: String,
-): ByteArray = suspendCancellableCoroutine { continuation ->
-    continuation.invokeOnCancellation { cancel() }
-    CoroutineScope(Dispatchers.IO).launch {
+): ByteArray =
+    try {
+        withCanceledCall(this) {
+            readBounded(source, maxBytes, label)
+        }
+    } catch (failure: Throwable) {
+        throwIfCancellation(failure, isCanceled())
+        throw failure
+    }
+
+private suspend fun <T> withCanceledCall(
+    call: Call,
+    block: () -> T,
+): T =
+    coroutineScope {
+        val completed = AtomicBoolean(false)
+        // Watch on Default so cancel is not starved behind the blocking IO dispatcher thread.
+        val cancelWatcher =
+            launch(Dispatchers.Default) {
+                try {
+                    awaitCancellation()
+                } finally {
+                    if (!completed.get()) call.cancel()
+                }
+            }
         try {
-            val bytes = readBounded(source, maxBytes, label)
-            continuation.resume(bytes) { _, _, _ -> }
-        } catch (failure: Throwable) {
-            continuation.resumeWithException(failure)
+            withContext(Dispatchers.IO) {
+                block()
+            }.also { completed.set(true) }
+        } finally {
+            completed.set(true)
+            cancelWatcher.cancel()
         }
     }
-}
 
 internal val NO_CREDENTIALS_INTERCEPTOR =
     Interceptor { chain ->
@@ -261,16 +291,21 @@ internal val NO_CREDENTIALS_INTERCEPTOR =
         )
     }
 
-private fun isPrivateOrLinkLocal(address: InetAddress): Boolean {
-    if (address.isAnyLocalAddress || address.isMulticastAddress || address.isLoopbackAddress) return false
-    if (address.isLinkLocalAddress || address.isSiteLocalAddress) return true
+/** RFC1918 IPv4 and unique-local IPv6 only; denies link-local, loopback, multicast, and public. */
+internal fun isPrivateLanAddress(address: InetAddress): Boolean {
+    if (address.isAnyLocalAddress ||
+        address.isMulticastAddress ||
+        address.isLoopbackAddress ||
+        address.isLinkLocalAddress
+    ) {
+        return false
+    }
     return when (address) {
         is Inet4Address -> {
             val octets = address.address.map { it.toInt() and 0xff }
             octets[0] == 10 ||
                 (octets[0] == 172 && octets[1] in 16..31) ||
-                (octets[0] == 192 && octets[1] == 168) ||
-                (octets[0] == 169 && octets[1] == 254)
+                (octets[0] == 192 && octets[1] == 168)
         }
         is Inet6Address -> {
             val first = address.address[0].toInt() and 0xff

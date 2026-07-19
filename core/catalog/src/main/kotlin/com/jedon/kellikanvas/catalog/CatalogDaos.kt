@@ -59,7 +59,7 @@ class CatalogAssetDao internal constructor(
     suspend fun delete(key: AssetKey) = roomDao.delete(key.profileId.value, key.objectId.value)
 }
 
-class PlaylistCycleDao internal constructor(
+internal class PlaylistCycleDao internal constructor(
     private val roomDao: RoomPlaylistCycleDao,
 ) {
     suspend fun insert(cycle: PlaylistCycle) = roomDao.insert(cycle.toEntity())
@@ -69,7 +69,7 @@ class PlaylistCycleDao internal constructor(
     suspend fun delete(cycleId: String) = roomDao.delete(cycleId)
 }
 
-class PlaylistCycleItemDao internal constructor(
+internal class PlaylistCycleItemDao internal constructor(
     private val roomDao: RoomPlaylistCycleItemDao,
 ) {
     suspend fun insert(item: PlaylistCycleItem) = roomDao.insert(item.toEntity())
@@ -77,7 +77,7 @@ class PlaylistCycleItemDao internal constructor(
     suspend fun list(cycleId: String): List<PlaylistCycleItem> = roomDao.list(cycleId).map(PlaylistCycleItemEntity::toDomain)
 }
 
-class ConsumedPortraitPartnerDao internal constructor(
+internal class ConsumedPortraitPartnerDao internal constructor(
     private val roomDao: RoomConsumedPortraitPartnerDao,
 ) {
     suspend fun insert(partner: ConsumedPortraitPartner) = roomDao.insert(partner.toEntity())

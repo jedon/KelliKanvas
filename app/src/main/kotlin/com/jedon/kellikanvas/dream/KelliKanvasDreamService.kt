@@ -24,10 +24,22 @@ interface DreamSlideshowHost {
     }
 }
 
+/**
+ * Supplies the slideshow host used while dreaming.
+ *
+ * The host must be provided by the Application (via this provider) when playback is wired;
+ * until then [resolveDreamSlideshowHost] falls back to [DreamSlideshowHost.Unavailable].
+ */
 interface DreamSlideshowHostProvider {
     fun dreamSlideshowHost(): DreamSlideshowHost?
 }
 
+/**
+ * Resolves the dream slideshow host from [application].
+ *
+ * The host must be provided by the Application when playback is wired; otherwise returns
+ * [DreamSlideshowHost.Unavailable], which finishes the dream immediately.
+ */
 internal fun resolveDreamSlideshowHost(application: Application): DreamSlideshowHost = (
     application as? DreamSlideshowHostProvider
     )?.dreamSlideshowHost()
@@ -89,6 +101,12 @@ open class KelliKanvasDreamService : DreamService() {
 
     protected open fun createSlideshowHost(): DreamSlideshowHost = resolveDreamSlideshowHost(application)
 
+    protected open fun dreamContainer(): ViewGroup? = window?.decorView as? ViewGroup
+
+    protected open fun finishDream() {
+        finish()
+    }
+
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
         isInteractive = false
@@ -99,24 +117,33 @@ open class KelliKanvasDreamService : DreamService() {
 
     override fun onDreamingStarted() {
         super.onDreamingStarted()
-        lifecycle =
-            DreamLifecycle(
-                host = createSlideshowHost(),
-                containerProvider = { window?.decorView as? ViewGroup },
-                finish = ::finish,
-            ).also(DreamLifecycle::onDreamingStarted)
+        beginDreamSession()
     }
 
     override fun onDreamingStopped() {
-        lifecycle?.onDreamingStopped()
-        lifecycle = null
+        endDreamSession()
         super.onDreamingStopped()
     }
 
     override fun onDetachedFromWindow() {
+        endDreamSession()
+        super.onDetachedFromWindow()
+    }
+
+    internal fun beginDreamSession() {
         lifecycle?.onDreamingStopped()
         lifecycle = null
-        super.onDetachedFromWindow()
+        lifecycle =
+            DreamLifecycle(
+                host = createSlideshowHost(),
+                containerProvider = { dreamContainer() },
+                finish = ::finishDream,
+            ).also(DreamLifecycle::onDreamingStarted)
+    }
+
+    internal fun endDreamSession() {
+        lifecycle?.onDreamingStopped()
+        lifecycle = null
     }
 }
 

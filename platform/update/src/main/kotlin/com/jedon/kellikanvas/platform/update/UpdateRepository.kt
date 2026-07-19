@@ -6,6 +6,7 @@ import java.io.File
 import java.io.FilterInputStream
 import java.io.InputStream
 import java.io.InterruptedIOException
+import java.net.Proxy
 import java.net.URI
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
@@ -25,8 +26,9 @@ fun interface UpdateTransport {
 
 class OkHttpUpdateTransport(
     private val originPolicy: UpdateOriginPolicy = UpdateOriginPolicy.QNAP_LAN,
-    private val client: OkHttpClient =
+    internal val client: OkHttpClient =
         OkHttpClient.Builder()
+            .proxy(Proxy.NO_PROXY)
             .followRedirects(false)
             .followSslRedirects(false)
             .build(),
@@ -187,9 +189,10 @@ class AuthenticatedManifestRepository(
     fun check(manual: Boolean, installedVersionCode: Long): UpdateManifest? {
         val now = nowMillis()
         if (!UpdateCheckPolicy.shouldCheck(manual, now, timestampStore.lastCheckMillis())) return null
-        timestampStore.recordCheck(now)
         val controlBytes = fetchKnown(controlUri, UpdateLimits.METADATA_MAX_BYTES.toLong())
         val authenticated = authenticator.authenticateEnvelope(controlBytes)
+        timestampStore.recordCheck(now)
+        if (authenticated.manifest.versionCode <= installedVersionCode) return null
         originPolicy.validateManifest(authenticated.manifest, installedVersionCode)
         replayGuard.accept(authenticated.manifest, authenticated.payloadHash)
         return authenticated.manifest

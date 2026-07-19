@@ -7,6 +7,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertThrows
 import org.junit.Test
+import java.net.InetAddress
 
 class SsdpDiscovererTest {
     @Test
@@ -18,16 +19,28 @@ class SsdpDiscovererTest {
                 "ST: urn:schemas-upnp-org:device:MediaServer:1",
             )
 
-        val parsed = SsdpResponseParser().parse(response, response.size)
+        val parsed = SsdpResponseParser().parse(response, response.size, sender("192.168.1.8"))
 
         assertThat(parsed!!.udn).isEqualTo("uuid:qnap-1")
         assertThat(parsed.location.toString()).isEqualTo("http://192.168.1.8:8200/root.xml")
     }
 
     @Test
+    fun `parser rejects LOCATION whose IP does not match UDP sender`() {
+        val response =
+            response(
+                "LOCATION: http://192.168.1.9:8200/root.xml",
+                "USN: uuid:spoofed::urn:schemas-upnp-org:device:MediaServer:1",
+                "ST: urn:schemas-upnp-org:device:MediaServer:1",
+            )
+
+        assertThat(SsdpResponseParser().parse(response, response.size, sender("192.168.1.8"))).isNull()
+    }
+
+    @Test
     fun `parser rejects non-200 missing fields and oversized headers`() {
         val notFound = "HTTP/1.1 404 Nope\r\n\r\n".encodeToByteArray()
-        assertThat(SsdpResponseParser().parse(notFound, notFound.size)).isNull()
+        assertThat(SsdpResponseParser().parse(notFound, notFound.size, sender("192.168.1.8"))).isNull()
         assertThat(
             SsdpResponseParser().parse(
                 response(
@@ -35,15 +48,16 @@ class SsdpDiscovererTest {
                     "USN: uuid:qnap-1",
                 ),
                 response("LOCATION: http://192.168.1.8/root.xml", "USN: uuid:qnap-1").size,
+                sender("192.168.1.8"),
             ),
         ).isNull()
         val huge = response("X: ${"a".repeat(4097)}", "LOCATION: http://192.168.1.8/root.xml", "USN: uuid:x", "ST: MediaServer:1")
         assertThrows(SsdpProtocolException::class.java) {
-            SsdpResponseParser().parse(huge, huge.size)
+            SsdpResponseParser().parse(huge, huge.size, sender("192.168.1.8"))
         }
         val tooMany = response(*(0..64).map { "X-$it: y" }.toTypedArray())
         assertThrows(SsdpProtocolException::class.java) {
-            SsdpResponseParser().parse(tooMany, tooMany.size)
+            SsdpResponseParser().parse(tooMany, tooMany.size, sender("192.168.1.8"))
         }
     }
 
@@ -59,7 +73,12 @@ class SsdpDiscovererTest {
             "USN: uuid:qnap::urn:schemas-upnp-org:device:MediaServer:1",
             "ST: urn:schemas-upnp-org:device:MediaServer:1",
         )
-        val transport = FakeTransport(listOf(first, duplicate))
+        val transport = FakeTransport(
+            listOf(
+                FakePacket(first, sender("192.168.1.8")),
+                FakePacket(duplicate, sender("192.168.1.8")),
+            ),
+        )
         val lock = FakeLock()
 
         val devices = SsdpDiscoverer({ transport }, lock).discover()
@@ -74,6 +93,36 @@ class SsdpDiscovererTest {
         assertThat(lock.acquires).isEqualTo(1)
         assertThat(lock.releases).isEqualTo(1)
         assertThat(transport.closed).isTrue()
+    }
+
+    @Test
+    fun `discover accepts matching sender LOCATION and skips spoofed LOCATION`() = runTest {
+        val matching = response(
+            "LOCATION: http://192.168.1.8/root.xml",
+            "USN: uuid:real::urn:schemas-upnp-org:device:MediaServer:1",
+            "ST: urn:schemas-upnp-org:device:MediaServer:1",
+        )
+        val spoofed = response(
+            "LOCATION: http://192.168.1.9/root.xml",
+            "USN: uuid:spoof::urn:schemas-upnp-org:device:MediaServer:1",
+            "ST: urn:schemas-upnp-org:device:MediaServer:1",
+        )
+        val afterSpoof = response(
+            "LOCATION: http://192.168.1.10/root.xml",
+            "USN: uuid:later::urn:schemas-upnp-org:device:MediaServer:1",
+            "ST: urn:schemas-upnp-org:device:MediaServer:1",
+        )
+        val transport = FakeTransport(
+            listOf(
+                FakePacket(matching, sender("192.168.1.8")),
+                FakePacket(spoofed, sender("192.168.1.8")),
+                FakePacket(afterSpoof, sender("192.168.1.10")),
+            ),
+        )
+
+        val devices = SsdpDiscoverer({ transport }, FakeLock()).discover()
+
+        assertThat(devices.map(SsdpDevice::udn)).containsExactly("uuid:real", "uuid:later").inOrder()
     }
 
     @Test
@@ -93,18 +142,25 @@ class SsdpDiscovererTest {
     @Test
     fun `hostile datagrams are skipped and unique devices are capped`() = runTest {
         val hostile =
-            response(
-                "X: ${"x".repeat(4097)}",
-                "LOCATION: http://192.168.1.8/root.xml",
-                "USN: uuid:hostile",
-                "ST: urn:schemas-upnp-org:device:MediaServer:1",
+            FakePacket(
+                response(
+                    "X: ${"x".repeat(4097)}",
+                    "LOCATION: http://192.168.1.8/root.xml",
+                    "USN: uuid:hostile",
+                    "ST: urn:schemas-upnp-org:device:MediaServer:1",
+                ),
+                sender("192.168.1.8"),
             )
         val valid =
             (0 until 100).map { index ->
-                response(
-                    "LOCATION: http://192.168.1.${index + 1}/root.xml",
-                    "USN: uuid:server-$index",
-                    "ST: urn:schemas-upnp-org:device:MediaServer:1",
+                val host = "192.168.1.${index + 1}"
+                FakePacket(
+                    response(
+                        "LOCATION: http://$host/root.xml",
+                        "USN: uuid:server-$index",
+                        "ST: urn:schemas-upnp-org:device:MediaServer:1",
+                    ),
+                    sender(host),
                 )
             }
         val lock = FakeLock()
@@ -131,6 +187,8 @@ class SsdpDiscovererTest {
         "HTTP/1.1 200 OK\r\n" + headers.joinToString("\r\n") + "\r\n\r\n"
         ).encodeToByteArray()
 
+    private fun sender(host: String): InetAddress = InetAddress.getByName(host)
+
     private class FakeLock : MulticastLock {
         var acquires = 0
         var releases = 0
@@ -143,8 +201,13 @@ class SsdpDiscovererTest {
         }
     }
 
+    private data class FakePacket(
+        val bytes: ByteArray,
+        val sender: InetAddress,
+    )
+
     private class FakeTransport(
-        private val packets: List<ByteArray>,
+        private val packets: List<FakePacket>,
         private val stall: Boolean = false,
         private val closeFailure: Throwable? = null,
     ) : SsdpTransport {
@@ -158,13 +221,13 @@ class SsdpDiscovererTest {
             request: ByteArray,
             maxDatagramBytes: Int,
             windowMillis: Long,
-            receive: (ByteArray, Int) -> Unit,
+            receive: (ByteArray, Int, InetAddress) -> Unit,
         ) {
             this.request = request.decodeToString()
             this.maxDatagramBytes = maxDatagramBytes
             this.windowMillis = windowMillis
             started.complete(Unit)
-            packets.forEach { receive(it, it.size) }
+            packets.forEach { receive(it.bytes, it.bytes.size, it.sender) }
             if (stall) CompletableDeferred<Unit>().await()
         }
 

@@ -40,6 +40,13 @@ An attacker who can indefinitely suppress network traffic can still prevent
 updates; complete suppression prevention requires an independent availability
 channel or trusted time, neither of which this private LAN design provides.
 
+The signed-release workflow also refuses to mint metadata when
+`workflow_dispatch` `release_sequence` is not strictly greater than
+`deploy/qnap/last-release-sequence.txt` (bootstrap `0`). Operators must commit
+that watermark to the newly published sequence after a successful metadata
+sign—otherwise the next release fails the same gate. The private-update
+artifact includes `last-release-sequence.txt` as a reminder copy.
+
 ## Transport boundary
 
 Remote/OVH origins must use an explicitly configured HTTPS origin. The QNAP
