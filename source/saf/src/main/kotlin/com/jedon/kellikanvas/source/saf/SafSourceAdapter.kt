@@ -52,26 +52,24 @@ class SafSourceAdapter(
         folder: FolderRef,
         cursor: PageCursor?,
         limit: Int,
-    ): Page<SourceEntry> {
+    ): Page<SourceEntry> = mapFailures(OPERATION_LIST) {
         val offset = decodeCursor(cursor)
-        return mapFailures(OPERATION_LIST) {
-            val entries =
-                documents
-                    .children(
-                        treeUri = profile.grant.treeUri,
-                        parentDocumentId = folder.objectId.value,
-                    ).asSequence()
-                    .filter { it.isFolder || it.isPhoto }
-                    .sortedWith(compareBy<SafDocument>({ it.displayName }, { it.documentId }))
-                    .map(::toEntry)
-                    .toList()
-            require(offset <= entries.size) { "SAF page cursor is outside this folder" }
-            val end = minOf(offset + limit, entries.size)
-            Page(
-                items = entries.subList(offset, end),
-                nextCursor = if (end < entries.size) encodeCursor(end) else null,
-            )
-        }
+        val entries =
+            documents
+                .children(
+                    treeUri = profile.grant.treeUri,
+                    parentDocumentId = folder.objectId.value,
+                ).asSequence()
+                .filter { it.isFolder || it.isPhoto }
+                .sortedWith(compareBy<SafDocument>({ it.displayName }, { it.documentId }))
+                .map(::toEntry)
+                .toList()
+        require(offset <= entries.size) { "SAF page cursor is outside this folder" }
+        val end = minOf(offset + limit, entries.size)
+        Page(
+            items = entries.subList(offset, end),
+            nextCursor = if (end < entries.size) encodeCursor(end) else null,
+        )
     }
 
     override suspend fun metadataFor(asset: AssetRef): PhotoMetadata = mapFailures(OPERATION_METADATA) {
@@ -153,6 +151,8 @@ class SafSourceAdapter(
         throw SourceFailure.PermissionRevoked(profileId, operation)
     } catch (failure: FileNotFoundException) {
         throw SourceFailure.NotFound(profileId, operation)
+    } catch (failure: IllegalArgumentException) {
+        throw SourceFailure.ProtocolFailure(profileId, operation)
     } catch (failure: IOException) {
         throw SourceFailure.SourceUnavailable(profileId, operation)
     }

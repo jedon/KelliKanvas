@@ -147,13 +147,17 @@ class UdpSsdpTransport : SsdpTransport {
                         break
                     }
                 }
-                continuation.resume(Unit)
+                if (continuation.isActive) {
+                    continuation.resume(Unit)
+                }
             } catch (failure: SocketException) {
                 if (continuation.isActive) {
                     continuation.resumeWithException(failure)
                 }
             } catch (failure: Throwable) {
-                continuation.resumeWithException(failure)
+                if (continuation.isActive) {
+                    continuation.resumeWithException(failure)
+                }
             } finally {
                 activeSocket.close()
                 socket.compareAndSet(activeSocket, null)

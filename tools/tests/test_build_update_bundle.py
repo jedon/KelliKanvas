@@ -17,6 +17,7 @@ class BuildUpdateBundleTest(unittest.TestCase):
         device_job = workflow.split("\n  device-security:", 1)[1].split("\n  build-unsigned:", 1)[0]
         build_job = workflow.split("\n  build-unsigned:", 1)[1].split("\n  apk-sign:", 1)[0]
         apk_job = workflow.split("\n  apk-sign:", 1)[1].split("\n  prepare-update:", 1)[0]
+        prepare_job = workflow.split("\n  prepare-update:", 1)[1].split("\n  metadata-sign:", 1)[0]
         metadata_job = workflow.split("\n  metadata-sign:", 1)[1]
         self.assertIn(":platform:update:assembleDebugAndroidTest", verify_job)
         self.assertIn(":platform:update:connectedDebugAndroidTest", device_job)
@@ -28,12 +29,22 @@ class BuildUpdateBundleTest(unittest.TestCase):
         self.assertIn("KELLIKANVAS_KEYSTORE_BASE64", apk_job)
         self.assertNotIn("METADATA_PRIVATE_KEY", apk_job)
         self.assertNotIn("gradlew", apk_job)
+        self.assertIn("tools/check_release_sequence.py", prepare_job)
+        self.assertIn("deploy/qnap/last-release-sequence.txt", prepare_job)
+        self.assertLess(
+            prepare_job.index("tools/check_release_sequence.py"),
+            prepare_job.index("tools/build_update_bundle.py"),
+        )
         self.assertIn("KELLIKANVAS_METADATA_PRIVATE_KEY_BASE64", metadata_job)
         self.assertIn("metadata-pins.txt", metadata_job)
         self.assertIn("verify_update_envelope.py", metadata_job)
         self.assertIn('--key-id "$METADATA_KEY_ID"', metadata_job)
+        self.assertIn("dist/last-release-sequence.txt", metadata_job)
+        self.assertIn("REQUIRED: commit", metadata_job)
         self.assertNotIn("KELLIKANVAS_KEYSTORE", metadata_job)
         self.assertNotIn("gradlew", metadata_job)
+        self.assertIn("contents: read", workflow)
+        self.assertNotIn("contents: write", workflow)
         sign_index = metadata_job.index("openssl dgst -sha256 -sign")
         destroy_index = metadata_job.index('destroy_secret "$metadata_key"', sign_index)
         repository_python_index = metadata_job.index("python -", sign_index)

@@ -31,6 +31,9 @@ data class SafTreeGrant(
             treeUri: Uri,
             resultFlags: Int,
         ): SafTreeGrant {
+            require(DocumentsContract.isTreeUri(treeUri)) {
+                "SAF persist requires a DocumentsContract tree URI"
+            }
             val flags = maskFlags(resultFlags)
             require(flags and Intent.FLAG_GRANT_READ_URI_PERMISSION != 0) {
                 "Selected SAF tree did not provide read access"

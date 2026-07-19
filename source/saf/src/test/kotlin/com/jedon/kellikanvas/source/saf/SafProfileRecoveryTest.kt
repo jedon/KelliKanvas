@@ -30,6 +30,7 @@ class SafProfileRecoveryTest {
         val replacementFixture = registerSafProvider()
         val repaired =
             profile.repair(
+                originalFixture.resolver,
                 SafTreeGrant(
                     treeUri = replacementFixture.treeUri,
                     documentId = TestDocumentsProvider.ROOT_ID,
@@ -57,7 +58,7 @@ class SafProfileRecoveryTest {
         }
 
         fixture.provider.mode = TestDocumentsProvider.Mode.ACTIVE
-        val repaired = profile.repair(profile.grant)
+        val repaired = profile.repair(fixture.resolver, profile.grant)
         val recoveredAdapter = SafSourceAdapter(repaired, ContentResolverSafDocuments(fixture.resolver))
 
         assertThat(repaired.id).isEqualTo(profile.id)

@@ -40,6 +40,7 @@ jobs:
         run: |
           python -m unittest tools.tests.test_build_update_bundle
           python -m unittest tools.tests.test_qnap_deployment
+          python -m unittest tools.tests.test_check_release_sequence
           ./gradlew --dependency-verification strict ktlintCheck lintDebug testDebugUnitTest \
             :platform:update:assembleDebugAndroidTest --stacktrace
 
@@ -225,6 +226,13 @@ jobs:
           "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" "build-tools;36.0.0"
           echo "$ANDROID_SDK_ROOT/build-tools/36.0.0" >> "$GITHUB_PATH"
 
+      - name: Enforce monotonic release_sequence
+        run: |
+          set -euo pipefail
+          python tools/check_release_sequence.py \
+            --last-file deploy/qnap/last-release-sequence.txt \
+            --next "${{ inputs.release_sequence }}"
+
       - name: Prepare canonical unsigned metadata
         run: |
           python tools/build_update_bundle.py \
@@ -325,6 +333,21 @@ jobs:
             --key-id "$METADATA_KEY_ID" >/dev/null
           cleanup
           trap - EXIT
+
+      - name: Remind operator to bump tracked sequence watermark
+        env:
+          NEXT_SEQUENCE: ${{ inputs.release_sequence }}
+        run: |
+          set -euo pipefail
+          printf '%s\n' "$NEXT_SEQUENCE" > dist/last-release-sequence.txt
+          {
+            echo "## Release sequence watermark"
+            echo ""
+            echo "REQUIRED: commit \`deploy/qnap/last-release-sequence.txt\` with content \`$NEXT_SEQUENCE\` before the next release."
+            echo ""
+            echo "prepare-update gates \`workflow_dispatch\` so \`release_sequence\` must be strictly greater than that tracked file (bootstrap \`0\`)."
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "::error::REQUIRED: commit deploy/qnap/last-release-sequence.txt=$NEXT_SEQUENCE before next release"
 
       - name: Upload signed private bundle
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

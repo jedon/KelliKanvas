@@ -44,7 +44,7 @@ class AdapterContractFixtureTest : AdapterContract() {
                 }
 
             assertThrows(AssertionError::class.java) {
-                contract.`diagnostics do not disclose source secrets or sensitive paths`()
+                contract.diagnosticsDoNotDiscloseSourceSecretsOrSensitivePaths()
             }
         }
     }
@@ -59,7 +59,7 @@ class AdapterContractFixtureTest : AdapterContract() {
             }
 
         assertThrows(AssertionError::class.java) {
-            contract.`listing cancellation propagates and closes its resource`()
+            contract.listingCancellationPropagatesAndClosesItsResource()
         }
     }
 
@@ -72,7 +72,7 @@ class AdapterContractFixtureTest : AdapterContract() {
                 )
             }
 
-        contract.`listing cancellation propagates and closes its resource`()
+        contract.listingCancellationPropagatesAndClosesItsResource()
     }
 
     @Test
@@ -80,10 +80,10 @@ class AdapterContractFixtureTest : AdapterContract() {
         val checks =
             listOf<Pair<String, AdapterContract.() -> Unit>>(
                 "listing cancellation to complete" to {
-                    `listing cancellation propagates and closes its resource`()
+                    listingCancellationPropagatesAndClosesItsResource()
                 },
                 "read cancellation to complete" to {
-                    `read cancellation propagates and closes its resource`()
+                    readCancellationPropagatesAndClosesItsResource()
                 },
             )
 
@@ -115,7 +115,7 @@ class AdapterContractFixtureTest : AdapterContract() {
 
         val failure =
             assertThrows(AssertionError::class.java) {
-                contract.`listing cancellation propagates and closes its resource`()
+                contract.listingCancellationPropagatesAndClosesItsResource()
             }
 
         assertThat(failure).hasMessageThat().contains("listing resource to start")
@@ -132,7 +132,7 @@ class AdapterContractFixtureTest : AdapterContract() {
 
         val failure =
             assertThrows(AssertionError::class.java) {
-                contract.`listing cancellation propagates and closes its resource`()
+                contract.listingCancellationPropagatesAndClosesItsResource()
             }
 
         assertThat(failure).hasMessageThat().contains("listing resource to close")
@@ -148,7 +148,7 @@ class AdapterContractFixtureTest : AdapterContract() {
                 )
             }
 
-        contract.`configured revoked grants normalize to permission revoked`()
+        contract.configuredRevokedGrantsNormalizeToPermissionRevoked()
     }
 
     @Test

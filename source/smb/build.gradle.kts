@@ -11,4 +11,8 @@ dependencies {
     implementation(project(":core:security"))
     implementation(project(":core:source-api"))
     implementation(libs.smbj)
+
+    testImplementation(libs.junit4)
+    testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(libs.truth)
 }
