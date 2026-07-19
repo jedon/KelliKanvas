@@ -37,8 +37,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.tv.material3.WideButton
-import androidx.tv.material3.Text as TvText
-import androidx.tv.material3.MaterialTheme as TvMaterialTheme
 import com.jedon.kellikanvas.catalog.SelectedRoot
 import com.jedon.kellikanvas.catalog.preferences.HomeControl
 import com.jedon.kellikanvas.feature.collection.CollectionHubScreen
@@ -47,6 +45,8 @@ import com.jedon.kellikanvas.model.SourceProfileId
 import com.jedon.kellikanvas.ui.PhoneMaterialTheme
 import com.jedon.kellikanvas.ui.tv.isTelevisionUi
 import kotlinx.coroutines.launch
+import androidx.tv.material3.MaterialTheme as TvMaterialTheme
+import androidx.tv.material3.Text as TvText
 
 enum class PhotosBootstrapUi {
     Idle,

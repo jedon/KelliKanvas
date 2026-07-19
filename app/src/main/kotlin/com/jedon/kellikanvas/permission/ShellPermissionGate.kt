@@ -113,23 +113,21 @@ private fun PermissionRowCard(
 }
 
 @Composable
-private fun rowTitle(id: PermissionRowId): String =
-    stringResource(
-        when (id) {
-            PermissionRowId.Internet -> R.string.permission_internet_title
-            PermissionRowId.LocalNetwork -> R.string.permission_local_network_title
-            PermissionRowId.ActivityRecognition -> R.string.permission_activity_title
-            PermissionRowId.BodySensors -> R.string.permission_body_sensors_title
-        },
-    )
+private fun rowTitle(id: PermissionRowId): String = stringResource(
+    when (id) {
+        PermissionRowId.Internet -> R.string.permission_internet_title
+        PermissionRowId.LocalNetwork -> R.string.permission_local_network_title
+        PermissionRowId.ActivityRecognition -> R.string.permission_activity_title
+        PermissionRowId.BodySensors -> R.string.permission_body_sensors_title
+    },
+)
 
 @Composable
-private fun rowStatusLabel(status: PermissionStatus): String =
-    stringResource(
-        when (status) {
-            PermissionStatus.GrantedAtInstall -> R.string.permission_status_granted_at_install
-            PermissionStatus.Granted -> R.string.permission_status_granted
-            PermissionStatus.Denied -> R.string.permission_status_denied
-            PermissionStatus.NotApplicable -> R.string.permission_status_not_applicable
-        },
-    )
+private fun rowStatusLabel(status: PermissionStatus): String = stringResource(
+    when (status) {
+        PermissionStatus.GrantedAtInstall -> R.string.permission_status_granted_at_install
+        PermissionStatus.Granted -> R.string.permission_status_granted
+        PermissionStatus.Denied -> R.string.permission_status_denied
+        PermissionStatus.NotApplicable -> R.string.permission_status_not_applicable
+    },
+)
