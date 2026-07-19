@@ -30,7 +30,7 @@ class ConventionPluginTest {
                     doLast {
                         check(androidExtension.compileSdk == 37)
                         check(androidExtension.compileSdkMinor == 0)
-                        check(androidExtension.defaultConfig.minSdk == 28)
+                        check(androidExtension.defaultConfig.minSdk == 29)
                         check(androidExtension.defaultConfig.targetSdk == 37)
                         check(androidExtension.defaultConfig.testInstrumentationRunner == "androidx.test.runner.AndroidJUnitRunner")
                         check(androidExtension.compileOptions.sourceCompatibility == JavaVersion.VERSION_17)
@@ -69,7 +69,7 @@ class ConventionPluginTest {
                     doLast {
                         check(androidExtension.compileSdk == 37)
                         check(androidExtension.compileSdkMinor == 0)
-                        check(androidExtension.defaultConfig.minSdk == 28)
+                        check(androidExtension.defaultConfig.minSdk == 29)
                         check(androidExtension.compileOptions.sourceCompatibility == JavaVersion.VERSION_17)
                         check(androidExtension.compileOptions.targetCompatibility == JavaVersion.VERSION_17)
                         check(androidExtension.lint.warningsAsErrors)
