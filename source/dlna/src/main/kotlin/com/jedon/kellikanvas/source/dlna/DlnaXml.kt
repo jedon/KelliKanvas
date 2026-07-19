@@ -364,7 +364,7 @@ class ContentDirectoryClient(
     private data class SoapBrowse(val result: String, val numberReturned: Int, val totalMatches: Int)
 }
 
-private fun secureParser(
+internal fun secureParser(
     bytes: ByteArray,
     maxBytes: Int,
 ): XmlPullParser {
@@ -375,10 +375,36 @@ private fun secureParser(
     }
     return try {
         XmlPullParserFactory.newInstance().apply { isNamespaceAware = true }.newPullParser().apply {
+            applySecureXmlPullFeatures(this)
             setInput(ByteArrayInputStream(bytes), "UTF-8")
         }
     } catch (failure: Exception) {
         throw DlnaProtocolException("Invalid XML", failure)
+    }
+}
+
+/**
+ * Defence-in-depth against DOCDECL/entity expansion. Keep alongside string bans in [secureParser].
+ * Unsupported features are ignored — KXML2 rejects several XmlPull feature URIs.
+ */
+internal fun applySecureXmlPullFeatures(parser: XmlPullParser) {
+    // XmlPull: disable DTD/DOCDECL processing when the implementation supports it.
+    trySetFeature(parser, XmlPullParser.FEATURE_PROCESS_DOCDECL, false)
+    // Analogous to DocumentBuilder hardening in BackupRulesSourceTest — only honored if supported.
+    trySetFeature(parser, "http://apache.org/xml/features/disallow-doctype-decl", true)
+    trySetFeature(parser, "http://xml.org/sax/features/external-general-entities", false)
+    trySetFeature(parser, "http://xml.org/sax/features/external-parameter-entities", false)
+}
+
+private fun trySetFeature(
+    parser: XmlPullParser,
+    name: String,
+    value: Boolean,
+) {
+    try {
+        parser.setFeature(name, value)
+    } catch (_: Exception) {
+        // Feature unsupported or already locked on this XmlPullParser implementation.
     }
 }
 

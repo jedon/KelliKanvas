@@ -7,6 +7,7 @@ import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import org.junit.Assert.assertThrows
 import org.junit.Test
+import org.xmlpull.v1.XmlPullParser
 
 class DlnaXmlTest {
     @Test
@@ -38,9 +39,16 @@ class DlnaXmlTest {
     @Test
     fun `bounded XML rejects doctype depth text attributes and body size`() {
         val parser = DidlLiteParser()
-        assertThrows(DlnaProtocolException::class.java) {
-            parser.parse("""<!DOCTYPE x [<!ENTITY a "boom">]><DIDL-Lite>&a;</DIDL-Lite>""".encodeToByteArray(), "uuid:x")
-        }
+        // String-level ban rejects DOCTYPE/ENTITY before the pull parser runs.
+        // Feature-disabled process-docdecl is a second line of defense when reachable.
+        val doctypeFailure =
+            assertThrows(DlnaProtocolException::class.java) {
+                parser.parse(
+                    """<!DOCTYPE x [<!ENTITY a "boom">]><DIDL-Lite>&a;</DIDL-Lite>""".encodeToByteArray(),
+                    "uuid:x",
+                )
+            }
+        assertThat(doctypeFailure.message).contains("DOCTYPE")
         assertThrows(DlnaProtocolException::class.java) {
             parser.parse(("<a>".repeat(33) + "</a>".repeat(33)).encodeToByteArray(), "uuid:x")
         }
@@ -53,6 +61,20 @@ class DlnaXmlTest {
         assertThrows(DlnaProtocolException::class.java) {
             parser.parse(ByteArray(2 * 1024 * 1024 + 1), "uuid:x")
         }
+    }
+
+    @Test
+    fun `secureParser disables process-docdecl and keeps namespaces`() {
+        val parser = secureParser("<root/>".encodeToByteArray(), DESCRIPTION_MAX_BYTES)
+
+        // When the implementation supports FEATURE_PROCESS_DOCDECL, it must stay off.
+        // KXML2 reports false via getFeature and may reject setFeature; Android may honor it.
+        assertThat(parser.getFeature(XmlPullParser.FEATURE_PROCESS_DOCDECL)).isFalse()
+        assertThat(parser.getFeature(XmlPullParser.FEATURE_PROCESS_NAMESPACES)).isTrue()
+
+        // Idempotent hardening must not throw when the feature is unsupported.
+        applySecureXmlPullFeatures(parser)
+        assertThat(parser.getFeature(XmlPullParser.FEATURE_PROCESS_DOCDECL)).isFalse()
     }
 
     @Test
