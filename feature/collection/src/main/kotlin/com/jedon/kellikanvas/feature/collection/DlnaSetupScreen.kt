@@ -1,7 +1,6 @@
 package com.jedon.kellikanvas.feature.collection
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -13,6 +12,7 @@ import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -38,6 +38,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import com.jedon.kellikanvas.model.SourceFailure
 import com.jedon.kellikanvas.ui.tv.highContrastFocus
@@ -376,7 +377,11 @@ fun DlnaSetupScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .highContrastFocus(RoundedCornerShape(12.dp))
-                            .clickable { includeDescendants = !includeDescendants }
+                            .toggleable(
+                                value = includeDescendants,
+                                role = Role.Switch,
+                                onValueChange = { includeDescendants = it },
+                            )
                             .padding(8.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -464,7 +469,11 @@ private fun FolderRow(
         modifier = Modifier
             .fillMaxWidth()
             .highContrastFocus(RoundedCornerShape(12.dp))
-            .clickable { onSelectedChange(!selected) }
+            .toggleable(
+                value = selected,
+                role = Role.Checkbox,
+                onValueChange = onSelectedChange,
+            )
             .padding(vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
