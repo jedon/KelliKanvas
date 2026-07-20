@@ -83,6 +83,7 @@ internal fun TvHomeShell(
     bootstrapError: String? = null,
     onRetryBootstrap: () -> Unit = {},
     collectionLoadError: String? = null,
+    updateAvailableVersion: String? = null,
 ) {
     val activity = LocalActivity.current
     var selectedDestination by rememberSaveable { mutableStateOf(TvHomeDestination.Home) }
@@ -184,6 +185,8 @@ internal fun TvHomeShell(
                             onRetryBootstrap = onRetryBootstrap,
                             onStartSlideshow = onStartSlideshow,
                             startFocusRequester = startFocusRequester,
+                            updateAvailableVersion = updateAvailableVersion,
+                            onOpenSystem = onOpenSystem,
                         )
                     }
                 }
@@ -202,6 +205,8 @@ private fun TvHomeContent(
     onRetryBootstrap: () -> Unit,
     onStartSlideshow: () -> Unit,
     startFocusRequester: FocusRequester,
+    updateAvailableVersion: String?,
+    onOpenSystem: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -224,6 +229,8 @@ private fun TvHomeContent(
             noPhotosHint = "Add a photos folder in Collection (press ← to open the menu).",
             primaryHint = "OK starts slideshow · ← opens the menu",
             secondaryHint = "Back exits slideshow to Home",
+            updateAvailableVersion = updateAvailableVersion,
+            onOpenSystem = onOpenSystem,
         )
     }
 }

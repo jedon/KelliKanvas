@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -34,6 +35,7 @@ import com.jedon.kellikanvas.feature.collection.SmbSetupScreen
 import com.jedon.kellikanvas.feature.settings.AmbientSettingsScreen
 import com.jedon.kellikanvas.feature.settings.AppearanceSettingsScreen
 import com.jedon.kellikanvas.feature.settings.PlaybackSettingsScreen
+import com.jedon.kellikanvas.feature.settings.UpdateCheckUiState
 import com.jedon.kellikanvas.feature.setup.SafSetupController
 import com.jedon.kellikanvas.feature.setup.SafSetupScreen
 import com.jedon.kellikanvas.feature.slideshow.SimpleSlideshowScreen
@@ -184,6 +186,9 @@ fun KelliKanvasNavHost(
             LaunchedEffect(controller, collectionRevision) {
                 collectionState = loadCollectionScreenState(container, controller)
             }
+            val updateState = container.updateCheckController?.state?.collectAsState()?.value
+            val updateAvailableVersion =
+                (updateState as? UpdateCheckUiState.UpdateAvailable)?.versionName
             HomeScreen(
                 collectionLabel = homeState.collectionLabel.ifBlank { "KelliKanvas" },
                 canStartSlideshow = canStartSlideshow,
@@ -221,6 +226,7 @@ fun KelliKanvasNavHost(
                 collectionLoadError = collectionState.loadError ?: homeState.loadError,
                 autoStartSlideshowToken = autoStartSlideshowToken,
                 onAutoStartSlideshowConsumed = { autoStartSlideshowToken = 0 },
+                updateAvailableVersion = updateAvailableVersion,
             )
         }
         composable(ShellRoutes.COLLECTION) {

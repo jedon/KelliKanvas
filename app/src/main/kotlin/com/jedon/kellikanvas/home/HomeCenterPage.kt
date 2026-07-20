@@ -34,6 +34,8 @@ internal fun HomeCenterPage(
     primaryHint: String,
     secondaryHint: String?,
     modifier: Modifier = Modifier,
+    updateAvailableVersion: String? = null,
+    onOpenSystem: () -> Unit = {},
 ) {
     Column(
         modifier = modifier
@@ -42,6 +44,14 @@ internal fun HomeCenterPage(
         verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterVertically),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
+        if (updateAvailableVersion != null) {
+            HighContrastFocusButton(
+                onClick = onOpenSystem,
+                label = "Update available (v$updateAvailableVersion) — go to System",
+                minHeightDp = 56,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
         when (bootstrapUi) {
             PhotosBootstrapUi.Connecting -> {
                 CircularProgressIndicator()
