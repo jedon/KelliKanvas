@@ -36,12 +36,13 @@ class DlnaManualResolver(
     }
 
     /**
-     * Tries each [BUILT_IN_HOST_CANDIDATES] entry via [resolve] until one succeeds.
+     * Tries [preferredHosts] (e.g. resolver-provided) first, then each
+     * [BUILT_IN_HOST_CANDIDATES] entry via [resolve] until one succeeds.
      * Returns the matched host input along with the profile.
      */
-    suspend fun resolveBuiltIn(): BuiltInResolveResult {
+    suspend fun resolveBuiltIn(preferredHosts: List<String> = emptyList()): BuiltInResolveResult {
         var lastFailure: Throwable? = null
-        for (host in BUILT_IN_HOST_CANDIDATES) {
+        for (host in (preferredHosts + BUILT_IN_HOST_CANDIDATES).distinct()) {
             try {
                 return BuiltInResolveResult(matchedHost = host, profile = resolve(host))
             } catch (failure: CancellationException) {

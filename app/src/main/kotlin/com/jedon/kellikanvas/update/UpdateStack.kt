@@ -21,10 +21,11 @@ import java.io.File
 fun createUpdateCheckController(
     context: Context,
     httpClient: OkHttpClient,
+    cachedNasIp: String? = null,
 ): UpdateCheckController {
     val appContext = context.applicationContext
     val packageManager = appContext.packageManager
-    val originPolicy = UpdateOriginPolicy.QNAP_LAN
+    val originPolicy = UpdateOriginPolicy.qnapLan(cachedNasIp)
     val transport =
         OkHttpUpdateTransport(
             originPolicy = originPolicy,
@@ -41,6 +42,7 @@ fun createUpdateCheckController(
             replayGuard = ReleaseReplayGuard(AndroidAuthenticatedReleaseStore(appContext)),
             timestampStore = AndroidCheckTimestampStore(appContext),
             originPolicy = originPolicy,
+            controlUris = UpdateOriginPolicy.qnapControlUris(cachedNasIp),
         )
     val updateRepository =
         UpdateRepository(

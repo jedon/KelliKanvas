@@ -69,6 +69,55 @@ class UpdateManifestPolicyTest {
     }
 
     @Test
+    fun `cached lan ip origin is accepted only when configured`() {
+        val policy = UpdateOriginPolicy.qnapLan(cachedLanIp = "192.168.68.90")
+        policy.requireAllowed(URI("http://darklingnas:8088/release.apk"))
+        policy.requireAllowed(URI("http://192.168.68.90:8088/release.apk"))
+        policy.requireAllowed(URI("http://192.168.68.81:8088/release.apk"))
+        assertThrows(UpdateRejected::class.java) {
+            policy.requireAllowed(URI("http://192.168.68.91:8088/release.apk"))
+        }
+        // No cached IP configured keeps the historical two-origin behavior.
+        assertThrows(UpdateRejected::class.java) {
+            UpdateOriginPolicy.qnapLan().requireAllowed(URI("http://192.168.68.90:8088/release.apk"))
+        }
+    }
+
+    @Test
+    fun `invalid cached lan ips are ignored`() {
+        listOf("evil-host", "999.9.9.9", "darklingnas", "192.168.68", " ", null).forEach { cached ->
+            val policy = UpdateOriginPolicy.qnapLan(cachedLanIp = cached)
+            policy.requireAllowed(URI("http://darklingnas:8088/release.apk"))
+            policy.requireAllowed(URI("http://192.168.68.81:8088/release.apk"))
+            assertThrows("cached=$cached", UpdateRejected::class.java) {
+                policy.requireAllowed(URI("http://evil-host:8088/release.apk"))
+            }
+            assertThat(UpdateOriginPolicy.qnapControlUris(cached))
+                .isEqualTo(UpdateOriginPolicy.CONTROL_URIS)
+        }
+    }
+
+    @Test
+    fun `control uris are ordered hostname then cached ip then static ip`() {
+        assertThat(UpdateOriginPolicy.qnapControlUris("192.168.68.90"))
+            .containsExactly(
+                URI("http://darklingnas:8088/update-envelope.json"),
+                URI("http://192.168.68.90:8088/update-envelope.json"),
+                URI("http://192.168.68.81:8088/update-envelope.json"),
+            )
+            .inOrder()
+        assertThat(UpdateOriginPolicy.qnapControlUris())
+            .containsExactly(
+                URI("http://darklingnas:8088/update-envelope.json"),
+                URI("http://192.168.68.81:8088/update-envelope.json"),
+            )
+            .inOrder()
+        // A cached value equal to the static default must not duplicate entries.
+        assertThat(UpdateOriginPolicy.qnapControlUris("192.168.68.81"))
+            .isEqualTo(UpdateOriginPolicy.CONTROL_URIS)
+    }
+
+    @Test
     fun `remote origins require explicit https host`() {
         val policy = UpdateOriginPolicy.remoteHttps("updates.example.test")
         policy.requireAllowed(URI("https://updates.example.test/release.apk"))

@@ -19,6 +19,8 @@ import com.jedon.kellikanvas.security.CredentialVault
 import com.jedon.kellikanvas.source.PhotoByteStream
 import com.jedon.kellikanvas.source.SourceAdapter
 import com.jedon.kellikanvas.source.smb.HouseholdNasDefaults
+import com.jedon.kellikanvas.source.smb.SmbCredentials
+import com.jedon.kellikanvas.source.smb.SmbProfile
 import com.jedon.kellikanvas.source.smb.SmbSourceAdapter
 import kotlinx.coroutines.test.runTest
 import okio.Buffer
@@ -32,14 +34,12 @@ import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
-class SmbSetupControllerTest {
+class HouseholdNasBootstrapConnectTest {
     private lateinit var database: KelliKanvasDatabase
-    private lateinit var vault: FakeCredentialVault
 
     @Before
     fun setUp() {
         database = KelliKanvasDatabaseFactory.inMemory(RuntimeEnvironment.getApplication())
-        vault = FakeCredentialVault()
     }
 
     @After
@@ -48,98 +48,78 @@ class SmbSetupControllerTest {
     }
 
     @Test
-    fun connectHousehold_persistsSmbConnectionWithoutPasswordInRoom() = runTest {
-        val profileId = SourceProfileId("smb-household")
-        val controller =
-            SmbSetupController(
-                database = database,
-                credentialVault = vault,
-                householdUsername = "fake-user",
-                householdPassword = "fake-password".toCharArray(),
-                adapterFactory = { profile, _ -> FakeSmbAdapter(profile.id) },
-                profileIdFactory = { profileId },
+    fun successfulSmbConnectRecordsConnectedHost() = runTest {
+        val recorded = mutableListOf<String>()
+        val bootstrap =
+            HouseholdNasBootstrap(
+                smb = smbController(resolvePreferredHost = { "192.168.68.90" }),
+                dlna = unusedDlnaController(),
+                hasHouseholdSmbCredentials = { true },
+                recordKnownGoodIp = recorded::add,
             )
 
-        val result = controller.connectHousehold()
+        val result = bootstrap.ensurePhotosCollection()
 
-        assertThat(result.host).isIn(HouseholdNasDefaults.HOST_CANDIDATES)
-        assertThat(result.share).isEqualTo(HouseholdNasDefaults.PRIMARY_SHARE.share)
-        assertThat(result.rootCount).isEqualTo(1)
-        assertThat(result.roots).containsExactly(HouseholdNasDefaults.FRAME_TV_16X9_PATH)
-
-        val stored = database.smbConnections.get(profileId)
-        assertThat(stored).isNotNull()
-        assertThat(stored!!.username).isEqualTo("fake-user")
-        assertThat(stored.host).isEqualTo(result.host)
-        assertThat(stored.toString()).doesNotContain("fake-password")
-        assertThat(vault.stored[profileId.value]).isEqualTo("fake-password")
-
-        val roots = database.selectedRoots.list(result.collectionId)
-        assertThat(roots.map { it.objectId.value })
-            .containsExactly(HouseholdNasDefaults.FRAME_TV_16X9_PATH)
-        assertThat(roots.map { it.objectId.value }).doesNotContain("Digital Photos")
+        assertThat(result).isInstanceOf(BootstrapResult.Success::class.java)
+        assertThat(recorded).containsExactly("192.168.68.90")
     }
 
     @Test
-    fun connectHousehold_triesResolverPreferredHostFirst() = runTest {
-        val controller =
-            SmbSetupController(
-                database = database,
-                credentialVault = vault,
-                householdUsername = "fake-user",
-                householdPassword = "fake-password".toCharArray(),
-                adapterFactory = { profile, _ -> FakeSmbAdapter(profile.id) },
-                resolvePreferredHost = { "192.168.68.90" },
+    fun failedBootstrapRecordsNothing() = runTest {
+        val recorded = mutableListOf<String>()
+        val bootstrap =
+            HouseholdNasBootstrap(
+                smb = smbController(
+                    resolvePreferredHost = { null },
+                    adapterFactory = { _, _ -> error("SMB unreachable") },
+                ),
+                dlna = unusedDlnaController(),
+                hasHouseholdSmbCredentials = { true },
+                recordKnownGoodIp = recorded::add,
             )
 
-        val result = controller.connectHousehold()
+        val result = bootstrap.ensurePhotosCollection()
 
-        assertThat(result.host).isEqualTo("192.168.68.90")
+        assertThat(result).isInstanceOf(BootstrapResult.Failed::class.java)
+        assertThat(recorded).isEmpty()
     }
 
-    @Test
-    fun connectHousehold_fallsBackToStaticCandidatesWhenResolverFails() = runTest {
-        val controller =
-            SmbSetupController(
-                database = database,
-                credentialVault = vault,
-                householdUsername = "fake-user",
-                householdPassword = "fake-password".toCharArray(),
-                adapterFactory = { profile, _ -> FakeSmbAdapter(profile.id) },
-                resolvePreferredHost = { throw IllegalStateException("resolver crashed") },
-            )
+    private fun smbController(
+        resolvePreferredHost: suspend () -> String?,
+        adapterFactory: (SmbProfile, SmbCredentials) -> SourceAdapter = { profile, _ ->
+            FakeSmbAdapter(profile.id)
+        },
+    ): SmbSetupController = SmbSetupController(
+        database = database,
+        credentialVault = NoopCredentialVault(),
+        householdUsername = "fake-user",
+        householdPassword = "fake-password".toCharArray(),
+        adapterFactory = adapterFactory,
+        resolvePreferredHost = resolvePreferredHost,
+    )
 
-        val result = controller.connectHousehold()
+    private fun unusedDlnaController(): DlnaSetupController = DlnaSetupController(
+        database = database,
+        discoverProfiles = { error("DLNA must not be used") },
+        resolveManual = { error("DLNA must not be used") },
+        resolveBuiltIn = { error("DLNA must not be used") },
+        adapterFactory = { error("DLNA must not be used") },
+    )
 
-        assertThat(result.host).isIn(HouseholdNasDefaults.HOST_CANDIDATES)
-    }
-
-    private class FakeCredentialVault : CredentialVault {
-        val stored = linkedMapOf<String, String>()
-
+    private class NoopCredentialVault : CredentialVault {
         override fun write(
             profileId: SourceProfileId,
             secret: ByteArray,
-        ) {
-            stored[profileId.value] = secret.toString(Charsets.UTF_8)
-        }
+        ) = Unit
 
         override fun write(
             profileId: SourceProfileId,
             secret: CharArray,
-        ) {
-            stored[profileId.value] = String(secret)
-        }
+        ) = Unit
 
-        override fun read(profileId: SourceProfileId): CredentialReadResult = stored[profileId.value]?.let {
-            CredentialReadResult.Present(
-                com.jedon.kellikanvas.security.CredentialSecret(it.toByteArray(Charsets.UTF_8)),
-            )
-        } ?: CredentialReadResult.Missing
+        override fun read(profileId: SourceProfileId): CredentialReadResult = CredentialReadResult.Missing
 
-        override fun remove(profileId: SourceProfileId) {
-            stored.remove(profileId.value)
-        }
+        override fun remove(profileId: SourceProfileId) = Unit
     }
 
     private class FakeSmbAdapter(
@@ -159,9 +139,8 @@ class SmbSetupControllerTest {
             cursor: PageCursor?,
             limit: Int,
         ): Page<SourceEntry> {
-            val path = folder.objectId.value
             val items =
-                when (path) {
+                when (folder.objectId.value) {
                     "", SmbSourceAdapter.ROOT_OBJECT_ID ->
                         listOf(
                             SourceEntry.Folder(

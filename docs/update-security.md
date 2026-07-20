@@ -59,3 +59,15 @@ signer are the trust boundary. Redirects, userinfo, query/fragment tricks, and
 any unconfigured origin are rejected. Control-file fetch tries the hostname
 first, then the LAN IP. Published envelope APK and checksum URLs must still use
 an allowed origin the device can reach (prefer `darklingnas` when LAN DNS works).
+
+The device may additionally allow one cached last-known-good LAN IP alias
+(ordered hostname, cached IP, static IP for both the origin set and control-file
+fetch). That IP is recorded only after a successful SMB/DLNA photo-source
+connection to the NAS — never from SSDP discovery — must be an IPv4 literal, and
+is passed to the policy explicitly when the update stack is constructed rather
+than read from global state. This does not weaken the trust boundary: the
+envelope signature, streamed SHA-256/size checks, independent checksum, and
+installed-signer match remain what is trusted, while the origin list stays
+defense-in-depth against fetching from arbitrary hosts. A poisoned cache entry
+could at worst point the fetch at a host that cannot produce a validly signed
+envelope.

@@ -6,6 +6,8 @@ plugins {
 dependencies {
     api(project(":core:model"))
     api(libs.okio)
+    implementation(project(":core:logging"))
+    implementation(libs.kotlinx.coroutines.core)
 
     testFixturesApi(libs.junit4)
     testFixturesApi(libs.kotlinx.coroutines.core)

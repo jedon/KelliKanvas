@@ -6,6 +6,7 @@ import com.jedon.kellikanvas.catalog.KelliKanvasDatabase
 import com.jedon.kellikanvas.catalog.SelectedRoot
 import com.jedon.kellikanvas.catalog.SmbConnection
 import com.jedon.kellikanvas.catalog.SourceProfile
+import com.jedon.kellikanvas.logging.DiagLog
 import com.jedon.kellikanvas.model.FolderRef
 import com.jedon.kellikanvas.model.ProviderObjectId
 import com.jedon.kellikanvas.model.SourceEntry
@@ -29,6 +30,7 @@ class SmbSetupController(
     private val householdUsername: String,
     private val householdPassword: CharArray,
     private val adapterFactory: (SmbProfile, SmbCredentials) -> SourceAdapter,
+    private val resolvePreferredHost: suspend () -> String? = { null },
     private val nowMillis: () -> Long = { System.currentTimeMillis() },
     private val profileIdFactory: () -> SourceProfileId = {
         SourceProfileId("smb-${UUID.randomUUID()}")
@@ -55,7 +57,7 @@ class SmbSetupController(
                 domain = "",
             )
         try {
-            for (host in HouseholdNasDefaults.HOST_CANDIDATES) {
+            for (host in householdHostCandidates()) {
                 for (shareDef in HouseholdNasDefaults.PHOTO_SHARES) {
                     try {
                         val profile =
@@ -191,6 +193,23 @@ class SmbSetupController(
         return collectionId
     }
 
+    /**
+     * Resolver-preferred host first, then the full static list unchanged so a
+     * resolver miss can never make bootstrap worse than the hardcoded behavior.
+     */
+    private suspend fun householdHostCandidates(): List<String> {
+        val preferred =
+            try {
+                resolvePreferredHost()
+            } catch (failure: CancellationException) {
+                throw failure
+            } catch (failure: Exception) {
+                DiagLog.w(TAG, "NAS host resolution failed; using static candidates", failure)
+                null
+            }
+        return (listOfNotNull(preferred) + HouseholdNasDefaults.HOST_CANDIDATES).distinct()
+    }
+
     private suspend fun existingPhotoRoots(
         adapter: SourceAdapter,
         shareDef: HouseholdSmbShare,
@@ -221,6 +240,10 @@ class SmbSetupController(
             if (exists) found += normalized
         }
         return found
+    }
+
+    private companion object {
+        const val TAG = "SmbSetupController"
     }
 }
 

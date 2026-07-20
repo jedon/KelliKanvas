@@ -284,7 +284,11 @@ fun KelliKanvasNavHost(
                             }
                         },
                         resolveManual = { container.dlnaManualResolver().resolve(it) },
-                        resolveBuiltIn = { container.dlnaManualResolver().resolveBuiltIn() },
+                        resolveBuiltIn = {
+                            container.dlnaManualResolver().resolveBuiltIn(
+                                preferredHosts = listOfNotNull(container.nasHostResolver.resolve()?.host),
+                            )
+                        },
                         adapterFactory = { container.dlnaAdapter(it) },
                     ),
                     onFinished = {
@@ -313,6 +317,7 @@ fun KelliKanvasNavHost(
                         adapterFactory = { profile, credentials ->
                             container.smbAdapter(profile, credentials)
                         },
+                        resolvePreferredHost = { container.nasHostResolver.resolve()?.host },
                     ),
                     onFinished = {
                         scope.launch {
@@ -382,6 +387,7 @@ private fun householdBootstrap(container: AppContainer): HouseholdNasBootstrap {
         adapterFactory = { profile, credentials ->
             container.smbAdapter(profile, credentials)
         },
+        resolvePreferredHost = { container.nasHostResolver.resolve()?.host },
     )
     val dlna = DlnaSetupController(
         database = container.database,
@@ -391,7 +397,11 @@ private fun householdBootstrap(container: AppContainer): HouseholdNasBootstrap {
             }
         },
         resolveManual = { container.dlnaManualResolver().resolve(it) },
-        resolveBuiltIn = { container.dlnaManualResolver().resolveBuiltIn() },
+        resolveBuiltIn = {
+            container.dlnaManualResolver().resolveBuiltIn(
+                preferredHosts = listOfNotNull(container.nasHostResolver.resolve()?.host),
+            )
+        },
         adapterFactory = { container.dlnaAdapter(it) },
     )
     return HouseholdNasBootstrap(
@@ -401,6 +411,7 @@ private fun householdBootstrap(container: AppContainer): HouseholdNasBootstrap {
             container.householdSmbUsername().isNotBlank() &&
                 container.householdSmbPassword().isNotEmpty()
         },
+        recordKnownGoodIp = container.nasHostResolver::recordKnownGoodIp,
     )
 }
 

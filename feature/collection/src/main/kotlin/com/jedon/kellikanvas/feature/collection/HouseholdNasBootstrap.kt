@@ -14,6 +14,7 @@ class HouseholdNasBootstrap(
     private val smb: SmbSetupController,
     private val dlna: DlnaSetupController,
     private val hasHouseholdSmbCredentials: () -> Boolean,
+    private val recordKnownGoodIp: (String) -> Unit = {},
 ) {
     suspend fun ensurePhotosCollection(): BootstrapResult {
         val added = mutableListOf<String>()
@@ -22,6 +23,7 @@ class HouseholdNasBootstrap(
         if (hasHouseholdSmbCredentials()) {
             try {
                 val smbResult = smb.connectHousehold(replaceNetworkRoots = true)
+                recordKnownGoodIp(smbResult.host)
                 added += "SMB ${smbResult.share}/${smbResult.roots.joinToString()}"
                 DiagLog.i(
                     TAG,
@@ -51,6 +53,7 @@ class HouseholdNasBootstrap(
                         folders = listOf(folder),
                         replaceNetworkRoots = true,
                     )
+                    server.matchedHost?.let(recordKnownGoodIp)
                     added += "DLNA ${folder.label}"
                     DiagLog.i(
                         TAG,

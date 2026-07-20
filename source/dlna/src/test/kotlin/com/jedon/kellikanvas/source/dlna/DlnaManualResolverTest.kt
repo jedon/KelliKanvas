@@ -69,6 +69,27 @@ class DlnaManualResolverTest {
     }
 
     @Test
+    fun `resolveBuiltIn tries preferred hosts before built-in candidates`() = runTest {
+        val loaded = mutableListOf<URI>()
+        val resolver =
+            DlnaManualResolver(
+                loadDescription = { uri ->
+                    loaded += uri
+                    if (uri.host == "192.168.50.20") {
+                        fixture("dlna/qnap-representative-description.xml")
+                    } else {
+                        throw IOException("not this one")
+                    }
+                },
+            )
+
+        val result = resolver.resolveBuiltIn(preferredHosts = listOf("192.168.50.20"))
+
+        assertThat(result.matchedHost).isEqualTo("192.168.50.20")
+        assertThat(loaded.first().host).isEqualTo("192.168.50.20")
+    }
+
+    @Test
     fun `descriptionCandidates returns trimmed URI when input contains scheme`() {
         assertThat(DlnaManualResolver.descriptionCandidates("  http://192.168.1.2/rootDesc.xml  "))
             .containsExactly("http://192.168.1.2/rootDesc.xml")
