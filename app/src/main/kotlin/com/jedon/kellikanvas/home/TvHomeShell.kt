@@ -17,6 +17,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.MaterialTheme
@@ -51,6 +52,7 @@ private val TvHomeDestination.icon: ImageVector
         TvHomeDestination.Appearance -> Icons.Filled.Edit
         TvHomeDestination.Playback -> Icons.Filled.PlayArrow
         TvHomeDestination.Ambient -> Icons.Filled.Settings
+        TvHomeDestination.System -> Icons.Filled.Info
     }
 
 /**
@@ -71,6 +73,7 @@ internal fun TvHomeShell(
     onOpenAppearance: () -> Unit,
     onOpenPlayback: () -> Unit,
     onOpenAmbient: () -> Unit,
+    onOpenSystem: () -> Unit,
     onAddLocalFolder: () -> Unit,
     onAddQnap: () -> Unit,
     onConnectHouseholdNas: () -> Unit,
@@ -109,6 +112,7 @@ internal fun TvHomeShell(
             TvHomeDestination.Appearance -> onOpenAppearance()
             TvHomeDestination.Playback -> onOpenPlayback()
             TvHomeDestination.Ambient -> onOpenAmbient()
+            TvHomeDestination.System -> onOpenSystem()
             TvHomeDestination.Home, TvHomeDestination.Collection -> Unit
         }
     }

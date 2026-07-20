@@ -51,6 +51,7 @@ import com.jedon.kellikanvas.source.saf.SafProfile
 import com.jedon.kellikanvas.source.saf.SafTreeGrant
 import com.jedon.kellikanvas.source.smb.SmbCredentials
 import com.jedon.kellikanvas.source.smb.SmbProfile
+import com.jedon.kellikanvas.system.SystemScreen
 import com.jedon.kellikanvas.ui.PhoneMaterialTheme
 import kotlinx.coroutines.launch
 import java.net.URI
@@ -68,6 +69,7 @@ private object ShellRoutes {
     const val APPEARANCE = "appearance"
     const val PLAYBACK = "playback"
     const val AMBIENT = "ambient"
+    const val SYSTEM = "system"
 }
 
 private data class ShellState(
@@ -195,6 +197,7 @@ fun KelliKanvasNavHost(
                 onOpenAppearance = { navController.navigate(ShellRoutes.APPEARANCE) },
                 onOpenPlayback = { navController.navigate(ShellRoutes.PLAYBACK) },
                 onOpenAmbient = { navController.navigate(ShellRoutes.AMBIENT) },
+                onOpenSystem = { navController.navigate(ShellRoutes.SYSTEM) },
                 onAddLocalFolder = { navController.navigate(ShellRoutes.SETUP) },
                 onAddQnap = { navController.navigate(ShellRoutes.DLNA_SETUP) },
                 onConnectHouseholdNas = { navController.navigate(ShellRoutes.SMB_SETUP) },
@@ -352,6 +355,11 @@ fun KelliKanvasNavHost(
                 preferences = preferences,
                 onUpdatePreferences = updateAppPreferences,
                 onUpdateReducedMotion = updateReducedMotion,
+                onBack = { navController.popBackStack() },
+            )
+        }
+        composable(ShellRoutes.SYSTEM) {
+            SystemScreen(
                 onBack = { navController.popBackStack() },
                 updateCheckController = container.updateCheckController,
             )

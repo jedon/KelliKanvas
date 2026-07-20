@@ -60,6 +60,7 @@ fun HomeScreen(
     onOpenAppearance: () -> Unit,
     onOpenPlayback: () -> Unit,
     onOpenAmbient: () -> Unit,
+    onOpenSystem: () -> Unit,
     onAddLocalFolder: () -> Unit,
     onAddQnap: () -> Unit,
     onConnectHouseholdNas: () -> Unit,
@@ -100,6 +101,7 @@ fun HomeScreen(
             onOpenAppearance = onOpenAppearance,
             onOpenPlayback = onOpenPlayback,
             onOpenAmbient = onOpenAmbient,
+            onOpenSystem = onOpenSystem,
             onAddLocalFolder = onAddLocalFolder,
             onAddQnap = onAddQnap,
             onConnectHouseholdNas = onConnectHouseholdNas,
@@ -191,6 +193,7 @@ fun HomeScreen(
                     onOpenAppearance = onOpenAppearance,
                     onOpenPlayback = onOpenPlayback,
                     onOpenAmbient = onOpenAmbient,
+                    onOpenSystem = onOpenSystem,
                     onBackToHome = { scrollTo(PAGE_HOME) },
                 )
                 PAGE_HOME -> Scaffold(
@@ -253,6 +256,7 @@ private fun MenuPage(
     onOpenAppearance: () -> Unit,
     onOpenPlayback: () -> Unit,
     onOpenAmbient: () -> Unit,
+    onOpenSystem: () -> Unit,
     onBackToHome: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -299,8 +303,13 @@ private fun MenuPage(
                 modifier = Modifier.fillMaxWidth(),
             )
             HighContrastFocusButton(
-                label = "Ambient and System",
+                label = "Ambient",
                 onClick = onOpenAmbient,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            HighContrastFocusButton(
+                label = "System",
+                onClick = onOpenSystem,
                 modifier = Modifier.fillMaxWidth(),
             )
         }

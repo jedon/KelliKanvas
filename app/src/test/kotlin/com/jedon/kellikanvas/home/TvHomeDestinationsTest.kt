@@ -12,6 +12,7 @@ class TvHomeDestinationsTest {
             TvHomeDestination.Appearance,
             TvHomeDestination.Playback,
             TvHomeDestination.Ambient,
+            TvHomeDestination.System,
         ).inOrder()
     }
 
@@ -30,6 +31,7 @@ class TvHomeDestinationsTest {
         assertThat(TvHomeDestination.Appearance.inShell).isFalse()
         assertThat(TvHomeDestination.Playback.inShell).isFalse()
         assertThat(TvHomeDestination.Ambient.inShell).isFalse()
+        assertThat(TvHomeDestination.System.inShell).isFalse()
     }
 
     @Test

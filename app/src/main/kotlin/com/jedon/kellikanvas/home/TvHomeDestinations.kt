@@ -15,7 +15,8 @@ enum class TvHomeDestination(
     Collection(label = "Collection", inShell = true),
     Appearance(label = "Appearance", inShell = false),
     Playback(label = "Playback", inShell = false),
-    Ambient(label = "Ambient and System", inShell = false),
+    Ambient(label = "Ambient", inShell = false),
+    System(label = "System", inShell = false),
 }
 
 /** Drawer entries, top to bottom. */
