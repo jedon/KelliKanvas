@@ -4,6 +4,8 @@ import com.jedon.kellikanvas.logging.DiagLog
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runInterruptible
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
 import java.net.InetAddress
 import java.net.URI
@@ -15,6 +17,9 @@ import java.net.UnknownHostException
  * Candidate order: DNS resolution of [hostname], the cached last known-good IP,
  * the [staticDefaultIp], then SSDP/DLNA [discover]. Each candidate must pass the
  * caller-supplied [probe] (e.g. a TCP connect) before it is returned.
+ *
+ * Resolution is single-flight (concurrent callers share one attempt) and a
+ * successful result is reused for [resolutionTtlMillis]; failures are never cached.
  */
 class NasHostResolver(
     private val hostname: String,
@@ -24,15 +29,31 @@ class NasHostResolver(
     private val dnsLookup: suspend (hostname: String) -> String? = ::inetAddressLookup,
     private val discover: suspend () -> String? = { null },
     private val dnsTimeoutMillis: Long = DNS_TIMEOUT_MILLIS,
+    private val resolutionTtlMillis: Long = RESOLUTION_TTL_MILLIS,
     private val nowMillis: () -> Long = System::currentTimeMillis,
 ) {
+    private val resolveMutex = Mutex()
+
     /** Most recent successful resolution, for the Diagnostics screen. */
     @Volatile
     var lastResolution: NasResolution? = null
         private set
 
-    /** Returns the first probe-verified candidate, or null when every candidate fails. */
-    suspend fun resolve(): NasResolution? {
+    /**
+     * Returns the first probe-verified candidate, or null when every candidate fails.
+     * DNS lookup, probes, and discovery are multi-second work, so callers arriving
+     * while a resolution is in flight wait for it and then reuse its fresh result.
+     */
+    suspend fun resolve(): NasResolution? = resolveMutex.withLock {
+        val recent = lastResolution
+        if (recent != null && nowMillis() - recent.timestampMillis < resolutionTtlMillis) {
+            DiagLog.d(TAG, "Reusing NAS resolution host=${recent.host} via ${recent.path}")
+            return@withLock recent
+        }
+        resolveCandidates()
+    }
+
+    private suspend fun resolveCandidates(): NasResolution? {
         val tried = mutableSetOf<String>()
         val resolution =
             tryCandidate(NasResolutionPath.HOSTNAME, tried) {
@@ -100,6 +121,9 @@ class NasHostResolver(
     companion object {
         private const val TAG = "NasHostResolver"
         const val DNS_TIMEOUT_MILLIS: Long = 3_000
+
+        /** How long a successful resolution is reused before candidates are re-probed. */
+        const val RESOLUTION_TTL_MILLIS: Long = 30_000
 
         /** Extracts an IPv4 literal from a bare host, host:port, or URL; null otherwise. */
         fun extractIpv4Literal(host: String): String? {

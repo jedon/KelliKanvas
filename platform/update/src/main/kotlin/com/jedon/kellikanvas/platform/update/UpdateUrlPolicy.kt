@@ -40,6 +40,9 @@ class UpdateOriginPolicy private constructor(private val allowed: Set<UpdateOrig
         private const val QNAP_HOSTNAME = "darklingnas"
         private const val QNAP_STATIC_LAN_IP = "192.168.68.81"
         private const val QNAP_PORT = 8088
+
+        // Deliberately duplicates the IPv4 check in core:source-api's NasHostResolver:
+        // the update trust boundary must not depend on photo-source modules.
         private val IPV4_LITERAL = Regex("""^(?:\d{1,3}\.){3}\d{1,3}$""")
 
         /** Canonical QNAP LAN hostname used by published envelopes. */
