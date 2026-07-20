@@ -1,6 +1,5 @@
 package com.jedon.kellikanvas.feature.slideshow
 
-import android.util.Log
 import android.view.ViewGroup
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
@@ -35,6 +34,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.tv.material3.Text
 import com.jedon.kellikanvas.catalog.SelectedRoot
+import com.jedon.kellikanvas.logging.DiagLog
 import com.jedon.kellikanvas.model.AssetRef
 import com.jedon.kellikanvas.model.SourceProfileId
 import com.jedon.kellikanvas.renderer.surface.DisplayPhotoTarget
@@ -126,7 +126,7 @@ fun SimpleSlideshowScreen(
         if (decoded == null) {
             val reason =
                 result.exceptionOrNull()?.let { failure ->
-                    Log.w(TAG, "Decode failed for ${asset.objectId.value}", failure)
+                    DiagLog.w(TAG, "Decode failed for ${asset.objectId.value}", failure)
                     briefErrorReason(failure)
                 } ?: "Unable to decode"
             photoLoadError = reason

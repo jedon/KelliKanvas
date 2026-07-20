@@ -25,6 +25,7 @@ include(
     ":core:catalog",
     ":core:security",
     ":core:image",
+    ":core:logging",
     ":core:ui-tv",
     ":core:testing",
     ":source:saf",

@@ -1,5 +1,6 @@
 package com.jedon.kellikanvas.feature.settings
 
+import com.jedon.kellikanvas.logging.DiagLog
 import com.jedon.kellikanvas.platform.update.InstallResult
 import com.jedon.kellikanvas.platform.update.InstalledPackage
 import com.jedon.kellikanvas.platform.update.UpdateManifest
@@ -60,6 +61,7 @@ class UpdateCheckController(
             }
             _state.value = UpdateCheckUiState.Checking
         }
+        DiagLog.i(TAG, "Update check started")
         try {
             val result =
                 withContext(dispatcher) {
@@ -86,13 +88,18 @@ class UpdateCheckController(
                             UpdateCheckUiState.ReadyToInstall(manifest.versionName)
                     }
                 }
+            DiagLog.i(TAG, "Update check finished: $result")
             _state.value = result
         } catch (error: Throwable) {
-            _state.value = UpdateCheckUiState.Error(mapUpdateError(error))
+            val message = mapUpdateError(error)
+            DiagLog.w(TAG, "Update check failed: $message", error)
+            _state.value = UpdateCheckUiState.Error(message)
         }
     }
 
     companion object {
+        private const val TAG = "UpdateCheckController"
+
         fun mapUpdateError(error: Throwable): String {
             val message = error.message.orEmpty()
             return when {

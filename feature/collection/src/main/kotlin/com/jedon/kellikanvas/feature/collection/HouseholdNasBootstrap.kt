@@ -1,7 +1,7 @@
 package com.jedon.kellikanvas.feature.collection
 
-import android.util.Log
 import com.jedon.kellikanvas.catalog.SelectedRoot
+import com.jedon.kellikanvas.logging.DiagLog
 import com.jedon.kellikanvas.source.smb.HouseholdNasDefaults
 import kotlinx.coroutines.CancellationException
 
@@ -23,18 +23,18 @@ class HouseholdNasBootstrap(
             try {
                 val smbResult = smb.connectHousehold(replaceNetworkRoots = true)
                 added += "SMB ${smbResult.share}/${smbResult.roots.joinToString()}"
-                Log.i(
+                DiagLog.i(
                     TAG,
                     "Household SMB connected host=${smbResult.host} roots=${smbResult.roots}",
                 )
             } catch (failure: CancellationException) {
                 throw failure
             } catch (failure: Exception) {
-                Log.w(TAG, "Household SMB bootstrap failed", failure)
+                DiagLog.w(TAG, "Household SMB bootstrap failed", failure)
                 errors += failure.message?.take(120) ?: "SMB connect failed"
             }
         } else {
-            Log.i(TAG, "Household SMB credentials not baked in; skipping SMB bootstrap")
+            DiagLog.i(TAG, "Household SMB credentials not baked in; skipping SMB bootstrap")
         }
 
         if (added.isEmpty()) {
@@ -52,18 +52,18 @@ class HouseholdNasBootstrap(
                         replaceNetworkRoots = true,
                     )
                     added += "DLNA ${folder.label}"
-                    Log.i(
+                    DiagLog.i(
                         TAG,
                         "DLNA Frame TV 16X9 auto-selected via ${server.matchedHost ?: server.friendlyName}",
                     )
                 } else {
                     errors += "DLNA connected but Frame TV 16X9 folder not found"
-                    Log.w(TAG, "DLNA Frame TV 16X9 folder not found under Photos")
+                    DiagLog.w(TAG, "DLNA Frame TV 16X9 folder not found under Photos")
                 }
             } catch (failure: CancellationException) {
                 throw failure
             } catch (failure: Exception) {
-                Log.w(TAG, "DLNA Frame TV bootstrap failed", failure)
+                DiagLog.w(TAG, "DLNA Frame TV bootstrap failed", failure)
                 errors += failure.message?.take(120) ?: "DLNA connect failed"
             }
         }

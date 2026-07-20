@@ -9,6 +9,7 @@ android {
 
 dependencies {
     implementation(project(":core:catalog"))
+    implementation(project(":core:logging"))
     implementation(project(":core:model"))
     implementation(project(":core:ui-tv"))
     implementation(project(":platform:ambient"))

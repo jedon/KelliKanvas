@@ -103,6 +103,7 @@ tasks.configureEach {
 dependencies {
     implementation(project(":core:catalog"))
     implementation(project(":core:image"))
+    implementation(project(":core:logging"))
     implementation(project(":core:model"))
     implementation(project(":core:security"))
     implementation(project(":core:source-api"))

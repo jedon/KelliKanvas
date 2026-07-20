@@ -9,6 +9,9 @@ import android.graphics.Paint
 import android.util.AttributeSet
 import android.view.SurfaceHolder
 import android.view.SurfaceView
+import com.jedon.kellikanvas.logging.DiagLog
+
+private const val TAG = "PhotoSurfaceView"
 
 /**
  * Full-screen still-photo surface.
@@ -72,7 +75,8 @@ class PhotoSurfaceView @JvmOverloads constructor(
         val canvas: Canvas =
             try {
                 holder.lockHardwareCanvas() ?: holder.lockCanvas() ?: return
-            } catch (_: Exception) {
+            } catch (failure: Exception) {
+                DiagLog.w(TAG, "Failed to lock canvas; skipping frame", failure)
                 return
             }
         try {
@@ -100,8 +104,9 @@ class PhotoSurfaceView @JvmOverloads constructor(
         } finally {
             try {
                 holder.unlockCanvasAndPost(canvas)
-            } catch (_: Exception) {
-                // Surface gone during unlock — ignore.
+            } catch (failure: Exception) {
+                // Surface gone during unlock — nothing to recover.
+                DiagLog.w(TAG, "Failed to unlock canvas after draw", failure)
             }
         }
     }

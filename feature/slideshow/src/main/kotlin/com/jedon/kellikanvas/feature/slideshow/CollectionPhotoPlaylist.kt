@@ -1,6 +1,7 @@
 package com.jedon.kellikanvas.feature.slideshow
 
 import com.jedon.kellikanvas.catalog.SelectedRoot
+import com.jedon.kellikanvas.logging.DiagLog
 import com.jedon.kellikanvas.model.AssetRef
 import com.jedon.kellikanvas.model.FolderRef
 import com.jedon.kellikanvas.model.PageCursor
@@ -10,6 +11,7 @@ import com.jedon.kellikanvas.source.SourceAdapter
 import kotlinx.coroutines.CancellationException
 
 object CollectionPhotoPlaylist {
+    private const val TAG = "CollectionPhotoPlaylist"
     private const val MAX_PHOTOS_LIMIT = 5000
 
     suspend fun build(
@@ -40,6 +42,11 @@ object CollectionPhotoPlaylist {
                 ) {
                     throw throwable
                 }
+                DiagLog.w(
+                    TAG,
+                    "Skipping root '${root.displayLabel}' after listing failure",
+                    throwable,
+                )
             }
         }
 

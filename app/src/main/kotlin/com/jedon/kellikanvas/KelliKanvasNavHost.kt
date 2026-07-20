@@ -2,7 +2,6 @@ package com.jedon.kellikanvas
 
 import android.content.Intent
 import android.provider.DocumentsContract
-import android.util.Log
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
@@ -40,6 +39,7 @@ import com.jedon.kellikanvas.feature.setup.SafSetupScreen
 import com.jedon.kellikanvas.feature.slideshow.SimpleSlideshowScreen
 import com.jedon.kellikanvas.home.HomeScreen
 import com.jedon.kellikanvas.home.PhotosBootstrapUi
+import com.jedon.kellikanvas.logging.DiagLog
 import com.jedon.kellikanvas.model.AppPreferences
 import com.jedon.kellikanvas.model.SourceProfileId
 import com.jedon.kellikanvas.security.CredentialReadResult
@@ -117,12 +117,12 @@ fun KelliKanvasNavHost(
         bootstrapError = null
         val result = runCatching { householdBootstrap(container).ensurePhotosCollection() }
             .getOrElse { failure ->
-                Log.e(TAG, "Household bootstrap crashed", failure)
+                DiagLog.e(TAG, "Household bootstrap crashed", failure)
                 BootstrapResult.Failed(failure.message ?: "Bootstrap failed")
             }
         when (result) {
             is BootstrapResult.Success -> {
-                Log.i(TAG, "Bootstrap added: ${result.sources}")
+                DiagLog.i(TAG, "Bootstrap added: ${result.sources}")
                 shellState = loadShellState(container)
                 collectionRevision++
                 bootstrapUi = PhotosBootstrapUi.Idle
@@ -201,7 +201,7 @@ fun KelliKanvasNavHost(
                 onRemoveRoot = { root ->
                     scope.launch {
                         runCatching { controller.removeRoot(root) }
-                            .onFailure { Log.e(TAG, "removeRoot failed", it) }
+                            .onFailure { DiagLog.e(TAG, "removeRoot failed", it) }
                         shellState = loadShellState(container)
                         collectionRevision++
                         collectionState = loadCollectionScreenState(container, controller)
@@ -238,7 +238,7 @@ fun KelliKanvasNavHost(
                     onRemoveRoot = { root ->
                         scope.launch {
                             runCatching { controller.removeRoot(root) }
-                                .onFailure { Log.e(TAG, "removeRoot failed", it) }
+                                .onFailure { DiagLog.e(TAG, "removeRoot failed", it) }
                             shellState = loadShellState(container)
                             collectionState = loadCollectionScreenState(container, controller)
                         }
@@ -428,7 +428,7 @@ private suspend fun loadCollectionScreenState(
         }
     CollectionScreenState(roots, sourceLabels)
 } catch (failure: Exception) {
-    Log.e(TAG, "loadCollectionScreenState failed", failure)
+    DiagLog.e(TAG, "loadCollectionScreenState failed", failure)
     CollectionScreenState(loadError = "Could not load collection. ${failure.message?.take(80) ?: ""}".trim())
 }
 
@@ -491,7 +491,7 @@ private suspend fun loadShellState(container: AppContainer): ShellState {
                     adapters[profileId] = container.smbAdapter(profile, credentials)
                 }
             } catch (failure: Exception) {
-                Log.e(TAG, "Failed to restore adapter for $profileId", failure)
+                DiagLog.e(TAG, "Failed to restore adapter for $profileId", failure)
             }
         }
         val playableRoots = roots.filter { it.profileId in adapters }
@@ -507,7 +507,7 @@ private suspend fun loadShellState(container: AppContainer): ShellState {
             },
         )
     } catch (failure: Exception) {
-        Log.e(TAG, "loadShellState failed", failure)
+        DiagLog.e(TAG, "loadShellState failed", failure)
         ShellState(
             route = ShellRoute.Home,
             collectionLabel = "KelliKanvas",
