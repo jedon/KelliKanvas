@@ -32,6 +32,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.jedon.kellikanvas.source.smb.HouseholdNasDefaults
+import com.jedon.kellikanvas.ui.tv.highContrastFocus
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -56,7 +57,10 @@ fun SmbSetupScreen(
                 title = { Text("Household NAS (SMB)") },
                 windowInsets = WindowInsets.statusBars,
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
+                    IconButton(
+                        onClick = onBack,
+                        modifier = Modifier.highContrastFocus(),
+                    ) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "Back",
@@ -103,7 +107,9 @@ fun SmbSetupScreen(
                                     }
                             }
                         },
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .highContrastFocus(),
                     ) {
                         Text("Connect household NAS")
                     }
@@ -140,7 +146,9 @@ fun SmbSetupScreen(
                     }
                     Button(
                         onClick = { onFinished(current.result.collectionId) },
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .highContrastFocus(),
                     ) {
                         Text("Done")
                     }
@@ -153,7 +161,9 @@ fun SmbSetupScreen(
                     )
                     Button(
                         onClick = { phase = SmbSetupPhase.Idle },
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .highContrastFocus(),
                     ) {
                         Text("Try again")
                     }

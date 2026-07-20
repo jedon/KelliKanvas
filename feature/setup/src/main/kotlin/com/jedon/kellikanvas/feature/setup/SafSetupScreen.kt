@@ -9,6 +9,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
@@ -28,6 +30,7 @@ import com.jedon.kellikanvas.model.SourceProfileId
 import com.jedon.kellikanvas.source.saf.SafProfile
 import com.jedon.kellikanvas.source.saf.SafTreeGrant
 import com.jedon.kellikanvas.source.saf.SafTreePickerContract
+import com.jedon.kellikanvas.ui.tv.highContrastFocus
 import kotlinx.coroutines.launch
 import java.util.UUID
 
@@ -71,24 +74,36 @@ fun SafSetupScreen(
             text = "Choose a photos folder",
             style = MaterialTheme.typography.headlineMedium,
         )
-        Button(onClick = {
-            errorMessage = null
-            picker.launch(null)
-        }) {
+        Button(
+            onClick = {
+                errorMessage = null
+                picker.launch(null)
+            },
+            modifier = Modifier.highContrastFocus(),
+        ) {
             Text(text = displayName ?: "Choose folder")
         }
         Row(
+            modifier = Modifier
+                .highContrastFocus(RoundedCornerShape(12.dp))
+                .toggleable(
+                    value = includeDescendants,
+                    onValueChange = { includeDescendants = it },
+                )
+                .padding(8.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(16.dp),
         ) {
+            // The row is the focus target; a focusable Switch would steal D-pad focus.
             Switch(
                 checked = includeDescendants,
-                onCheckedChange = { includeDescendants = it },
+                onCheckedChange = null,
             )
             Text(text = "Include subfolders")
         }
         Button(
             enabled = grant != null && displayName != null,
+            modifier = Modifier.highContrastFocus(),
             onClick = {
                 val selectedGrant = grant ?: return@Button
                 val selectedName = displayName ?: return@Button
@@ -112,7 +127,10 @@ fun SafSetupScreen(
             Text(text = "Confirm")
         }
         if (onOpenMenu != null) {
-            TextButton(onClick = onOpenMenu) {
+            TextButton(
+                onClick = onOpenMenu,
+                modifier = Modifier.highContrastFocus(),
+            ) {
                 Text(text = "Open menu")
             }
         }

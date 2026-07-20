@@ -14,10 +14,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
-
-private val FocusBorder = Color(0xFFFFEB3B)
-private val FocusContainer = Color(0xFF0D47A1)
-private val IdleContainer = Color(0xFF1565C0)
+import com.jedon.kellikanvas.ui.tv.HighContrastFocusDefaults
 
 /**
  * TV-friendly button: bright yellow border + darker blue fill when focused.
@@ -37,9 +34,17 @@ fun HighContrastFocusButton(
         onClick = onClick,
         enabled = enabled,
         interactionSource = interactionSource,
-        border = if (focused) BorderStroke(4.dp, FocusBorder) else BorderStroke(2.dp, Color.Transparent),
+        border = if (focused) {
+            BorderStroke(HighContrastFocusDefaults.BorderWidth, HighContrastFocusDefaults.BorderColor)
+        } else {
+            BorderStroke(2.dp, Color.Transparent)
+        },
         colors = ButtonDefaults.buttonColors(
-            containerColor = if (focused) FocusContainer else IdleContainer,
+            containerColor = if (focused) {
+                HighContrastFocusDefaults.FocusedContainerColor
+            } else {
+                HighContrastFocusDefaults.IdleContainerColor
+            },
             contentColor = Color.White,
             disabledContainerColor = Color(0xFF90A4AE),
             disabledContentColor = Color.White,
