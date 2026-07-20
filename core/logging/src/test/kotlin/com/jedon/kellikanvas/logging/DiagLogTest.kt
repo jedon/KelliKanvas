@@ -59,7 +59,7 @@ class DiagLogTest {
     @Test
     fun `installed sink receives every appended entry`() {
         val received = mutableListOf<DiagLogEntry>()
-        DiagLog.installSink { received.add(it) }
+        DiagLog.installSink { entry, _ -> received.add(entry) }
 
         DiagLog.w("tag", "watch out")
 
@@ -70,9 +70,21 @@ class DiagLogTest {
     }
 
     @Test
+    fun `sink receives the original throwable`() {
+        val received = mutableListOf<Throwable?>()
+        DiagLog.installSink { _, throwable -> received.add(throwable) }
+        val failure = IllegalStateException("boom")
+
+        DiagLog.e("tag", "with throwable", failure)
+        DiagLog.i("tag", "without throwable")
+
+        assertThat(received).containsExactly(failure, null).inOrder()
+    }
+
+    @Test
     fun `removed sink no longer receives entries`() {
         val received = mutableListOf<DiagLogEntry>()
-        DiagLog.installSink { received.add(it) }
+        DiagLog.installSink { entry, _ -> received.add(entry) }
         DiagLog.installSink(null)
 
         DiagLog.i("tag", "quiet")
@@ -82,7 +94,7 @@ class DiagLogTest {
 
     @Test
     fun `sink exception does not propagate and entry is still buffered`() {
-        DiagLog.installSink { throw IllegalStateException("sink broke") }
+        DiagLog.installSink { _, _ -> throw IllegalStateException("sink broke") }
 
         DiagLog.e("tag", "still recorded")
 
@@ -96,6 +108,17 @@ class DiagLogTest {
         val entry = DiagLog.snapshot().single()
 
         assertThat(entry.throwableSummary).isEqualTo("IllegalArgumentException: bad input")
+    }
+
+    @Test
+    fun `throwable summary falls back for anonymous exception classes`() {
+        val anonymous = object : RuntimeException("anon boom") {}
+
+        DiagLog.e("tag", "failed", anonymous)
+
+        val summary = DiagLog.snapshot().single().throwableSummary
+        assertThat(summary).endsWith(": anon boom")
+        assertThat(summary).isNotEqualTo(": anon boom")
     }
 
     @Test

@@ -57,6 +57,10 @@ object DiagLog {
     /**
      * Installs [sink] so every appended entry is mirrored to it; pass null to remove.
      * Exceptions thrown by the sink are swallowed.
+     *
+     * The sink is invoked after the entry has been appended to the buffer, outside the
+     * buffer lock, so under concurrent appends the sink call order may differ from the
+     * buffer order.
      */
     fun installSink(sink: DiagLogSink?) {
         this.sink = sink
@@ -74,7 +78,7 @@ object DiagLog {
                 level = level,
                 tag = tag,
                 message = message,
-                throwableSummary = throwable?.let { "${it.javaClass.simpleName}: ${it.message}" },
+                throwableSummary = throwable?.summary(),
             )
         synchronized(lock) {
             if (entries.size >= CAPACITY) {
@@ -83,9 +87,19 @@ object DiagLog {
             entries.addLast(entry)
         }
         try {
-            sink?.onLog(entry)
+            sink?.onLog(entry, throwable)
         } catch (_: Exception) {
             // A misbehaving sink must never break the logging call site.
         }
+    }
+
+    private fun Throwable.summary(): String {
+        // Anonymous classes have an empty simpleName; fall back so the summary
+        // never renders as ": message".
+        val name =
+            javaClass.simpleName.ifBlank {
+                javaClass.name.substringAfterLast('.').ifBlank { "Exception" }
+            }
+        return "$name: $message"
     }
 }

@@ -16,16 +16,12 @@ class KelliKanvasApp : Application() {
     }
 
     private fun installLogcatMirror() {
-        DiagLog.installSink { entry ->
-            val message =
-                entry.throwableSummary
-                    ?.let { "${entry.message}: $it" }
-                    ?: entry.message
+        DiagLog.installSink { entry, throwable ->
             when (entry.level) {
-                DiagLogLevel.DEBUG -> Log.d(entry.tag, message)
-                DiagLogLevel.INFO -> Log.i(entry.tag, message)
-                DiagLogLevel.WARN -> Log.w(entry.tag, message)
-                DiagLogLevel.ERROR -> Log.e(entry.tag, message)
+                DiagLogLevel.DEBUG -> Log.d(entry.tag, entry.message, throwable)
+                DiagLogLevel.INFO -> Log.i(entry.tag, entry.message, throwable)
+                DiagLogLevel.WARN -> Log.w(entry.tag, entry.message, throwable)
+                DiagLogLevel.ERROR -> Log.e(entry.tag, entry.message, throwable)
             }
         }
     }

@@ -5,6 +5,7 @@ import com.jedon.kellikanvas.platform.update.InstallResult
 import com.jedon.kellikanvas.platform.update.InstalledPackage
 import com.jedon.kellikanvas.platform.update.UpdateManifest
 import com.jedon.kellikanvas.platform.update.UpdateRejected
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -90,6 +91,8 @@ class UpdateCheckController(
                 }
             DiagLog.i(TAG, "Update check finished: $result")
             _state.value = result
+        } catch (error: CancellationException) {
+            throw error
         } catch (error: Throwable) {
             val message = mapUpdateError(error)
             DiagLog.w(TAG, "Update check failed: $message", error)
