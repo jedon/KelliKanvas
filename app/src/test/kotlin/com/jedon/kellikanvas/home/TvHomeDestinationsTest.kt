@@ -46,7 +46,7 @@ class TvHomeDestinationsTest {
     @Test
     fun everyDestinationHasNonBlankLabel() {
         tvHomeDrawerDestinations.forEach { destination ->
-            assertThat(destination.label).isNotEmpty()
+            assertThat(destination.label.isNotBlank()).isTrue()
         }
     }
 }

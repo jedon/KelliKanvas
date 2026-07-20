@@ -30,10 +30,10 @@ internal fun HomeCenterPage(
     onRetryBootstrap: () -> Unit,
     onStartSlideshow: () -> Unit,
     startFocusRequester: FocusRequester,
+    noPhotosHint: String,
+    primaryHint: String,
+    secondaryHint: String?,
     modifier: Modifier = Modifier,
-    noPhotosHint: String = "Add a photos folder in Collection, or open Menu (↑ / Menu) to connect.",
-    primaryHint: String = "OK starts slideshow · ↑ / Menu opens Menu · ← → pages",
-    secondaryHint: String? = "← Menu · Home · Collection → · Back exits slideshow to Home",
 ) {
     Column(
         modifier = modifier

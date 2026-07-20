@@ -223,6 +223,9 @@ fun HomeScreen(
                             onStartSlideshow()
                         },
                         startFocusRequester = startFocusRequester,
+                        noPhotosHint = "Add a photos folder in Collection, or open Menu (↑ / Menu) to connect.",
+                        primaryHint = "OK starts slideshow · ↑ / Menu opens Menu · ← → pages",
+                        secondaryHint = "← Menu · Home · Collection → · Back exits slideshow to Home",
                         modifier = Modifier.padding(padding),
                     )
                 }

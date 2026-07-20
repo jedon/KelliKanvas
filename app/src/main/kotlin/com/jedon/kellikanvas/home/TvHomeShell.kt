@@ -43,14 +43,15 @@ import com.jedon.kellikanvas.ui.PhoneMaterialTheme
 import androidx.tv.material3.MaterialTheme as TvMaterialTheme
 import androidx.tv.material3.Text as TvText
 
-/** Icons per drawer destination; add a line here when a new destination is added. */
-private val tvDrawerIcons: Map<TvHomeDestination, ImageVector> = mapOf(
-    TvHomeDestination.Home to Icons.Filled.Home,
-    TvHomeDestination.Collection to Icons.AutoMirrored.Filled.List,
-    TvHomeDestination.Appearance to Icons.Filled.Edit,
-    TvHomeDestination.Playback to Icons.Filled.PlayArrow,
-    TvHomeDestination.Ambient to Icons.Filled.Settings,
-)
+/** Exhaustive so the compiler flags a missing icon when a destination is added. */
+private val TvHomeDestination.icon: ImageVector
+    get() = when (this) {
+        TvHomeDestination.Home -> Icons.Filled.Home
+        TvHomeDestination.Collection -> Icons.AutoMirrored.Filled.List
+        TvHomeDestination.Appearance -> Icons.Filled.Edit
+        TvHomeDestination.Playback -> Icons.Filled.PlayArrow
+        TvHomeDestination.Ambient -> Icons.Filled.Settings
+    }
 
 /**
  * TV home shell: a tv-material [NavigationDrawer] on the left (collapsed to icons,
@@ -83,17 +84,32 @@ internal fun TvHomeShell(
     val activity = LocalActivity.current
     var selectedDestination by rememberSaveable { mutableStateOf(TvHomeDestination.Home) }
     val startFocusRequester = remember { FocusRequester() }
+    var initialCtaFocusRequested by rememberSaveable { mutableStateOf(false) }
+
+    // One-shot initial focus on the Start CTA; must not refire when returning from
+    // Collection or when canStartSlideshow flips later in the session.
+    LaunchedEffect(canStartSlideshow, selectedDestination) {
+        if (
+            !initialCtaFocusRequested &&
+            canStartSlideshow &&
+            selectedDestination == TvHomeDestination.Home
+        ) {
+            initialCtaFocusRequested = true
+            startFocusRequester.requestFocus()
+        }
+    }
 
     fun onDestinationClick(destination: TvHomeDestination) {
         if (destination.inShell) {
             selectedDestination = destination
             return
         }
+        // Exhaustive so the compiler flags a forgotten callback for future entries.
         when (destination) {
             TvHomeDestination.Appearance -> onOpenAppearance()
             TvHomeDestination.Playback -> onOpenPlayback()
             TvHomeDestination.Ambient -> onOpenAmbient()
-            else -> Unit
+            TvHomeDestination.Home, TvHomeDestination.Collection -> Unit
         }
     }
 
@@ -126,7 +142,7 @@ internal fun TvHomeShell(
                             onClick = { onDestinationClick(destination) },
                             leadingContent = {
                                 Icon(
-                                    imageVector = tvDrawerIcons.getValue(destination),
+                                    imageVector = destination.icon,
                                     contentDescription = null,
                                 )
                             },
@@ -137,6 +153,8 @@ internal fun TvHomeShell(
                 }
             },
         ) {
+            // The content pane hosts shared Material3 screens (CollectionHubScreen,
+            // HomeCenterPage) that resolve the phone color scheme, so re-wrap it here.
             PhoneMaterialTheme {
                 Box(
                     modifier = Modifier
@@ -182,11 +200,6 @@ private fun TvHomeContent(
     startFocusRequester: FocusRequester,
     modifier: Modifier = Modifier,
 ) {
-    LaunchedEffect(canStartSlideshow) {
-        if (canStartSlideshow) {
-            startFocusRequester.requestFocus()
-        }
-    }
     Column(
         modifier = modifier
             .fillMaxSize()
