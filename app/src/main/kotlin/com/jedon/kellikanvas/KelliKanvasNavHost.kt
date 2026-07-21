@@ -101,6 +101,13 @@ fun KelliKanvasNavHost(
     var autoStartSlideshowToken by remember { mutableIntStateOf(0) }
     var playlistRootFailures by remember { mutableStateOf<List<String>>(emptyList()) }
 
+    // Playlist failures were computed against the previous shell state; drop them on
+    // reload so Home doesn't keep showing stale root errors after a reconnect.
+    suspend fun reloadShellState() {
+        shellState = loadShellState(container)
+        playlistRootFailures = emptyList()
+    }
+
     LaunchedEffect(container) {
         container.preferences.preferences.collect { preferences = it }
     }
@@ -130,7 +137,7 @@ fun KelliKanvasNavHost(
         when (result) {
             is BootstrapResult.Success -> {
                 DiagLog.i(TAG, "Bootstrap added: ${result.sources}")
-                shellState = loadShellState(container)
+                reloadShellState()
                 collectionRevision++
                 bootstrapUi = PhotosBootstrapUi.Idle
                 // Auto-start on first empty connect, or when replacing stale household roots.
@@ -213,7 +220,7 @@ fun KelliKanvasNavHost(
                     scope.launch {
                         runCatching { controller.removeRoot(root) }
                             .onFailure { DiagLog.e(TAG, "removeRoot failed", it) }
-                        shellState = loadShellState(container)
+                        reloadShellState()
                         collectionRevision++
                         collectionState = loadCollectionScreenState(container, controller)
                     }
@@ -252,7 +259,7 @@ fun KelliKanvasNavHost(
                         scope.launch {
                             runCatching { controller.removeRoot(root) }
                                 .onFailure { DiagLog.e(TAG, "removeRoot failed", it) }
-                            shellState = loadShellState(container)
+                            reloadShellState()
                             collectionState = loadCollectionScreenState(container, controller)
                         }
                     },
@@ -267,7 +274,7 @@ fun KelliKanvasNavHost(
                     controller = SafSetupController(container.database),
                     onFinished = {
                         scope.launch {
-                            shellState = loadShellState(container)
+                            reloadShellState()
                             collectionRevision++
                             navController.navigate(ShellRoutes.COLLECTION) {
                                 popUpTo(ShellRoutes.COLLECTION) { inclusive = false }
@@ -306,7 +313,7 @@ fun KelliKanvasNavHost(
                     ),
                     onFinished = {
                         scope.launch {
-                            shellState = loadShellState(container)
+                            reloadShellState()
                             collectionRevision++
                             navController.navigate(ShellRoutes.COLLECTION) {
                                 popUpTo(ShellRoutes.COLLECTION) { inclusive = false }
@@ -334,7 +341,7 @@ fun KelliKanvasNavHost(
                     ),
                     onFinished = {
                         scope.launch {
-                            shellState = loadShellState(container)
+                            reloadShellState()
                             collectionRevision++
                             navController.navigate(ShellRoutes.COLLECTION) {
                                 popUpTo(ShellRoutes.COLLECTION) { inclusive = false }
