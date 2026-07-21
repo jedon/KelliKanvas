@@ -84,6 +84,7 @@ internal fun TvHomeShell(
     onRetryBootstrap: () -> Unit = {},
     collectionLoadError: String? = null,
     updateAvailableVersion: String? = null,
+    sourceNotices: List<String> = emptyList(),
 ) {
     val activity = LocalActivity.current
     var selectedDestination by rememberSaveable { mutableStateOf(TvHomeDestination.Home) }
@@ -187,6 +188,7 @@ internal fun TvHomeShell(
                             startFocusRequester = startFocusRequester,
                             updateAvailableVersion = updateAvailableVersion,
                             onOpenSystem = onOpenSystem,
+                            sourceNotices = sourceNotices,
                         )
                     }
                 }
@@ -207,6 +209,7 @@ private fun TvHomeContent(
     startFocusRequester: FocusRequester,
     updateAvailableVersion: String?,
     onOpenSystem: () -> Unit,
+    sourceNotices: List<String>,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -231,6 +234,7 @@ private fun TvHomeContent(
             secondaryHint = "Back exits slideshow to Home",
             updateAvailableVersion = updateAvailableVersion,
             onOpenSystem = onOpenSystem,
+            sourceNotices = sourceNotices,
         )
     }
 }

@@ -74,6 +74,7 @@ fun HomeScreen(
     autoStartSlideshowToken: Int = 0,
     onAutoStartSlideshowConsumed: () -> Unit = {},
     updateAvailableVersion: String? = null,
+    sourceNotices: List<String> = emptyList(),
 ) {
     LaunchedEffect(autoStartSlideshowToken, canStartSlideshow) {
         // Consume before navigating so Back → Home does not re-fire auto-start.
@@ -113,6 +114,7 @@ fun HomeScreen(
             onRetryBootstrap = onRetryBootstrap,
             collectionLoadError = collectionLoadError,
             updateAvailableVersion = updateAvailableVersion,
+            sourceNotices = sourceNotices,
         )
         return
     }
@@ -234,6 +236,7 @@ fun HomeScreen(
                         modifier = Modifier.padding(padding),
                         updateAvailableVersion = updateAvailableVersion,
                         onOpenSystem = onOpenSystem,
+                        sourceNotices = sourceNotices,
                     )
                 }
                 PAGE_COLLECTION -> CollectionHubScreen(

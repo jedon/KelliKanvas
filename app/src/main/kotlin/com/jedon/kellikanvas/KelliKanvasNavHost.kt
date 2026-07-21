@@ -80,6 +80,8 @@ private data class ShellState(
     val roots: List<SelectedRoot> = emptyList(),
     val adapters: Map<SourceProfileId, SourceAdapter> = emptyMap(),
     val loadError: String? = null,
+    /** User-visible source problems (e.g. "Household NAS needs reconnecting"), shown on Home. */
+    val sourceNotices: List<String> = emptyList(),
 )
 
 @Suppress("ktlint:standard:function-naming")
@@ -97,6 +99,7 @@ fun KelliKanvasNavHost(
     var bootstrapError by remember { mutableStateOf<String?>(null) }
     var bootstrapAttempt by remember { mutableIntStateOf(0) }
     var autoStartSlideshowToken by remember { mutableIntStateOf(0) }
+    var playlistRootFailures by remember { mutableStateOf<List<String>>(emptyList()) }
 
     LaunchedEffect(container) {
         container.preferences.preferences.collect { preferences = it }
@@ -227,6 +230,7 @@ fun KelliKanvasNavHost(
                 autoStartSlideshowToken = autoStartSlideshowToken,
                 onAutoStartSlideshowConsumed = { autoStartSlideshowToken = 0 },
                 updateAvailableVersion = updateAvailableVersion,
+                sourceNotices = (homeState.sourceNotices + playlistRootFailures).distinct(),
             )
         }
         composable(ShellRoutes.COLLECTION) {
@@ -380,6 +384,7 @@ fun KelliKanvasNavHost(
                     roots = slideshowState.roots,
                     slideDurationMillis = preferences.appPreferences.slideDurationMillis,
                     onExit = { navController.popBackStack() },
+                    onRootFailures = { playlistRootFailures = it },
                 )
             }
         }
@@ -470,6 +475,7 @@ private suspend fun loadShellState(container: AppContainer): ShellState {
         val roots = rootsByCollection.getValue(activeCollection.id)
         val resolver = container.contentResolver
         val adapters = linkedMapOf<SourceProfileId, SourceAdapter>()
+        val sourceNotices = mutableListOf<String>()
         for (profileId in roots.map(SelectedRoot::profileId).distinct()) {
             try {
                 database.safConnections.get(profileId)?.let { connection ->
@@ -497,7 +503,16 @@ private suspend fun loadShellState(container: AppContainer): ShellState {
                     adapters[profileId] = container.dlnaAdapter(profile)
                 }
                 database.smbConnections.get(profileId)?.let { connection ->
-                    val passwordChars = readSmbPassword(container, profileId) ?: return@let
+                    val passwordChars = readSmbPassword(container, profileId)
+                    if (passwordChars == null) {
+                        DiagLog.w(
+                            TAG,
+                            "SMB vault password missing for ${profileId.value} (${connection.displayName}); " +
+                                "adapter not restored",
+                        )
+                        sourceNotices += "Household NAS needs reconnecting"
+                        return@let
+                    }
                     val profile =
                         SmbProfile(
                             id = profileId,
@@ -530,6 +545,7 @@ private suspend fun loadShellState(container: AppContainer): ShellState {
             } else {
                 null
             },
+            sourceNotices = sourceNotices.distinct(),
         )
     } catch (failure: Exception) {
         DiagLog.e(TAG, "loadShellState failed", failure)

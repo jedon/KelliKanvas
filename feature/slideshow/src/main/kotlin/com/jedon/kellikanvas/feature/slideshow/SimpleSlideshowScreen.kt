@@ -56,6 +56,7 @@ fun SimpleSlideshowScreen(
     modifier: Modifier = Modifier,
     slideDurationMillis: Long = 15_000,
     maxEdgePx: Int? = null,
+    onRootFailures: (List<String>) -> Unit = {},
 ) {
     val context = LocalContext.current
     // Panel-sized decode: 4K TV → 3840 long edge. Never default to an arbitrary 1920 OOM band-aid.
@@ -69,6 +70,7 @@ fun SimpleSlideshowScreen(
     var bitmap by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
     var surfaceView by remember { mutableStateOf<PhotoSurfaceView?>(null) }
     var loadFailure by remember { mutableStateOf(false) }
+    var rootFailureMessages by remember { mutableStateOf<List<String>>(emptyList()) }
     var photoLoadError by remember { mutableStateOf<String?>(null) }
     var consecutiveDecodeFailures by remember { mutableIntStateOf(0) }
 
@@ -81,10 +83,14 @@ fun SimpleSlideshowScreen(
         }
     }
     LaunchedEffect(Unit) {
-        playlist = runCatching { CollectionPhotoPlaylist.build(adapters, roots) }.getOrElse {
-            loadFailure = true
-            emptyList()
-        }
+        val buildResult =
+            runCatching { CollectionPhotoPlaylist.build(adapters, roots) }.getOrElse {
+                loadFailure = true
+                CollectionPlaylistResult(photos = emptyList(), rootOutcomes = emptyList())
+            }
+        playlist = buildResult.photos
+        rootFailureMessages = buildResult.failedRoots.map { it.userMessage() }
+        onRootFailures(rootFailureMessages)
         playlist?.takeIf { it.isNotEmpty() }?.let {
             player = SlideshowPlayerState(it.size, slideDurationMillis)
         }
@@ -202,11 +208,29 @@ fun SimpleSlideshowScreen(
         )
         when {
             playlist == null -> Text(text = "Loading…", color = Color.White)
-            playlist?.isEmpty() == true -> Text(
-                text = if (loadFailure) "Unable to load slideshow" else "No photos in this collection",
-                color = Color.White,
-                textAlign = TextAlign.Center,
-            )
+            playlist?.isEmpty() == true ->
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier.padding(24.dp),
+                ) {
+                    Text(
+                        text = when {
+                            loadFailure -> "Unable to load slideshow"
+                            rootFailureMessages.isNotEmpty() -> "Couldn't load photos from your folders"
+                            else -> "No photos in this collection"
+                        },
+                        color = Color.White,
+                        textAlign = TextAlign.Center,
+                    )
+                    rootFailureMessages.forEach { message ->
+                        Text(
+                            text = message,
+                            color = Color.White.copy(alpha = 0.75f),
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.padding(top = 8.dp),
+                        )
+                    }
+                }
             photoLoadError != null ->
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,

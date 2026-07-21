@@ -72,13 +72,17 @@ class PhotoSurfaceView @JvmOverloads constructor(
 
     private fun redraw() {
         if (!surfaceReady) return
-        val canvas: Canvas =
+        val canvas: Canvas? =
             try {
-                holder.lockHardwareCanvas() ?: holder.lockCanvas() ?: return
+                holder.lockHardwareCanvas() ?: holder.lockCanvas()
             } catch (failure: Exception) {
                 DiagLog.w(TAG, "Failed to lock canvas; skipping frame", failure)
                 return
             }
+        if (canvas == null) {
+            DiagLog.w(TAG, "Canvas lock returned null; skipping frame")
+            return
+        }
         try {
             canvas.drawColor(Color.BLACK)
             val bitmap = frame ?: return

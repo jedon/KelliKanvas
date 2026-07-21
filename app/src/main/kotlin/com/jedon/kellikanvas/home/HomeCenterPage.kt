@@ -36,6 +36,7 @@ internal fun HomeCenterPage(
     modifier: Modifier = Modifier,
     updateAvailableVersion: String? = null,
     onOpenSystem: () -> Unit = {},
+    sourceNotices: List<String> = emptyList(),
 ) {
     Column(
         modifier = modifier
@@ -84,6 +85,14 @@ internal fun HomeCenterPage(
                     )
                 }
             }
+        }
+        sourceNotices.forEach { notice ->
+            Text(
+                text = notice,
+                textAlign = TextAlign.Center,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.error,
+            )
         }
         HighContrastFocusButton(
             onClick = onStartSlideshow,

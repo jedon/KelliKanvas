@@ -3,6 +3,7 @@ package com.jedon.kellikanvas.feature.collection
 import com.google.common.truth.Truth.assertThat
 import com.jedon.kellikanvas.catalog.KelliKanvasDatabase
 import com.jedon.kellikanvas.catalog.KelliKanvasDatabaseFactory
+import com.jedon.kellikanvas.logging.BootstrapTrace
 import com.jedon.kellikanvas.model.AssetRef
 import com.jedon.kellikanvas.model.FolderRef
 import com.jedon.kellikanvas.model.Page
@@ -40,11 +41,13 @@ class HouseholdNasBootstrapConnectTest {
     @Before
     fun setUp() {
         database = KelliKanvasDatabaseFactory.inMemory(RuntimeEnvironment.getApplication())
+        BootstrapTrace.clear()
     }
 
     @After
     fun tearDown() {
         database.close()
+        BootstrapTrace.clear()
     }
 
     @Test
@@ -62,6 +65,13 @@ class HouseholdNasBootstrapConnectTest {
 
         assertThat(result).isInstanceOf(BootstrapResult.Success::class.java)
         assertThat(recorded).containsExactly("192.168.68.90")
+
+        val trace = BootstrapTrace.last()
+        assertThat(trace).isNotNull()
+        assertThat(trace!!.result).startsWith("Success:")
+        assertThat(trace.steps.map { it.name }).contains("SMB credentials")
+        assertThat(trace.steps.any { it.name.startsWith("SMB connect+auth") && it.ok }).isTrue()
+        assertThat(trace.steps.any { it.name.startsWith("SMB root listing") && it.ok }).isTrue()
     }
 
     @Test
@@ -82,6 +92,13 @@ class HouseholdNasBootstrapConnectTest {
 
         assertThat(result).isInstanceOf(BootstrapResult.Failed::class.java)
         assertThat(recorded).isEmpty()
+
+        val trace = BootstrapTrace.last()
+        assertThat(trace).isNotNull()
+        assertThat(trace!!.result).startsWith("Failed:")
+        val failedConnects = trace.steps.filter { it.name.startsWith("SMB connect") && !it.ok }
+        assertThat(failedConnects).isNotEmpty()
+        assertThat(failedConnects.first().detail).contains("SMB unreachable")
     }
 
     private fun smbController(

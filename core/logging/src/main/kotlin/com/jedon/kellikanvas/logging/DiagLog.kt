@@ -78,7 +78,7 @@ object DiagLog {
                 level = level,
                 tag = tag,
                 message = message,
-                throwableSummary = throwable?.summary(),
+                throwableSummary = throwable?.diagnosticSummary(),
             )
         synchronized(lock) {
             if (entries.size >= CAPACITY) {
@@ -91,15 +91,5 @@ object DiagLog {
         } catch (_: Exception) {
             // A misbehaving sink must never break the logging call site.
         }
-    }
-
-    private fun Throwable.summary(): String {
-        // Anonymous classes have an empty simpleName; fall back so the summary
-        // never renders as ": message".
-        val name =
-            javaClass.simpleName.ifBlank {
-                javaClass.name.substringAfterLast('.').ifBlank { "Exception" }
-            }
-        return "$name: $message"
     }
 }

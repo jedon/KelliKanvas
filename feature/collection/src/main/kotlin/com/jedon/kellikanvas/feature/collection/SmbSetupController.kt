@@ -6,7 +6,9 @@ import com.jedon.kellikanvas.catalog.KelliKanvasDatabase
 import com.jedon.kellikanvas.catalog.SelectedRoot
 import com.jedon.kellikanvas.catalog.SmbConnection
 import com.jedon.kellikanvas.catalog.SourceProfile
+import com.jedon.kellikanvas.logging.BootstrapTraceStep
 import com.jedon.kellikanvas.logging.DiagLog
+import com.jedon.kellikanvas.logging.diagnosticSummary
 import com.jedon.kellikanvas.model.FolderRef
 import com.jedon.kellikanvas.model.ProviderObjectId
 import com.jedon.kellikanvas.model.SourceEntry
@@ -41,8 +43,12 @@ class SmbSetupController(
      * Auto-selects probe-proven photo roots that exist on the share.
      *
      * @param replaceNetworkRoots when true, drops prior SMB/DLNA roots (keeps SAF).
+     * @param onStep invoked once per connect/listing attempt so callers can trace the run.
      */
-    suspend fun connectHousehold(replaceNetworkRoots: Boolean = false): HouseholdConnectResult {
+    suspend fun connectHousehold(
+        replaceNetworkRoots: Boolean = false,
+        onStep: (BootstrapTraceStep) -> Unit = {},
+    ): HouseholdConnectResult {
         require(householdUsername.isNotBlank()) {
             "Household SMB username missing (set QNAP_NAS_USERNAME for the build)"
         }
@@ -57,7 +63,7 @@ class SmbSetupController(
                 domain = "",
             )
         try {
-            for (host in householdHostCandidates()) {
+            for (host in householdHostCandidates(onStep)) {
                 for (shareDef in HouseholdNasDefaults.PHOTO_SHARES) {
                     try {
                         val profile =
@@ -70,8 +76,30 @@ class SmbSetupController(
                             )
                         val adapter = adapterFactory(profile, credentials)
                         adapter.probe()
+                        onStep(
+                            BootstrapTraceStep(
+                                name = "SMB connect+auth $host/${shareDef.share}",
+                                ok = true,
+                            ),
+                        )
                         val availableRoots = existingPhotoRoots(adapter, shareDef)
-                        if (availableRoots.isEmpty()) continue
+                        if (availableRoots.isEmpty()) {
+                            onStep(
+                                BootstrapTraceStep(
+                                    name = "SMB root listing $host/${shareDef.share}",
+                                    ok = false,
+                                    detail = "no known photo roots found",
+                                ),
+                            )
+                            continue
+                        }
+                        onStep(
+                            BootstrapTraceStep(
+                                name = "SMB root listing $host/${shareDef.share}",
+                                ok = true,
+                                detail = availableRoots.joinToString(),
+                            ),
+                        )
                         val collectionId =
                             saveSelection(
                                 profile = profile,
@@ -97,6 +125,13 @@ class SmbSetupController(
                     } catch (failure: CancellationException) {
                         throw failure
                     } catch (failure: Exception) {
+                        onStep(
+                            BootstrapTraceStep(
+                                name = "SMB connect+auth $host/${shareDef.share}",
+                                ok = false,
+                                detail = failure.diagnosticSummary(),
+                            ),
+                        )
                         lastFailure = failure
                     }
                 }
@@ -197,14 +232,29 @@ class SmbSetupController(
      * Resolver-preferred host first, then the full static list unchanged so a
      * resolver miss can never make bootstrap worse than the hardcoded behavior.
      */
-    private suspend fun householdHostCandidates(): List<String> {
+    private suspend fun householdHostCandidates(onStep: (BootstrapTraceStep) -> Unit): List<String> {
         val preferred =
             try {
-                resolvePreferredHost()
+                resolvePreferredHost().also { host ->
+                    onStep(
+                        BootstrapTraceStep(
+                            name = "SMB host resolution",
+                            ok = true,
+                            detail = host?.let { "preferred=$it" } ?: "no preferred host; static candidates",
+                        ),
+                    )
+                }
             } catch (failure: CancellationException) {
                 throw failure
             } catch (failure: Exception) {
                 DiagLog.w(TAG, "NAS host resolution failed; using static candidates", failure)
+                onStep(
+                    BootstrapTraceStep(
+                        name = "SMB host resolution",
+                        ok = false,
+                        detail = failure.diagnosticSummary(),
+                    ),
+                )
                 null
             }
         return (listOfNotNull(preferred) + HouseholdNasDefaults.HOST_CANDIDATES).distinct()
