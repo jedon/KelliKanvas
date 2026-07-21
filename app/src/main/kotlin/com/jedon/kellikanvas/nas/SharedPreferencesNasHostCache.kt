@@ -1,6 +1,7 @@
 package com.jedon.kellikanvas.nas
 
 import android.content.Context
+import androidx.core.content.edit
 import com.jedon.kellikanvas.source.nas.NasHostCache
 
 /** Persists the last known-good NAS LAN IP in app-private SharedPreferences. */
@@ -11,7 +12,7 @@ class SharedPreferencesNasHostCache(context: Context) : NasHostCache {
     override fun get(): String? = preferences.getString(KEY_LAST_KNOWN_GOOD_IP, null)?.takeIf(String::isNotBlank)
 
     override fun set(ip: String) {
-        preferences.edit().putString(KEY_LAST_KNOWN_GOOD_IP, ip).apply()
+        preferences.edit { putString(KEY_LAST_KNOWN_GOOD_IP, ip) }
     }
 
     private companion object {
