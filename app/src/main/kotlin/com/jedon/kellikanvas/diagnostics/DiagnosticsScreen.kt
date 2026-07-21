@@ -57,15 +57,14 @@ fun DiagnosticsScreen(
     val uptimeMillis = remember {
         SystemClock.elapsedRealtime() - Process.getStartElapsedRealtime()
     }
-    val permissionRows = remember(context) {
-        permissionStatusRows(
-            snapshot = PermissionCoordinator(context).snapshot(),
-            safReadGrantCount = context.contentResolver.persistedUriPermissions
-                .count { it.isReadPermission },
-        )
-    }
     val persistedGrants = remember(context) {
         context.contentResolver.persistedUriPermissions.toList()
+    }
+    val permissionRows = remember(context, persistedGrants) {
+        permissionStatusRows(
+            snapshot = PermissionCoordinator(context).snapshot(),
+            safReadGrantCount = persistedGrants.count { it.isReadPermission },
+        )
     }
     val bootstrapRecord = remember { BootstrapTrace.last() }
     val updateOrigin = remember { UpdateOriginTrace.last() }

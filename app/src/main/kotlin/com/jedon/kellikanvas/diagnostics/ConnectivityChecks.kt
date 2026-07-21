@@ -13,8 +13,8 @@ import com.jedon.kellikanvas.source.SourceAdapter
 import com.jedon.kellikanvas.source.smb.HouseholdNasDefaults
 import com.jedon.kellikanvas.source.smb.SmbSourceAdapter
 
-const val NAS_SMB_PORT: Int = 445
-const val NAS_HTTP_PORT: Int = 8088
+/** QNAP web/update port; SMB reachability uses [HouseholdNasDefaults.PORT]. */
+private const val NAS_HTTP_PORT: Int = 8088
 
 /**
  * The Diagnostics connectivity check list: NAS TCP reachability (445 + 8088),
@@ -31,7 +31,7 @@ fun buildConnectivityChecks(
     adapters: Map<SourceProfileId, SourceAdapter>,
 ): List<ConnectivityCheck> {
     val checks = mutableListOf<ConnectivityCheck>()
-    for (port in listOf(NAS_SMB_PORT, NAS_HTTP_PORT)) {
+    for (port in listOf(HouseholdNasDefaults.PORT, NAS_HTTP_PORT)) {
         checks += ConnectivityCheck(name = "TCP $nasHost:$port") {
             if (tcpProbe(nasHost, port)) {
                 ConnectivityCheckOutcome(ok = true, detail = "connected")

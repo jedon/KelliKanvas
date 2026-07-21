@@ -1,7 +1,9 @@
 package com.jedon.kellikanvas.platform.update
 
 import com.google.common.truth.Truth.assertThat
+import org.junit.After
 import org.junit.Assert.assertThrows
+import org.junit.Before
 import org.junit.Test
 import java.io.ByteArrayInputStream
 import java.io.IOException
@@ -17,6 +19,12 @@ class AuthenticatedManifestRepositoryTest {
         }.generateKeyPair()
     private val authenticator = ManifestAuthenticator(mapOf("release-v1" to keyPair.public))
     private val now = 1_700_000_000_000L
+
+    @Before
+    @After
+    fun clearOriginTrace() {
+        UpdateOriginTrace.clear()
+    }
 
     @Test
     fun `failed fetch does not record check timestamp`() {
@@ -58,7 +66,6 @@ class AuthenticatedManifestRepositoryTest {
 
     @Test
     fun `successful fetch records which control origin was used`() {
-        UpdateOriginTrace.clear()
         val repository = repository(FixedTransport(signedEnvelope(manifest())), RecordingTimestampStore())
 
         repository.check(manual = true, installedVersionCode = 1)
@@ -67,12 +74,10 @@ class AuthenticatedManifestRepositoryTest {
         // serves the first attempt, so that origin must be the one recorded.
         assertThat(UpdateOriginTrace.last())
             .isEqualTo(UpdateOriginUsed(UpdateOriginPolicy.CONTROL_URI, now))
-        UpdateOriginTrace.clear()
     }
 
     @Test
     fun `failed fetch does not record an origin`() {
-        UpdateOriginTrace.clear()
         val repository = repository(FailingTransport(IOException("NAS unreachable")), RecordingTimestampStore())
 
         assertThrows(IOException::class.java) {

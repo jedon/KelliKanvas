@@ -63,7 +63,9 @@ import com.jedon.kellikanvas.source.smb.SmbCredentials
 import com.jedon.kellikanvas.source.smb.SmbProfile
 import com.jedon.kellikanvas.system.SystemScreen
 import com.jedon.kellikanvas.ui.PhoneMaterialTheme
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.net.URI
 import java.nio.charset.StandardCharsets
 
@@ -397,20 +399,28 @@ fun KelliKanvasNavHost(
         composable(ShellRoutes.DIAGNOSTICS) {
             val diagnosticsState = shellState ?: return@composable
             val context = LocalContext.current
-            val connectivityRunner = remember(container, diagnosticsState) {
+            // Keyed on container only: a shell-state reload while a test is running must
+            // not orphan the runner (results reset, single-flight broken). buildChecks
+            // reads the latest shell state at run time instead.
+            val connectivityRunner = remember(container) {
                 ConnectivityTestRunner(
                     buildChecks = {
+                        val current = checkNotNull(shellState) { "Shell state not loaded" }
                         appConnectivityChecks(
                             container = container,
-                            roots = diagnosticsState.roots,
-                            adapters = diagnosticsState.adapters,
-                            restoreStatuses = diagnosticsState.restoreStatuses,
+                            roots = current.roots,
+                            adapters = current.adapters,
+                            restoreStatuses = current.restoreStatuses,
                         )
                     },
                 )
             }
-            val lastUpdateCheckMillis = remember(context) {
-                runCatching { AndroidCheckTimestampStore(context).lastCheckMillis() }.getOrNull()
+            // SharedPreferences hits disk on first access; keep it off the main thread.
+            var lastUpdateCheckMillis by remember { mutableStateOf<Long?>(null) }
+            LaunchedEffect(context) {
+                lastUpdateCheckMillis = withContext(Dispatchers.IO) {
+                    AndroidCheckTimestampStore(context).lastCheckMillis()
+                }
             }
             DiagnosticsScreen(
                 onBack = { navController.popBackStack() },
