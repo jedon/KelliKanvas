@@ -58,6 +58,7 @@ fun SettingsScreenScaffold(
                 item {
                     WideButton(
                         onClick = onBack,
+                        border = settingsRowBorder(),
                         modifier = Modifier.fillMaxWidth(),
                         title = { TvText(text = "Back to Menu") },
                         subtitle = { TvText(text = "Press Back or OK") },

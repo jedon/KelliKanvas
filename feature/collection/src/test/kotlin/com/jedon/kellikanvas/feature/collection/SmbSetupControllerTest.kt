@@ -80,6 +80,40 @@ class SmbSetupControllerTest {
         assertThat(roots.map { it.objectId.value }).doesNotContain("Digital Photos")
     }
 
+    @Test
+    fun connectHousehold_triesResolverPreferredHostFirst() = runTest {
+        val controller =
+            SmbSetupController(
+                database = database,
+                credentialVault = vault,
+                householdUsername = "fake-user",
+                householdPassword = "fake-password".toCharArray(),
+                adapterFactory = { profile, _ -> FakeSmbAdapter(profile.id) },
+                resolvePreferredHost = { "192.168.68.90" },
+            )
+
+        val result = controller.connectHousehold()
+
+        assertThat(result.host).isEqualTo("192.168.68.90")
+    }
+
+    @Test
+    fun connectHousehold_fallsBackToStaticCandidatesWhenResolverFails() = runTest {
+        val controller =
+            SmbSetupController(
+                database = database,
+                credentialVault = vault,
+                householdUsername = "fake-user",
+                householdPassword = "fake-password".toCharArray(),
+                adapterFactory = { profile, _ -> FakeSmbAdapter(profile.id) },
+                resolvePreferredHost = { throw IllegalStateException("resolver crashed") },
+            )
+
+        val result = controller.connectHousehold()
+
+        assertThat(result.host).isIn(HouseholdNasDefaults.HOST_CANDIDATES)
+    }
+
     private class FakeCredentialVault : CredentialVault {
         val stored = linkedMapOf<String, String>()
 

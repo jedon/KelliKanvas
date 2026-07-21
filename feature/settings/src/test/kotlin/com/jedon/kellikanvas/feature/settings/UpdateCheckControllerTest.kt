@@ -130,6 +130,63 @@ class UpdateCheckControllerTest {
             .isEqualTo(UpdateCheckUiState.Error("Install permission required"))
     }
 
+    @Test
+    fun startupCheckIsNonManualAndStopsAtUpdateAvailableWithoutDownloading() = runTest(UnconfinedTestDispatcher()) {
+        var manualSeen: Boolean? = null
+        val controller =
+            UpdateCheckController(
+                checkManifest = { manual, versionCode ->
+                    manualSeen = manual
+                    assertThat(versionCode).isEqualTo(7)
+                    newerManifest
+                },
+                downloadAndVerify = { _, _ -> error("startup check must not download") },
+                launchInstall = { error("startup check must not install") },
+                readInstalled = { installed },
+                dispatcher = UnconfinedTestDispatcher(testScheduler),
+            )
+
+        controller.checkForUpdatesOnStartup()
+
+        assertThat(manualSeen).isFalse()
+        assertThat(controller.state.value)
+            .isEqualTo(UpdateCheckUiState.UpdateAvailable("1.0.7", 8))
+    }
+
+    @Test
+    fun startupCheckStaysIdleWhenPolicyGatedOrUpToDate() = runTest(UnconfinedTestDispatcher()) {
+        val controller =
+            UpdateCheckController(
+                // Null is what the manifest repository returns when the 24h gate applies
+                // or no newer version exists.
+                checkManifest = { _, _ -> null },
+                downloadAndVerify = { _, _ -> error("unused") },
+                launchInstall = { error("unused") },
+                readInstalled = { installed },
+                dispatcher = UnconfinedTestDispatcher(testScheduler),
+            )
+
+        controller.checkForUpdatesOnStartup()
+
+        assertThat(controller.state.value).isEqualTo(UpdateCheckUiState.Idle)
+    }
+
+    @Test
+    fun startupCheckFailuresAreSilent() = runTest(UnconfinedTestDispatcher()) {
+        val controller =
+            UpdateCheckController(
+                checkManifest = { _, _ -> throw java.net.UnknownHostException("darklingnas") },
+                downloadAndVerify = { _, _ -> error("unused") },
+                launchInstall = { error("unused") },
+                readInstalled = { installed },
+                dispatcher = UnconfinedTestDispatcher(testScheduler),
+            )
+
+        controller.checkForUpdatesOnStartup()
+
+        assertThat(controller.state.value).isEqualTo(UpdateCheckUiState.Idle)
+    }
+
     private suspend fun assertErrorMessage(failure: Throwable, expected: String) {
         val controller =
             UpdateCheckController(

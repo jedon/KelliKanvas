@@ -1,17 +1,13 @@
 package com.jedon.kellikanvas.feature.settings
 
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import com.jedon.kellikanvas.catalog.preferences.AppPreferencesState
 import com.jedon.kellikanvas.model.AppPreferences
 import com.jedon.kellikanvas.platform.ambient.AmbientCapabilities
 import com.jedon.kellikanvas.platform.ambient.AndroidSensorInventory
-import kotlinx.coroutines.launch
 
 @Suppress("ktlint:standard:function-naming")
 @Composable
@@ -22,7 +18,6 @@ fun AmbientSettingsScreen(
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
     capabilities: AmbientCapabilities? = null,
-    updateCheckController: UpdateCheckController? = null,
 ) {
     val context = LocalContext.current
     val resolvedCapabilities = capabilities ?: remember(context) {
@@ -31,12 +26,9 @@ fun AmbientSettingsScreen(
     val app = preferences.appPreferences
     val lightAvailable = isAmbientSensorModeEnabled(resolvedCapabilities.light)
     val presenceEnabled = isPresenceToggleEnabled(resolvedCapabilities.presence)
-    val scope = rememberCoroutineScope()
-    val idleUpdateState = remember { kotlinx.coroutines.flow.MutableStateFlow(UpdateCheckUiState.Idle) }
-    val updateState by (updateCheckController?.state ?: idleUpdateState).collectAsState()
 
     SettingsScreenScaffold(
-        title = "Ambient and System",
+        title = "Ambient",
         onBack = onBack,
         modifier = modifier,
     ) {
@@ -94,28 +86,6 @@ fun AmbientSettingsScreen(
                 checked = preferences.reducedMotion,
                 onCheckedChange = { enabled ->
                     onUpdateReducedMotion { enabled }
-                },
-            )
-        }
-        item {
-            SettingsSectionHeader(title = "Updates")
-        }
-        item {
-            val busy =
-                updateState is UpdateCheckUiState.Checking ||
-                    updateState is UpdateCheckUiState.Downloading
-            SettingsActionRow(
-                label = "App updates",
-                buttonLabel = "Check for updates",
-                onClick = {
-                    val controller = updateCheckController ?: return@SettingsActionRow
-                    scope.launch { controller.checkForUpdates() }
-                },
-                enabled = updateCheckController != null && !busy,
-                supportingText = if (updateCheckController == null) {
-                    "Updates require a pinned release metadata key."
-                } else {
-                    updateCheckStatusLabel(updateState)
                 },
             )
         }

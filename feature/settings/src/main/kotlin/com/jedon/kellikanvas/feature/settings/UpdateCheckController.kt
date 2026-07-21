@@ -1,9 +1,11 @@
 package com.jedon.kellikanvas.feature.settings
 
+import com.jedon.kellikanvas.logging.DiagLog
 import com.jedon.kellikanvas.platform.update.InstallResult
 import com.jedon.kellikanvas.platform.update.InstalledPackage
 import com.jedon.kellikanvas.platform.update.UpdateManifest
 import com.jedon.kellikanvas.platform.update.UpdateRejected
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -60,6 +62,7 @@ class UpdateCheckController(
             }
             _state.value = UpdateCheckUiState.Checking
         }
+        DiagLog.i(TAG, "Update check started")
         try {
             val result =
                 withContext(dispatcher) {
@@ -86,13 +89,57 @@ class UpdateCheckController(
                             UpdateCheckUiState.ReadyToInstall(manifest.versionName)
                     }
                 }
+            DiagLog.i(TAG, "Update check finished: $result")
             _state.value = result
+        } catch (error: CancellationException) {
+            throw error
         } catch (error: Throwable) {
-            _state.value = UpdateCheckUiState.Error(mapUpdateError(error))
+            val message = mapUpdateError(error)
+            DiagLog.w(TAG, "Update check failed: $message", error)
+            _state.value = UpdateCheckUiState.Error(message)
+        }
+    }
+
+    /**
+     * Startup auto-check: passes manual=false so the 24h UpdateCheckPolicy interval
+     * gating applies, and stops at [UpdateCheckUiState.UpdateAvailable] instead of
+     * downloading — the Home banner points the user at the System screen to install.
+     * Failures are silent (state returns to Idle).
+     */
+    suspend fun checkForUpdatesOnStartup() {
+        mutex.withLock {
+            if (_state.value != UpdateCheckUiState.Idle) return
+            _state.value = UpdateCheckUiState.Checking
+        }
+        DiagLog.i(TAG, "Startup update check started")
+        try {
+            val manifest =
+                withContext(dispatcher) {
+                    val installed = readInstalled()
+                    try {
+                        checkManifest(false, installed.versionCode)
+                    } catch (error: UpdateRejected) {
+                        if (error.message == "update is not newer") null else throw error
+                    }
+                }
+            _state.value =
+                if (manifest == null) {
+                    UpdateCheckUiState.Idle
+                } else {
+                    UpdateCheckUiState.UpdateAvailable(manifest.versionName, manifest.versionCode)
+                }
+            DiagLog.i(TAG, "Startup update check finished: ${_state.value}")
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Throwable) {
+            DiagLog.w(TAG, "Startup update check failed: ${mapUpdateError(error)}", error)
+            _state.value = UpdateCheckUiState.Idle
         }
     }
 
     companion object {
+        private const val TAG = "UpdateCheckController"
+
         fun mapUpdateError(error: Throwable): String {
             val message = error.message.orEmpty()
             return when {

@@ -13,5 +13,5 @@ object SafPhotoPlaylist {
         adapters = mapOf(adapter.profileId to adapter),
         roots = roots,
         pageSize = pageSize,
-    )
+    ).photos
 }

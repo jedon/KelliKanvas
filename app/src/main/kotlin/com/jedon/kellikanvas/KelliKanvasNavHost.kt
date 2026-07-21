@@ -2,11 +2,11 @@ package com.jedon.kellikanvas
 
 import android.content.Intent
 import android.provider.DocumentsContract
-import android.util.Log
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -15,6 +15,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.core.net.toUri
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -24,6 +25,10 @@ import androidx.tv.material3.Text
 import com.jedon.kellikanvas.catalog.CatalogIds
 import com.jedon.kellikanvas.catalog.SelectedRoot
 import com.jedon.kellikanvas.catalog.preferences.AppPreferencesState
+import com.jedon.kellikanvas.diagnostics.ConnectivityTestRunner
+import com.jedon.kellikanvas.diagnostics.DiagnosticsScreen
+import com.jedon.kellikanvas.diagnostics.RootRestoreStatus
+import com.jedon.kellikanvas.diagnostics.appConnectivityChecks
 import com.jedon.kellikanvas.feature.collection.BootstrapResult
 import com.jedon.kellikanvas.feature.collection.CollectionHubController
 import com.jedon.kellikanvas.feature.collection.CollectionHubScreen
@@ -35,13 +40,18 @@ import com.jedon.kellikanvas.feature.collection.SmbSetupScreen
 import com.jedon.kellikanvas.feature.settings.AmbientSettingsScreen
 import com.jedon.kellikanvas.feature.settings.AppearanceSettingsScreen
 import com.jedon.kellikanvas.feature.settings.PlaybackSettingsScreen
+import com.jedon.kellikanvas.feature.settings.UpdateCheckUiState
 import com.jedon.kellikanvas.feature.setup.SafSetupController
 import com.jedon.kellikanvas.feature.setup.SafSetupScreen
 import com.jedon.kellikanvas.feature.slideshow.SimpleSlideshowScreen
 import com.jedon.kellikanvas.home.HomeScreen
 import com.jedon.kellikanvas.home.PhotosBootstrapUi
+import com.jedon.kellikanvas.logging.DiagLog
+import com.jedon.kellikanvas.logging.diagnosticSummary
 import com.jedon.kellikanvas.model.AppPreferences
+import com.jedon.kellikanvas.model.SourceKind
 import com.jedon.kellikanvas.model.SourceProfileId
+import com.jedon.kellikanvas.platform.update.AndroidCheckTimestampStore
 import com.jedon.kellikanvas.security.CredentialReadResult
 import com.jedon.kellikanvas.shell.ShellRoute
 import com.jedon.kellikanvas.shell.ShellStartup
@@ -51,8 +61,11 @@ import com.jedon.kellikanvas.source.saf.SafProfile
 import com.jedon.kellikanvas.source.saf.SafTreeGrant
 import com.jedon.kellikanvas.source.smb.SmbCredentials
 import com.jedon.kellikanvas.source.smb.SmbProfile
+import com.jedon.kellikanvas.system.SystemScreen
 import com.jedon.kellikanvas.ui.PhoneMaterialTheme
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.net.URI
 import java.nio.charset.StandardCharsets
 
@@ -68,6 +81,8 @@ private object ShellRoutes {
     const val APPEARANCE = "appearance"
     const val PLAYBACK = "playback"
     const val AMBIENT = "ambient"
+    const val SYSTEM = "system"
+    const val DIAGNOSTICS = "diagnostics"
 }
 
 private data class ShellState(
@@ -76,6 +91,10 @@ private data class ShellState(
     val roots: List<SelectedRoot> = emptyList(),
     val adapters: Map<SourceProfileId, SourceAdapter> = emptyMap(),
     val loadError: String? = null,
+    /** User-visible source problems (e.g. "Household NAS needs reconnecting"), shown on Home. */
+    val sourceNotices: List<String> = emptyList(),
+    /** Per-profile adapter restore outcomes, shown on the Diagnostics screen. */
+    val restoreStatuses: List<RootRestoreStatus> = emptyList(),
 )
 
 @Suppress("ktlint:standard:function-naming")
@@ -93,6 +112,14 @@ fun KelliKanvasNavHost(
     var bootstrapError by remember { mutableStateOf<String?>(null) }
     var bootstrapAttempt by remember { mutableIntStateOf(0) }
     var autoStartSlideshowToken by remember { mutableIntStateOf(0) }
+    var playlistRootFailures by remember { mutableStateOf<List<String>>(emptyList()) }
+
+    // Playlist failures were computed against the previous shell state; drop them on
+    // reload so Home doesn't keep showing stale root errors after a reconnect.
+    suspend fun reloadShellState() {
+        shellState = loadShellState(container)
+        playlistRootFailures = emptyList()
+    }
 
     LaunchedEffect(container) {
         container.preferences.preferences.collect { preferences = it }
@@ -117,13 +144,13 @@ fun KelliKanvasNavHost(
         bootstrapError = null
         val result = runCatching { householdBootstrap(container).ensurePhotosCollection() }
             .getOrElse { failure ->
-                Log.e(TAG, "Household bootstrap crashed", failure)
+                DiagLog.e(TAG, "Household bootstrap crashed", failure)
                 BootstrapResult.Failed(failure.message ?: "Bootstrap failed")
             }
         when (result) {
             is BootstrapResult.Success -> {
-                Log.i(TAG, "Bootstrap added: ${result.sources}")
-                shellState = loadShellState(container)
+                DiagLog.i(TAG, "Bootstrap added: ${result.sources}")
+                reloadShellState()
                 collectionRevision++
                 bootstrapUi = PhotosBootstrapUi.Idle
                 // Auto-start on first empty connect, or when replacing stale household roots.
@@ -182,6 +209,9 @@ fun KelliKanvasNavHost(
             LaunchedEffect(controller, collectionRevision) {
                 collectionState = loadCollectionScreenState(container, controller)
             }
+            val updateState = container.updateCheckController?.state?.collectAsState()?.value
+            val updateAvailableVersion =
+                (updateState as? UpdateCheckUiState.UpdateAvailable)?.versionName
             HomeScreen(
                 collectionLabel = homeState.collectionLabel.ifBlank { "KelliKanvas" },
                 canStartSlideshow = canStartSlideshow,
@@ -195,14 +225,16 @@ fun KelliKanvasNavHost(
                 onOpenAppearance = { navController.navigate(ShellRoutes.APPEARANCE) },
                 onOpenPlayback = { navController.navigate(ShellRoutes.PLAYBACK) },
                 onOpenAmbient = { navController.navigate(ShellRoutes.AMBIENT) },
+                onOpenSystem = { navController.navigate(ShellRoutes.SYSTEM) },
+                onOpenDiagnostics = { navController.navigate(ShellRoutes.DIAGNOSTICS) },
                 onAddLocalFolder = { navController.navigate(ShellRoutes.SETUP) },
                 onAddQnap = { navController.navigate(ShellRoutes.DLNA_SETUP) },
                 onConnectHouseholdNas = { navController.navigate(ShellRoutes.SMB_SETUP) },
                 onRemoveRoot = { root ->
                     scope.launch {
                         runCatching { controller.removeRoot(root) }
-                            .onFailure { Log.e(TAG, "removeRoot failed", it) }
-                        shellState = loadShellState(container)
+                            .onFailure { DiagLog.e(TAG, "removeRoot failed", it) }
+                        reloadShellState()
                         collectionRevision++
                         collectionState = loadCollectionScreenState(container, controller)
                     }
@@ -218,6 +250,8 @@ fun KelliKanvasNavHost(
                 collectionLoadError = collectionState.loadError ?: homeState.loadError,
                 autoStartSlideshowToken = autoStartSlideshowToken,
                 onAutoStartSlideshowConsumed = { autoStartSlideshowToken = 0 },
+                updateAvailableVersion = updateAvailableVersion,
+                sourceNotices = (homeState.sourceNotices + playlistRootFailures).distinct(),
             )
         }
         composable(ShellRoutes.COLLECTION) {
@@ -238,8 +272,8 @@ fun KelliKanvasNavHost(
                     onRemoveRoot = { root ->
                         scope.launch {
                             runCatching { controller.removeRoot(root) }
-                                .onFailure { Log.e(TAG, "removeRoot failed", it) }
-                            shellState = loadShellState(container)
+                                .onFailure { DiagLog.e(TAG, "removeRoot failed", it) }
+                            reloadShellState()
                             collectionState = loadCollectionScreenState(container, controller)
                         }
                     },
@@ -254,7 +288,7 @@ fun KelliKanvasNavHost(
                     controller = SafSetupController(container.database),
                     onFinished = {
                         scope.launch {
-                            shellState = loadShellState(container)
+                            reloadShellState()
                             collectionRevision++
                             navController.navigate(ShellRoutes.COLLECTION) {
                                 popUpTo(ShellRoutes.COLLECTION) { inclusive = false }
@@ -284,12 +318,16 @@ fun KelliKanvasNavHost(
                             }
                         },
                         resolveManual = { container.dlnaManualResolver().resolve(it) },
-                        resolveBuiltIn = { container.dlnaManualResolver().resolveBuiltIn() },
+                        resolveBuiltIn = {
+                            container.dlnaManualResolver().resolveBuiltIn(
+                                preferredHosts = listOfNotNull(container.nasHostResolver.resolve()?.host),
+                            )
+                        },
                         adapterFactory = { container.dlnaAdapter(it) },
                     ),
                     onFinished = {
                         scope.launch {
-                            shellState = loadShellState(container)
+                            reloadShellState()
                             collectionRevision++
                             navController.navigate(ShellRoutes.COLLECTION) {
                                 popUpTo(ShellRoutes.COLLECTION) { inclusive = false }
@@ -313,10 +351,11 @@ fun KelliKanvasNavHost(
                         adapterFactory = { profile, credentials ->
                             container.smbAdapter(profile, credentials)
                         },
+                        resolvePreferredHost = { container.nasHostResolver.resolve()?.host },
                     ),
                     onFinished = {
                         scope.launch {
-                            shellState = loadShellState(container)
+                            reloadShellState()
                             collectionRevision++
                             navController.navigate(ShellRoutes.COLLECTION) {
                                 popUpTo(ShellRoutes.COLLECTION) { inclusive = false }
@@ -348,7 +387,49 @@ fun KelliKanvasNavHost(
                 onUpdatePreferences = updateAppPreferences,
                 onUpdateReducedMotion = updateReducedMotion,
                 onBack = { navController.popBackStack() },
+            )
+        }
+        composable(ShellRoutes.SYSTEM) {
+            SystemScreen(
+                onBack = { navController.popBackStack() },
+                onOpenDiagnostics = { navController.navigate(ShellRoutes.DIAGNOSTICS) },
                 updateCheckController = container.updateCheckController,
+            )
+        }
+        composable(ShellRoutes.DIAGNOSTICS) {
+            val diagnosticsState = shellState ?: return@composable
+            val context = LocalContext.current
+            // Keyed on container only: a shell-state reload while a test is running must
+            // not orphan the runner (results reset, single-flight broken). buildChecks
+            // reads the latest shell state at run time instead.
+            val connectivityRunner = remember(container) {
+                ConnectivityTestRunner(
+                    buildChecks = {
+                        val current = checkNotNull(shellState) { "Shell state not loaded" }
+                        appConnectivityChecks(
+                            container = container,
+                            roots = current.roots,
+                            adapters = current.adapters,
+                            restoreStatuses = current.restoreStatuses,
+                        )
+                    },
+                )
+            }
+            // SharedPreferences hits disk on first access; keep it off the main thread.
+            var lastUpdateCheckMillis by remember { mutableStateOf<Long?>(null) }
+            LaunchedEffect(context) {
+                lastUpdateCheckMillis = withContext(Dispatchers.IO) {
+                    AndroidCheckTimestampStore(context).lastCheckMillis()
+                }
+            }
+            DiagnosticsScreen(
+                onBack = { navController.popBackStack() },
+                restoreStatuses = diagnosticsState.restoreStatuses,
+                roots = diagnosticsState.roots,
+                connectivityRunner = connectivityRunner,
+                updateCheckController = container.updateCheckController,
+                lastUpdateCheckMillis = lastUpdateCheckMillis,
+                nasResolution = container.nasHostResolver.lastResolution,
             )
         }
         composable(ShellRoutes.SLIDESHOW) {
@@ -361,6 +442,7 @@ fun KelliKanvasNavHost(
                     roots = slideshowState.roots,
                     slideDurationMillis = preferences.appPreferences.slideDurationMillis,
                     onExit = { navController.popBackStack() },
+                    onRootFailures = { playlistRootFailures = it },
                 )
             }
         }
@@ -382,6 +464,7 @@ private fun householdBootstrap(container: AppContainer): HouseholdNasBootstrap {
         adapterFactory = { profile, credentials ->
             container.smbAdapter(profile, credentials)
         },
+        resolvePreferredHost = { container.nasHostResolver.resolve()?.host },
     )
     val dlna = DlnaSetupController(
         database = container.database,
@@ -391,7 +474,11 @@ private fun householdBootstrap(container: AppContainer): HouseholdNasBootstrap {
             }
         },
         resolveManual = { container.dlnaManualResolver().resolve(it) },
-        resolveBuiltIn = { container.dlnaManualResolver().resolveBuiltIn() },
+        resolveBuiltIn = {
+            container.dlnaManualResolver().resolveBuiltIn(
+                preferredHosts = listOfNotNull(container.nasHostResolver.resolve()?.host),
+            )
+        },
         adapterFactory = { container.dlnaAdapter(it) },
     )
     return HouseholdNasBootstrap(
@@ -401,6 +488,7 @@ private fun householdBootstrap(container: AppContainer): HouseholdNasBootstrap {
             container.householdSmbUsername().isNotBlank() &&
                 container.householdSmbPassword().isNotEmpty()
         },
+        recordKnownGoodIp = container.nasHostResolver::recordKnownGoodIp,
     )
 }
 
@@ -428,7 +516,7 @@ private suspend fun loadCollectionScreenState(
         }
     CollectionScreenState(roots, sourceLabels)
 } catch (failure: Exception) {
-    Log.e(TAG, "loadCollectionScreenState failed", failure)
+    DiagLog.e(TAG, "loadCollectionScreenState failed", failure)
     CollectionScreenState(loadError = "Could not load collection. ${failure.message?.take(80) ?: ""}".trim())
 }
 
@@ -445,6 +533,8 @@ private suspend fun loadShellState(container: AppContainer): ShellState {
         val roots = rootsByCollection.getValue(activeCollection.id)
         val resolver = container.contentResolver
         val adapters = linkedMapOf<SourceProfileId, SourceAdapter>()
+        val sourceNotices = mutableListOf<String>()
+        val restoreStatuses = mutableListOf<RootRestoreStatus>()
         for (profileId in roots.map(SelectedRoot::profileId).distinct()) {
             try {
                 database.safConnections.get(profileId)?.let { connection ->
@@ -459,6 +549,20 @@ private suspend fun loadShellState(container: AppContainer): ShellState {
                             flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION,
                         )
                         adapters[profileId] = container.safAdapter(SafProfile(profileId, grant))
+                        restoreStatuses += RootRestoreStatus(
+                            profileId = profileId,
+                            label = "Local folder",
+                            kind = SourceKind.SAF,
+                            restored = true,
+                        )
+                    } else {
+                        restoreStatuses += RootRestoreStatus(
+                            profileId = profileId,
+                            label = "Local folder",
+                            kind = SourceKind.SAF,
+                            restored = false,
+                            reason = "persisted folder permission (SAF grant) missing",
+                        )
                     }
                 }
                 database.dlnaConnections.get(profileId)?.let { connection ->
@@ -470,9 +574,31 @@ private suspend fun loadShellState(container: AppContainer): ShellState {
                         contentDirectoryVersion = connection.contentDirectoryVersion,
                     )
                     adapters[profileId] = container.dlnaAdapter(profile)
+                    restoreStatuses += RootRestoreStatus(
+                        profileId = profileId,
+                        label = connection.displayName.ifBlank { "QNAP" },
+                        kind = SourceKind.DLNA,
+                        restored = true,
+                    )
                 }
                 database.smbConnections.get(profileId)?.let { connection ->
-                    val passwordChars = readSmbPassword(container, profileId) ?: return@let
+                    val passwordChars = readSmbPassword(container, profileId)
+                    if (passwordChars == null) {
+                        DiagLog.w(
+                            TAG,
+                            "SMB vault password missing for ${profileId.value} (${connection.displayName}); " +
+                                "adapter not restored",
+                        )
+                        sourceNotices += "Household NAS needs reconnecting"
+                        restoreStatuses += RootRestoreStatus(
+                            profileId = profileId,
+                            label = connection.displayName.ifBlank { "SMB" },
+                            kind = SourceKind.SMB,
+                            restored = false,
+                            reason = "SMB password missing from vault; reconnect needed",
+                        )
+                        return@let
+                    }
                     val profile =
                         SmbProfile(
                             id = profileId,
@@ -489,9 +615,33 @@ private suspend fun loadShellState(container: AppContainer): ShellState {
                             domain = connection.domain,
                         )
                     adapters[profileId] = container.smbAdapter(profile, credentials)
+                    restoreStatuses += RootRestoreStatus(
+                        profileId = profileId,
+                        label = connection.displayName.ifBlank { "SMB" },
+                        kind = SourceKind.SMB,
+                        restored = true,
+                    )
+                }
+                if (restoreStatuses.none { it.profileId == profileId }) {
+                    restoreStatuses += RootRestoreStatus(
+                        profileId = profileId,
+                        label = "Unknown source",
+                        kind = null,
+                        restored = false,
+                        reason = "no connection record found",
+                    )
                 }
             } catch (failure: Exception) {
-                Log.e(TAG, "Failed to restore adapter for $profileId", failure)
+                DiagLog.e(TAG, "Failed to restore adapter for $profileId", failure)
+                if (restoreStatuses.none { it.profileId == profileId }) {
+                    restoreStatuses += RootRestoreStatus(
+                        profileId = profileId,
+                        label = "Source ${profileId.value}",
+                        kind = null,
+                        restored = false,
+                        reason = failure.diagnosticSummary(),
+                    )
+                }
             }
         }
         val playableRoots = roots.filter { it.profileId in adapters }
@@ -505,9 +655,11 @@ private suspend fun loadShellState(container: AppContainer): ShellState {
             } else {
                 null
             },
+            sourceNotices = sourceNotices.distinct(),
+            restoreStatuses = restoreStatuses.toList(),
         )
     } catch (failure: Exception) {
-        Log.e(TAG, "loadShellState failed", failure)
+        DiagLog.e(TAG, "loadShellState failed", failure)
         ShellState(
             route = ShellRoute.Home,
             collectionLabel = "KelliKanvas",

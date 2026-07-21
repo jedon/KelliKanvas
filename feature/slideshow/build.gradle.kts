@@ -14,6 +14,7 @@ android {
 dependencies {
     implementation(project(":core:catalog"))
     implementation(project(":core:image"))
+    implementation(project(":core:logging"))
     implementation(project(":core:model"))
     implementation(project(":core:source-api"))
     implementation(project(":core:ui-tv"))

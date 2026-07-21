@@ -12,6 +12,7 @@ android {
 
 dependencies {
     implementation(project(":core:image"))
+    implementation(project(":core:logging"))
     implementation(project(":core:model"))
 
     testImplementation(libs.junit4)

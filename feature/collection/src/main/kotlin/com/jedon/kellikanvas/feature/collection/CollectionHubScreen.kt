@@ -27,6 +27,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.jedon.kellikanvas.catalog.SelectedRoot
 import com.jedon.kellikanvas.model.SourceProfileId
+import com.jedon.kellikanvas.ui.tv.highContrastFocus
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Suppress("ktlint:standard:function-naming")
@@ -53,7 +54,10 @@ fun CollectionHubScreen(
                 title = { Text("Collection") },
                 windowInsets = WindowInsets.statusBars,
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
+                    IconButton(
+                        onClick = onBack,
+                        modifier = Modifier.highContrastFocus(),
+                    ) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "Back",

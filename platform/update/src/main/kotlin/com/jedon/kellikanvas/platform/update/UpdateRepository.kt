@@ -221,7 +221,9 @@ class AuthenticatedManifestRepository(
         var lastError: Exception? = null
         for (uri in uris) {
             try {
-                return fetchOne(uri, maxBytes)
+                val bytes = fetchOne(uri, maxBytes)
+                UpdateOriginTrace.record(uri, nowMillis())
+                return bytes
             } catch (error: UpdateRejected) {
                 // Signature / schema failures are definitive; do not try another host.
                 if (isDefinitiveMetadataFailure(error)) throw error

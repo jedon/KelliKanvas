@@ -15,12 +15,21 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.tv.material3.ButtonBorder
 import androidx.tv.material3.WideButton
+import androidx.tv.material3.WideButtonDefaults
+import com.jedon.kellikanvas.ui.tv.HighContrastFocusDefaults
 import com.jedon.kellikanvas.ui.tv.isTelevisionUi
 import androidx.compose.material3.MaterialTheme as PhoneMaterialTheme
 import androidx.compose.material3.Text as PhoneText
 import androidx.tv.material3.MaterialTheme as TvMaterialTheme
 import androidx.tv.material3.Text as TvText
+
+/** High-contrast focused border shared by every TV settings row. */
+@Composable
+internal fun settingsRowBorder(): ButtonBorder = WideButtonDefaults.border(
+    focusedBorder = HighContrastFocusDefaults.TvFocusedBorder,
+)
 
 @Suppress("ktlint:standard:function-naming")
 @Composable
@@ -74,6 +83,7 @@ fun SettingsEnumRow(
         WideButton(
             onClick = onCycle,
             enabled = enabled,
+            border = settingsRowBorder(),
             modifier = modifier.fillMaxWidth(),
             title = { TvText(text = label) },
             subtitle = { TvText(text = subtitle) },
@@ -133,6 +143,7 @@ fun SettingsSwitchRow(
         WideButton(
             onClick = { onCheckedChange(!checked) },
             enabled = enabled,
+            border = settingsRowBorder(),
             modifier = modifier.fillMaxWidth(),
             title = { TvText(text = label) },
             subtitle = { TvText(text = subtitle) },
@@ -197,6 +208,7 @@ fun SettingsStepperRow(
                 if (incrementEnabled) onIncrement()
             },
             enabled = decrementEnabled || incrementEnabled,
+            border = settingsRowBorder(),
             modifier = modifier
                 .fillMaxWidth()
                 .onPreviewKeyEvent { event ->
@@ -204,24 +216,22 @@ fun SettingsStepperRow(
                     if (native.action != KeyEvent.ACTION_DOWN || native.repeatCount != 0) {
                         return@onPreviewKeyEvent false
                     }
-                    when (native.keyCode) {
-                        KeyEvent.KEYCODE_DPAD_LEFT -> {
-                            if (decrementEnabled) {
-                                onDecrement()
-                                true
-                            } else {
-                                true
-                            }
+                    when (
+                        stepperKeyAction(
+                            keyCode = native.keyCode,
+                            decrementEnabled = decrementEnabled,
+                            incrementEnabled = incrementEnabled,
+                        )
+                    ) {
+                        StepperKeyAction.DECREMENT -> {
+                            onDecrement()
+                            true
                         }
-                        KeyEvent.KEYCODE_DPAD_RIGHT -> {
-                            if (incrementEnabled) {
-                                onIncrement()
-                                true
-                            } else {
-                                true
-                            }
+                        StepperKeyAction.INCREMENT -> {
+                            onIncrement()
+                            true
                         }
-                        else -> false
+                        StepperKeyAction.PASS -> false
                     }
                 },
             title = { TvText(text = label) },
@@ -284,6 +294,7 @@ fun SettingsActionRow(
         WideButton(
             onClick = onClick,
             enabled = enabled,
+            border = settingsRowBorder(),
             modifier = modifier.fillMaxWidth(),
             title = { TvText(text = label) },
             subtitle = { TvText(text = subtitle) },
@@ -339,6 +350,7 @@ fun SettingsReadOnlyRow(
         WideButton(
             onClick = {},
             enabled = false,
+            border = settingsRowBorder(),
             modifier = modifier.fillMaxWidth(),
             title = { TvText(text = label) },
             subtitle = { TvText(text = subtitle) },

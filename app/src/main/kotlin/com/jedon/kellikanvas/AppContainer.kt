@@ -5,6 +5,8 @@ import android.net.wifi.WifiManager
 import com.jedon.kellikanvas.catalog.KelliKanvasDatabaseFactory
 import com.jedon.kellikanvas.catalog.preferences.DataStoreAppPreferencesRepository
 import com.jedon.kellikanvas.feature.settings.UpdateCheckController
+import com.jedon.kellikanvas.nas.SharedPreferencesNasHostCache
+import com.jedon.kellikanvas.nas.isTcpReachable
 import com.jedon.kellikanvas.security.AndroidCredentialVault
 import com.jedon.kellikanvas.security.CredentialVault
 import com.jedon.kellikanvas.source.dlna.AndroidMulticastLock
@@ -13,13 +15,17 @@ import com.jedon.kellikanvas.source.dlna.DlnaProfile
 import com.jedon.kellikanvas.source.dlna.DlnaProfileDiscovery
 import com.jedon.kellikanvas.source.dlna.DlnaSourceAdapter
 import com.jedon.kellikanvas.source.dlna.SsdpDiscoverer
+import com.jedon.kellikanvas.source.nas.NasHostCache
+import com.jedon.kellikanvas.source.nas.NasHostResolver
 import com.jedon.kellikanvas.source.saf.ContentResolverSafDocuments
 import com.jedon.kellikanvas.source.saf.SafProfile
 import com.jedon.kellikanvas.source.saf.SafSourceAdapter
+import com.jedon.kellikanvas.source.smb.HouseholdNasDefaults
 import com.jedon.kellikanvas.source.smb.SmbCredentials
 import com.jedon.kellikanvas.source.smb.SmbProfile
 import com.jedon.kellikanvas.source.smb.SmbSourceAdapter
 import com.jedon.kellikanvas.update.createUpdateCheckController
+import kotlinx.coroutines.CancellationException
 import okhttp3.OkHttpClient
 
 class AppContainer(appContext: Context) {
@@ -30,8 +36,19 @@ class AppContainer(appContext: Context) {
     val credentialVault: CredentialVault = AndroidCredentialVault(appContext)
     private val wifiManager: WifiManager? =
         appContext.applicationContext.getSystemService(WifiManager::class.java)
+    val nasHostCache: NasHostCache = SharedPreferencesNasHostCache(appContext)
+    val nasHostResolver =
+        NasHostResolver(
+            hostname = HouseholdNasDefaults.HOSTNAME,
+            staticDefaultIp = HouseholdNasDefaults.PRIMARY_HOST,
+            cache = nasHostCache,
+            probe = { host -> isTcpReachable(host, ports = listOf(HouseholdNasDefaults.PORT, NAS_DLNA_PORT)) },
+            discover = ::discoverNasHost,
+        )
     val updateCheckController: UpdateCheckController? =
-        runCatching { createUpdateCheckController(appContext, httpClient) }.getOrNull()
+        runCatching {
+            createUpdateCheckController(appContext, httpClient, cachedNasIp = nasHostCache.get())
+        }.getOrNull()
 
     fun safAdapter(profile: SafProfile): SafSourceAdapter = SafSourceAdapter(
         profile = profile,
@@ -58,4 +75,24 @@ class AppContainer(appContext: Context) {
     }
 
     fun dlnaManualResolver(): DlnaManualResolver = DlnaManualResolver(httpClient)
+
+    /** SSDP last-resort discovery: the household NAS found by its DLNA friendly name. */
+    private suspend fun discoverNasHost(): String? {
+        if (wifiManager == null) return null
+        return try {
+            dlnaDiscovery().setupNamed()
+                .firstOrNull { server ->
+                    server.friendlyName.contains(HouseholdNasDefaults.DISPLAY_NAME, ignoreCase = true)
+                }
+                ?.profile
+                ?.descriptionLocation
+                ?.host
+        } catch (failure: CancellationException) {
+            throw failure
+        } catch (_: Exception) {
+            null
+        }
+    }
 }
+
+private const val NAS_DLNA_PORT = 8200

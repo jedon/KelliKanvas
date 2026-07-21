@@ -16,9 +16,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.tv.material3.Button
+import androidx.tv.material3.ButtonBorder
+import androidx.tv.material3.ButtonDefaults
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import com.jedon.kellikanvas.R
+import com.jedon.kellikanvas.ui.tv.HighContrastFocusDefaults
 
 @Composable
 fun ShellPermissionGate(
@@ -57,7 +60,7 @@ fun ShellPermissionGate(
                 onOpenSettings = onOpenSettings,
             )
         }
-        Button(onClick = onNotNow) {
+        Button(onClick = onNotNow, border = gateButtonBorder()) {
             Text(text = stringResource(R.string.permission_not_now))
         }
     }
@@ -99,18 +102,23 @@ private fun PermissionRowCard(
         }
         when {
             row.status == PermissionStatus.Denied && permanentlyDenied -> {
-                Button(onClick = onOpenSettings) {
+                Button(onClick = onOpenSettings, border = gateButtonBorder()) {
                     Text(text = stringResource(R.string.permission_open_settings))
                 }
             }
             row.status == PermissionStatus.Denied -> {
-                Button(onClick = onGrant) {
+                Button(onClick = onGrant, border = gateButtonBorder()) {
                     Text(text = stringResource(R.string.permission_grant))
                 }
             }
         }
     }
 }
+
+@Composable
+private fun gateButtonBorder(): ButtonBorder = ButtonDefaults.border(
+    focusedBorder = HighContrastFocusDefaults.TvFocusedBorder,
+)
 
 @Composable
 private fun rowTitle(id: PermissionRowId): String = stringResource(

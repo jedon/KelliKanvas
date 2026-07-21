@@ -7,9 +7,13 @@ package com.jedon.kellikanvas.source.smb
  * Auto-bootstrap targets only the Frame TV 16×9 landscape mix folder.
  */
 object HouseholdNasDefaults {
+    /** Static last-resort LAN IP; the NAS may move after DHCP renewals. */
     const val PRIMARY_HOST: String = "192.168.68.81"
     const val PORT: Int = 445
     const val DISPLAY_NAME: String = "DarklingNAS"
+
+    /** Canonical LAN hostname used for DNS-first NAS resolution. */
+    const val HOSTNAME: String = "darklingnas"
 
     /** Relative to the [PRIMARY_SHARE] share. */
     const val FRAME_TV_16X9_PATH: String = "Frame TV landscape photos_mix/16X9"

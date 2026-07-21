@@ -123,11 +123,114 @@ class CollectionPhotoPlaylistTest {
             roots = roots,
         )
 
-        assertThat(result).hasSize(2)
-        assertThat(result[0].objectId.value).isEqualTo("photo1")
-        assertThat(result[0].profileId).isEqualTo(profileId1)
-        assertThat(result[1].objectId.value).isEqualTo("photo2")
-        assertThat(result[1].profileId).isEqualTo(profileId2)
+        assertThat(result.photos).hasSize(2)
+        assertThat(result.photos[0].objectId.value).isEqualTo("photo1")
+        assertThat(result.photos[0].profileId).isEqualTo(profileId1)
+        assertThat(result.photos[1].objectId.value).isEqualTo("photo2")
+        assertThat(result.photos[1].profileId).isEqualTo(profileId2)
+    }
+
+    @Test
+    fun build_allRootsSucceed_reportsLoadedOutcomePerRoot() = runTest {
+        val root1Ref = FolderRef(profileId1, ProviderObjectId("root1"))
+        val root2Ref = FolderRef(profileId2, ProviderObjectId("root2"))
+
+        val adapter1 = FakeSourceAdapter(
+            profileId1,
+            mapOf(root1Ref to listOf(createPhoto(profileId1, "a"), createPhoto(profileId1, "b"))),
+        )
+        val adapter2 = FakeSourceAdapter(
+            profileId2,
+            mapOf(root2Ref to listOf(createPhoto(profileId2, "c"))),
+        )
+
+        val roots = listOf(
+            SelectedRoot("col1", profileId1, ProviderObjectId("root1"), "Root 1", includeDescendants = false),
+            SelectedRoot("col1", profileId2, ProviderObjectId("root2"), "Root 2", includeDescendants = false),
+        )
+
+        val result = CollectionPhotoPlaylist.build(
+            adapters = mapOf(profileId1 to adapter1, profileId2 to adapter2),
+            roots = roots,
+        )
+
+        assertThat(result.rootOutcomes).hasSize(2)
+        val first = result.rootOutcomes[0] as PlaylistRootOutcome.Loaded
+        assertThat(first.root.displayLabel).isEqualTo("Root 1")
+        assertThat(first.photoCount).isEqualTo(2)
+        val second = result.rootOutcomes[1] as PlaylistRootOutcome.Loaded
+        assertThat(second.root.displayLabel).isEqualTo("Root 2")
+        assertThat(second.photoCount).isEqualTo(1)
+        assertThat(result.failedRoots).isEmpty()
+    }
+
+    @Test
+    fun build_failureMix_reportsFailedOutcomeWithExceptionTypeAndMessage() = runTest {
+        val goodRootRef = FolderRef(profileId2, ProviderObjectId("good-root"))
+        val failingAdapter = FailingSourceAdapter(profileId1)
+        val goodAdapter = FakeSourceAdapter(
+            profileId2,
+            mapOf(goodRootRef to listOf(createPhoto(profileId2, "photo2"))),
+        )
+
+        val roots = listOf(
+            SelectedRoot("col1", profileId1, ProviderObjectId("bad-root"), "Bad Root", includeDescendants = false),
+            SelectedRoot("col1", profileId2, goodRootRef.objectId, "Good Root", includeDescendants = false),
+        )
+
+        val result = CollectionPhotoPlaylist.build(
+            adapters = mapOf(profileId1 to failingAdapter, profileId2 to goodAdapter),
+            roots = roots,
+        )
+
+        assertThat(result.photos).hasSize(1)
+        assertThat(result.rootOutcomes).hasSize(2)
+        val failed = result.rootOutcomes[0] as PlaylistRootOutcome.Failed
+        assertThat(failed.root.displayLabel).isEqualTo("Bad Root")
+        assertThat(failed.reason).isEqualTo("RuntimeException: Listing failed for bad-root")
+        val loaded = result.rootOutcomes[1] as PlaylistRootOutcome.Loaded
+        assertThat(loaded.photoCount).isEqualTo(1)
+        assertThat(result.failedRoots).containsExactly(failed)
+    }
+
+    @Test
+    fun build_allRootsFail_returnsEmptyPlaylistWithAllFailedOutcomes() = runTest {
+        val roots = listOf(
+            SelectedRoot("col1", profileId1, ProviderObjectId("bad-1"), "Bad 1", includeDescendants = false),
+            SelectedRoot("col1", profileId2, ProviderObjectId("bad-2"), "Bad 2", includeDescendants = false),
+        )
+
+        val result = CollectionPhotoPlaylist.build(
+            adapters = mapOf(
+                profileId1 to FailingSourceAdapter(profileId1),
+                profileId2 to FailingSourceAdapter(profileId2),
+            ),
+            roots = roots,
+        )
+
+        assertThat(result.photos).isEmpty()
+        assertThat(result.failedRoots).hasSize(2)
+        assertThat(result.failedRoots.map { it.root.displayLabel })
+            .containsExactly("Bad 1", "Bad 2")
+            .inOrder()
+        assertThat(result.failedRoots[0].reason).contains("RuntimeException")
+    }
+
+    @Test
+    fun build_missingAdapter_reportsFailedOutcomeAsNotConnected() = runTest {
+        val roots = listOf(
+            SelectedRoot("col1", profileId1, ProviderObjectId("root1"), "Orphan Root", includeDescendants = false),
+        )
+
+        val result = CollectionPhotoPlaylist.build(
+            adapters = emptyMap(),
+            roots = roots,
+        )
+
+        assertThat(result.photos).isEmpty()
+        val failed = result.rootOutcomes.single() as PlaylistRootOutcome.Failed
+        assertThat(failed.root.displayLabel).isEqualTo("Orphan Root")
+        assertThat(failed.reason).isEqualTo("Source not connected")
     }
 
     @Test
@@ -171,7 +274,7 @@ class CollectionPhotoPlaylistTest {
             roots = roots,
         )
 
-        assertThat(result).hasSize(1)
-        assertThat(result[0].objectId.value).isEqualTo("photo2")
+        assertThat(result.photos).hasSize(1)
+        assertThat(result.photos[0].objectId.value).isEqualTo("photo2")
     }
 }

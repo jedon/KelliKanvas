@@ -1,7 +1,6 @@
 package com.jedon.kellikanvas.feature.collection
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -13,6 +12,8 @@ import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Button
@@ -37,8 +38,10 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import com.jedon.kellikanvas.model.SourceFailure
+import com.jedon.kellikanvas.ui.tv.highContrastFocus
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -193,7 +196,10 @@ fun DlnaSetupScreen(
                 title = { Text("Add QNAP") },
                 windowInsets = WindowInsets.statusBars,
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
+                    IconButton(
+                        onClick = onBack,
+                        modifier = Modifier.highContrastFocus(),
+                    ) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "Back",
@@ -218,13 +224,17 @@ fun DlnaSetupScreen(
                     )
                     Button(
                         onClick = { submit(DlnaSetupAction.Discover) },
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .highContrastFocus(),
                     ) {
                         Text("Discover servers")
                     }
                     Button(
                         onClick = { submit(DlnaSetupAction.TryKnown) },
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .highContrastFocus(),
                     ) {
                         Text("Try known NAS")
                     }
@@ -250,7 +260,9 @@ fun DlnaSetupScreen(
                                 selectedFolders.clear()
                                 submit(DlnaSetupAction.Browse(server, "0"))
                             },
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .highContrastFocus(),
                         ) {
                             Text(
                                 when {
@@ -272,19 +284,25 @@ fun DlnaSetupScreen(
                     Button(
                         enabled = manualHost.isNotBlank(),
                         onClick = { submit(DlnaSetupAction.Resolve(manualHost)) },
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .highContrastFocus(),
                     ) {
                         Text("Connect")
                     }
                     TextButton(
                         onClick = { submit(DlnaSetupAction.TryKnown) },
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .highContrastFocus(),
                     ) {
                         Text("Try known NAS")
                     }
                     TextButton(
                         onClick = { submit(DlnaSetupAction.Discover) },
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .highContrastFocus(),
                     ) {
                         Text("Discover again")
                     }
@@ -339,7 +357,9 @@ fun DlnaSetupScreen(
                         onClick = {
                             phase = DlnaSetupPhase.Confirm(currentPhase.server)
                         },
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .highContrastFocus(),
                     ) {
                         Text("Continue (${selectedFolders.size})")
                     }
@@ -356,13 +376,20 @@ fun DlnaSetupScreen(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable { includeDescendants = !includeDescendants },
+                            .highContrastFocus(RoundedCornerShape(12.dp))
+                            .toggleable(
+                                value = includeDescendants,
+                                role = Role.Switch,
+                                onValueChange = { includeDescendants = it },
+                            )
+                            .padding(8.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
+                        // The row is the focus target; a focusable Switch would steal D-pad focus.
                         Switch(
                             checked = includeDescendants,
-                            onCheckedChange = { includeDescendants = it },
+                            onCheckedChange = null,
                         )
                         Text("Include subfolders")
                     }
@@ -381,7 +408,9 @@ fun DlnaSetupScreen(
                                 ),
                             )
                         },
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .highContrastFocus(),
                     ) {
                         Text("Save")
                     }
@@ -395,13 +424,17 @@ fun DlnaSetupScreen(
                     )
                     Button(
                         onClick = { submit(currentPhase.retryAction) },
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .highContrastFocus(),
                     ) {
                         Text("Retry")
                     }
                     TextButton(
                         onClick = { submit(DlnaSetupAction.TryKnown) },
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .highContrastFocus(),
                     ) {
                         Text("Try known NAS")
                     }
@@ -435,21 +468,30 @@ private fun FolderRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable { onSelectedChange(!selected) }
+            .highContrastFocus(RoundedCornerShape(12.dp))
+            .toggleable(
+                value = selected,
+                role = Role.Checkbox,
+                onValueChange = onSelectedChange,
+            )
             .padding(vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
+        // The row is the focus target; a focusable Checkbox would steal D-pad focus.
         Checkbox(
             checked = selected,
-            onCheckedChange = onSelectedChange,
+            onCheckedChange = null,
         )
         Text(
             text = folder.title,
             modifier = Modifier.weight(1f),
             style = MaterialTheme.typography.bodyLarge,
         )
-        TextButton(onClick = onOpen) {
+        TextButton(
+            onClick = onOpen,
+            modifier = Modifier.highContrastFocus(),
+        ) {
             Text("Open")
         }
     }

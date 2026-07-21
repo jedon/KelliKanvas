@@ -1,7 +1,11 @@
 package com.jedon.kellikanvas.feature.collection
 
-import android.util.Log
 import com.jedon.kellikanvas.catalog.SelectedRoot
+import com.jedon.kellikanvas.logging.BootstrapTrace
+import com.jedon.kellikanvas.logging.BootstrapTraceRecord
+import com.jedon.kellikanvas.logging.BootstrapTraceStep
+import com.jedon.kellikanvas.logging.DiagLog
+import com.jedon.kellikanvas.logging.diagnosticSummary
 import com.jedon.kellikanvas.source.smb.HouseholdNasDefaults
 import kotlinx.coroutines.CancellationException
 
@@ -14,69 +18,158 @@ class HouseholdNasBootstrap(
     private val smb: SmbSetupController,
     private val dlna: DlnaSetupController,
     private val hasHouseholdSmbCredentials: () -> Boolean,
+    private val recordKnownGoodIp: (String) -> Unit = {},
 ) {
     suspend fun ensurePhotosCollection(): BootstrapResult {
+        val startedAtMillis = System.currentTimeMillis()
         val added = mutableListOf<String>()
         val errors = mutableListOf<String>()
+        val steps = mutableListOf<BootstrapTraceStep>()
+
+        fun trace(step: BootstrapTraceStep) {
+            steps += step
+            val suffix = step.detail?.let { ": $it" }.orEmpty()
+            if (step.ok) {
+                DiagLog.i(TAG, "Bootstrap step ok — ${step.name}$suffix")
+            } else {
+                DiagLog.w(TAG, "Bootstrap step failed — ${step.name}$suffix")
+            }
+        }
 
         if (hasHouseholdSmbCredentials()) {
+            trace(BootstrapTraceStep("SMB credentials", ok = true))
             try {
-                val smbResult = smb.connectHousehold(replaceNetworkRoots = true)
+                val smbResult = smb.connectHousehold(replaceNetworkRoots = true, onStep = ::trace)
+                recordKnownGoodIp(smbResult.host)
                 added += "SMB ${smbResult.share}/${smbResult.roots.joinToString()}"
-                Log.i(
+                DiagLog.i(
                     TAG,
                     "Household SMB connected host=${smbResult.host} roots=${smbResult.roots}",
                 )
             } catch (failure: CancellationException) {
                 throw failure
             } catch (failure: Exception) {
-                Log.w(TAG, "Household SMB bootstrap failed", failure)
+                DiagLog.w(TAG, "Household SMB bootstrap failed", failure)
+                trace(
+                    BootstrapTraceStep(
+                        name = "SMB connect",
+                        ok = false,
+                        detail = failure.diagnosticSummary(),
+                    ),
+                )
                 errors += failure.message?.take(120) ?: "SMB connect failed"
             }
         } else {
-            Log.i(TAG, "Household SMB credentials not baked in; skipping SMB bootstrap")
+            DiagLog.i(TAG, "Household SMB credentials not baked in; skipping SMB bootstrap")
+            trace(
+                BootstrapTraceStep(
+                    name = "SMB credentials",
+                    ok = false,
+                    detail = "not baked into this build; skipping SMB",
+                ),
+            )
         }
 
         if (added.isEmpty()) {
-            try {
-                val server = dlna.tryKnownHosts()
-                val folder =
-                    PhotosFolderPicker.selectedFrameTv16x9Folder { objectId ->
-                        dlna.listChildren(server.profile, folderObjectId = objectId)
+            val server =
+                try {
+                    dlna.tryKnownHosts().also { discovered ->
+                        trace(
+                            BootstrapTraceStep(
+                                name = "DLNA discovery",
+                                ok = true,
+                                detail = discovered.matchedHost ?: discovered.friendlyName,
+                            ),
+                        )
                     }
-                if (folder != null) {
-                    dlna.saveSelection(
-                        profile = server.profile,
-                        friendlyName = server.friendlyName,
-                        folders = listOf(folder),
-                        replaceNetworkRoots = true,
+                } catch (failure: CancellationException) {
+                    throw failure
+                } catch (failure: Exception) {
+                    DiagLog.w(TAG, "DLNA discovery failed", failure)
+                    trace(
+                        BootstrapTraceStep(
+                            name = "DLNA discovery",
+                            ok = false,
+                            detail = failure.diagnosticSummary(),
+                        ),
                     )
-                    added += "DLNA ${folder.label}"
-                    Log.i(
-                        TAG,
-                        "DLNA Frame TV 16X9 auto-selected via ${server.matchedHost ?: server.friendlyName}",
-                    )
-                } else {
-                    errors += "DLNA connected but Frame TV 16X9 folder not found"
-                    Log.w(TAG, "DLNA Frame TV 16X9 folder not found under Photos")
+                    errors += failure.message?.take(120) ?: "DLNA connect failed"
+                    null
                 }
-            } catch (failure: CancellationException) {
-                throw failure
-            } catch (failure: Exception) {
-                Log.w(TAG, "DLNA Frame TV bootstrap failed", failure)
-                errors += failure.message?.take(120) ?: "DLNA connect failed"
+            if (server != null) {
+                try {
+                    val folder =
+                        PhotosFolderPicker.selectedFrameTv16x9Folder { objectId ->
+                            dlna.listChildren(server.profile, folderObjectId = objectId)
+                        }
+                    if (folder != null) {
+                        dlna.saveSelection(
+                            profile = server.profile,
+                            friendlyName = server.friendlyName,
+                            folders = listOf(folder),
+                            replaceNetworkRoots = true,
+                        )
+                        server.matchedHost?.let(recordKnownGoodIp)
+                        added += "DLNA ${folder.label}"
+                        trace(
+                            BootstrapTraceStep(
+                                name = "DLNA folder resolution",
+                                ok = true,
+                                detail = folder.label,
+                            ),
+                        )
+                        DiagLog.i(
+                            TAG,
+                            "DLNA Frame TV 16X9 auto-selected via ${server.matchedHost ?: server.friendlyName}",
+                        )
+                    } else {
+                        errors += "DLNA connected but Frame TV 16X9 folder not found"
+                        trace(
+                            BootstrapTraceStep(
+                                name = "DLNA folder resolution",
+                                ok = false,
+                                detail = "Frame TV 16X9 folder not found under Photos",
+                            ),
+                        )
+                    }
+                } catch (failure: CancellationException) {
+                    throw failure
+                } catch (failure: Exception) {
+                    DiagLog.w(TAG, "DLNA Frame TV bootstrap failed", failure)
+                    trace(
+                        BootstrapTraceStep(
+                            name = "DLNA folder resolution",
+                            ok = false,
+                            detail = failure.diagnosticSummary(),
+                        ),
+                    )
+                    errors += failure.message?.take(120) ?: "DLNA connect failed"
+                }
             }
         }
 
-        return when {
-            added.isNotEmpty() ->
-                BootstrapResult.Success(sources = added.toList(), warnings = errors.toList())
-            else ->
-                BootstrapResult.Failed(
-                    message = errors.firstOrNull() ?: "Could not connect to household photos",
-                    details = errors.toList(),
-                )
-        }
+        val result =
+            when {
+                added.isNotEmpty() ->
+                    BootstrapResult.Success(sources = added.toList(), warnings = errors.toList())
+                else ->
+                    BootstrapResult.Failed(
+                        message = errors.firstOrNull() ?: "Could not connect to household photos",
+                        details = errors.toList(),
+                    )
+            }
+        BootstrapTrace.record(
+            BootstrapTraceRecord(
+                startedAtMillis = startedAtMillis,
+                steps = steps.toList(),
+                result =
+                when (result) {
+                    is BootstrapResult.Success -> "Success: ${result.sources.joinToString()}"
+                    is BootstrapResult.Failed -> "Failed: ${result.message}"
+                },
+            ),
+        )
+        return result
     }
 
     companion object {
