@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
+import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Info
@@ -53,6 +54,7 @@ private val TvHomeDestination.icon: ImageVector
         TvHomeDestination.Playback -> Icons.Filled.PlayArrow
         TvHomeDestination.Ambient -> Icons.Filled.Settings
         TvHomeDestination.System -> Icons.Filled.Info
+        TvHomeDestination.Diagnostics -> Icons.Filled.Build
     }
 
 /**
@@ -74,6 +76,7 @@ internal fun TvHomeShell(
     onOpenPlayback: () -> Unit,
     onOpenAmbient: () -> Unit,
     onOpenSystem: () -> Unit,
+    onOpenDiagnostics: () -> Unit,
     onAddLocalFolder: () -> Unit,
     onAddQnap: () -> Unit,
     onConnectHouseholdNas: () -> Unit,
@@ -115,6 +118,7 @@ internal fun TvHomeShell(
             TvHomeDestination.Playback -> onOpenPlayback()
             TvHomeDestination.Ambient -> onOpenAmbient()
             TvHomeDestination.System -> onOpenSystem()
+            TvHomeDestination.Diagnostics -> onOpenDiagnostics()
             TvHomeDestination.Home, TvHomeDestination.Collection -> Unit
         }
     }

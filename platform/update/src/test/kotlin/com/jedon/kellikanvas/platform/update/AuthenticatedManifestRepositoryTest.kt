@@ -57,6 +57,32 @@ class AuthenticatedManifestRepositoryTest {
     }
 
     @Test
+    fun `successful fetch records which control origin was used`() {
+        UpdateOriginTrace.clear()
+        val repository = repository(FixedTransport(signedEnvelope(manifest())), RecordingTimestampStore())
+
+        repository.check(manual = true, installedVersionCode = 1)
+
+        // The default control-URI order starts with the hostname; FixedTransport
+        // serves the first attempt, so that origin must be the one recorded.
+        assertThat(UpdateOriginTrace.last())
+            .isEqualTo(UpdateOriginUsed(UpdateOriginPolicy.CONTROL_URI, now))
+        UpdateOriginTrace.clear()
+    }
+
+    @Test
+    fun `failed fetch does not record an origin`() {
+        UpdateOriginTrace.clear()
+        val repository = repository(FailingTransport(IOException("NAS unreachable")), RecordingTimestampStore())
+
+        assertThrows(IOException::class.java) {
+            repository.check(manual = true, installedVersionCode = 1)
+        }
+
+        assertThat(UpdateOriginTrace.last()).isNull()
+    }
+
+    @Test
     fun `successful auth of non-newer update records timestamp and returns null`() {
         val timestamps = RecordingTimestampStore()
         val current = manifest(versionCode = 2)

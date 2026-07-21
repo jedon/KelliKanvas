@@ -38,6 +38,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun SystemScreen(
     onBack: () -> Unit,
+    onOpenDiagnostics: () -> Unit,
     modifier: Modifier = Modifier,
     updateCheckController: UpdateCheckController? = null,
 ) {
@@ -162,6 +163,17 @@ fun SystemScreen(
                     valueLabel = row.status,
                 )
             }
+        }
+        item {
+            SettingsSectionHeader(title = "Diagnostics")
+        }
+        item {
+            SettingsActionRow(
+                label = "Diagnostics",
+                buttonLabel = "Open diagnostics",
+                onClick = onOpenDiagnostics,
+                supportingText = "Connection status, bootstrap trace, and recent logs.",
+            )
         }
     }
 }

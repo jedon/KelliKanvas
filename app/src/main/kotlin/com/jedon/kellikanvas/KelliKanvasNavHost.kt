@@ -15,6 +15,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.core.net.toUri
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -24,6 +25,10 @@ import androidx.tv.material3.Text
 import com.jedon.kellikanvas.catalog.CatalogIds
 import com.jedon.kellikanvas.catalog.SelectedRoot
 import com.jedon.kellikanvas.catalog.preferences.AppPreferencesState
+import com.jedon.kellikanvas.diagnostics.ConnectivityTestRunner
+import com.jedon.kellikanvas.diagnostics.DiagnosticsScreen
+import com.jedon.kellikanvas.diagnostics.RootRestoreStatus
+import com.jedon.kellikanvas.diagnostics.appConnectivityChecks
 import com.jedon.kellikanvas.feature.collection.BootstrapResult
 import com.jedon.kellikanvas.feature.collection.CollectionHubController
 import com.jedon.kellikanvas.feature.collection.CollectionHubScreen
@@ -42,8 +47,11 @@ import com.jedon.kellikanvas.feature.slideshow.SimpleSlideshowScreen
 import com.jedon.kellikanvas.home.HomeScreen
 import com.jedon.kellikanvas.home.PhotosBootstrapUi
 import com.jedon.kellikanvas.logging.DiagLog
+import com.jedon.kellikanvas.logging.diagnosticSummary
 import com.jedon.kellikanvas.model.AppPreferences
+import com.jedon.kellikanvas.model.SourceKind
 import com.jedon.kellikanvas.model.SourceProfileId
+import com.jedon.kellikanvas.platform.update.AndroidCheckTimestampStore
 import com.jedon.kellikanvas.security.CredentialReadResult
 import com.jedon.kellikanvas.shell.ShellRoute
 import com.jedon.kellikanvas.shell.ShellStartup
@@ -72,6 +80,7 @@ private object ShellRoutes {
     const val PLAYBACK = "playback"
     const val AMBIENT = "ambient"
     const val SYSTEM = "system"
+    const val DIAGNOSTICS = "diagnostics"
 }
 
 private data class ShellState(
@@ -82,6 +91,8 @@ private data class ShellState(
     val loadError: String? = null,
     /** User-visible source problems (e.g. "Household NAS needs reconnecting"), shown on Home. */
     val sourceNotices: List<String> = emptyList(),
+    /** Per-profile adapter restore outcomes, shown on the Diagnostics screen. */
+    val restoreStatuses: List<RootRestoreStatus> = emptyList(),
 )
 
 @Suppress("ktlint:standard:function-naming")
@@ -213,6 +224,7 @@ fun KelliKanvasNavHost(
                 onOpenPlayback = { navController.navigate(ShellRoutes.PLAYBACK) },
                 onOpenAmbient = { navController.navigate(ShellRoutes.AMBIENT) },
                 onOpenSystem = { navController.navigate(ShellRoutes.SYSTEM) },
+                onOpenDiagnostics = { navController.navigate(ShellRoutes.DIAGNOSTICS) },
                 onAddLocalFolder = { navController.navigate(ShellRoutes.SETUP) },
                 onAddQnap = { navController.navigate(ShellRoutes.DLNA_SETUP) },
                 onConnectHouseholdNas = { navController.navigate(ShellRoutes.SMB_SETUP) },
@@ -378,7 +390,36 @@ fun KelliKanvasNavHost(
         composable(ShellRoutes.SYSTEM) {
             SystemScreen(
                 onBack = { navController.popBackStack() },
+                onOpenDiagnostics = { navController.navigate(ShellRoutes.DIAGNOSTICS) },
                 updateCheckController = container.updateCheckController,
+            )
+        }
+        composable(ShellRoutes.DIAGNOSTICS) {
+            val diagnosticsState = shellState ?: return@composable
+            val context = LocalContext.current
+            val connectivityRunner = remember(container, diagnosticsState) {
+                ConnectivityTestRunner(
+                    buildChecks = {
+                        appConnectivityChecks(
+                            container = container,
+                            roots = diagnosticsState.roots,
+                            adapters = diagnosticsState.adapters,
+                            restoreStatuses = diagnosticsState.restoreStatuses,
+                        )
+                    },
+                )
+            }
+            val lastUpdateCheckMillis = remember(context) {
+                runCatching { AndroidCheckTimestampStore(context).lastCheckMillis() }.getOrNull()
+            }
+            DiagnosticsScreen(
+                onBack = { navController.popBackStack() },
+                restoreStatuses = diagnosticsState.restoreStatuses,
+                roots = diagnosticsState.roots,
+                connectivityRunner = connectivityRunner,
+                updateCheckController = container.updateCheckController,
+                lastUpdateCheckMillis = lastUpdateCheckMillis,
+                nasResolution = container.nasHostResolver.lastResolution,
             )
         }
         composable(ShellRoutes.SLIDESHOW) {
@@ -483,6 +524,7 @@ private suspend fun loadShellState(container: AppContainer): ShellState {
         val resolver = container.contentResolver
         val adapters = linkedMapOf<SourceProfileId, SourceAdapter>()
         val sourceNotices = mutableListOf<String>()
+        val restoreStatuses = mutableListOf<RootRestoreStatus>()
         for (profileId in roots.map(SelectedRoot::profileId).distinct()) {
             try {
                 database.safConnections.get(profileId)?.let { connection ->
@@ -497,6 +539,20 @@ private suspend fun loadShellState(container: AppContainer): ShellState {
                             flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION,
                         )
                         adapters[profileId] = container.safAdapter(SafProfile(profileId, grant))
+                        restoreStatuses += RootRestoreStatus(
+                            profileId = profileId,
+                            label = "Local folder",
+                            kind = SourceKind.SAF,
+                            restored = true,
+                        )
+                    } else {
+                        restoreStatuses += RootRestoreStatus(
+                            profileId = profileId,
+                            label = "Local folder",
+                            kind = SourceKind.SAF,
+                            restored = false,
+                            reason = "persisted folder permission (SAF grant) missing",
+                        )
                     }
                 }
                 database.dlnaConnections.get(profileId)?.let { connection ->
@@ -508,6 +564,12 @@ private suspend fun loadShellState(container: AppContainer): ShellState {
                         contentDirectoryVersion = connection.contentDirectoryVersion,
                     )
                     adapters[profileId] = container.dlnaAdapter(profile)
+                    restoreStatuses += RootRestoreStatus(
+                        profileId = profileId,
+                        label = connection.displayName.ifBlank { "QNAP" },
+                        kind = SourceKind.DLNA,
+                        restored = true,
+                    )
                 }
                 database.smbConnections.get(profileId)?.let { connection ->
                     val passwordChars = readSmbPassword(container, profileId)
@@ -518,6 +580,13 @@ private suspend fun loadShellState(container: AppContainer): ShellState {
                                 "adapter not restored",
                         )
                         sourceNotices += "Household NAS needs reconnecting"
+                        restoreStatuses += RootRestoreStatus(
+                            profileId = profileId,
+                            label = connection.displayName.ifBlank { "SMB" },
+                            kind = SourceKind.SMB,
+                            restored = false,
+                            reason = "SMB password missing from vault; reconnect needed",
+                        )
                         return@let
                     }
                     val profile =
@@ -536,9 +605,33 @@ private suspend fun loadShellState(container: AppContainer): ShellState {
                             domain = connection.domain,
                         )
                     adapters[profileId] = container.smbAdapter(profile, credentials)
+                    restoreStatuses += RootRestoreStatus(
+                        profileId = profileId,
+                        label = connection.displayName.ifBlank { "SMB" },
+                        kind = SourceKind.SMB,
+                        restored = true,
+                    )
+                }
+                if (restoreStatuses.none { it.profileId == profileId }) {
+                    restoreStatuses += RootRestoreStatus(
+                        profileId = profileId,
+                        label = "Unknown source",
+                        kind = null,
+                        restored = false,
+                        reason = "no connection record found",
+                    )
                 }
             } catch (failure: Exception) {
                 DiagLog.e(TAG, "Failed to restore adapter for $profileId", failure)
+                if (restoreStatuses.none { it.profileId == profileId }) {
+                    restoreStatuses += RootRestoreStatus(
+                        profileId = profileId,
+                        label = "Source ${profileId.value}",
+                        kind = null,
+                        restored = false,
+                        reason = failure.diagnosticSummary(),
+                    )
+                }
             }
         }
         val playableRoots = roots.filter { it.profileId in adapters }
@@ -553,6 +646,7 @@ private suspend fun loadShellState(container: AppContainer): ShellState {
                 null
             },
             sourceNotices = sourceNotices.distinct(),
+            restoreStatuses = restoreStatuses.toList(),
         )
     } catch (failure: Exception) {
         DiagLog.e(TAG, "loadShellState failed", failure)
