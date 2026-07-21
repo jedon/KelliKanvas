@@ -29,8 +29,8 @@ class DlnaConnectionDaoTest {
             DlnaConnection(
                 profileId = profileId,
                 serverUdn = "uuid:qnap-1",
-                descriptionLocation = "http://192.168.68.81:8200/rootDesc.xml",
-                controlUrl = "http://192.168.68.81:8200/ctl/ContentDir",
+                descriptionLocation = "http://192.168.68.62:8200/rootDesc.xml",
+                controlUrl = "http://192.168.68.62:8200/ctl/ContentDir",
                 contentDirectoryVersion = 1,
                 displayName = "DarklingNAS",
             ),

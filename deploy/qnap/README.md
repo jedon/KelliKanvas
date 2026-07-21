@@ -1,8 +1,8 @@
 # QNAP APK host
 
 QNAP Container Station serves `/share/Public/KelliKanvas` through nginx at
-`http://darklingnas.local:8088` (`http://192.168.68.81:8088`). The Compose
-file binds only the stable household LAN address `192.168.68.81`; the NAS
+`http://darklingnas.local:8088` (`http://192.168.68.62:8088`). The Compose
+file binds only the stable household LAN address `192.168.68.62`; the NAS
 Tailscale address does not accept this service. Configuration and the index
 generator live separately in `/share/Container/KelliKanvas`.
 
@@ -669,11 +669,11 @@ the entire content directory read-only, so it cannot alter APKs or the index.
 
 The phone and TV must both resolve and reach the LAN hostname in the copied URL.
 If `darklingnas.local` does not resolve through mDNS or local DNS, open the page
-at `http://192.168.68.81:8088`; **Copy URL** will then copy a URL using that IP.
+at `http://192.168.68.62:8088`; **Copy URL** will then copy a URL using that IP.
 
 ## Install on Google TV / Hisense (Downloader)
 
-TV Downloader apps typically reject cleartext `http://192.168.68.81:8088/...`
+TV Downloader apps typically reject cleartext `http://192.168.68.62:8088/...`
 URLs and often refuse debug-signed APKs. Use a **release-signed** APK over
 **public HTTPS** (GitHub Releases already terminates TLS with a publicly trusted
 certificate; no Let's Encrypt setup is required on the NAS).
@@ -683,7 +683,7 @@ Current TV-installable build:
 - HTTPS (paste into Downloader):
   `https://github.com/jedon/KelliKanvas/releases/download/v1.0.11/KelliKanvas-1.0.11.apk`
 - LAN mirror (browsers / phone workflows):
-  `http://192.168.68.81:8088/KelliKanvas-1.0.11.apk`
+  `http://192.168.68.62:8088/KelliKanvas-1.0.11.apk`
 
 ### Republish a newer TV build
 
@@ -1367,7 +1367,7 @@ reachability:
 ```sh
 set -u
 HOST=darklingnas.local
-NAS_IP=192.168.68.81
+NAS_IP=192.168.68.62
 
 if command -v getent >/dev/null 2>&1; then
   getent hosts "$HOST" || echo "Hostname lookup failed: $HOST" >&2

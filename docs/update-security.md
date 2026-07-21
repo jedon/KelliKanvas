@@ -51,7 +51,7 @@ artifact includes `last-release-sequence.txt` as a reminder copy.
 
 Remote/OVH origins must use an explicitly configured HTTPS origin. The QNAP
 LAN trust set is `http://darklingnas:8088` (canonical published origin) and the
-LAN IP alias `http://192.168.68.81:8088` for devices whose DNS does not resolve
+LAN IP alias `http://192.168.68.62:8088` for devices whose DNS does not resolve
 `darklingnas`. HTTP is not described as TLS. For those endpoints the signed
 canonical manifest, streamed SHA-256 and size checks, independent checksum,
 exact package/version inspection, and match to the currently installed APK

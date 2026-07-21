@@ -12,16 +12,16 @@ class DlnaManualResolverTest {
     fun `builtInHostCandidates includes known QNAP addresses`() {
         assertThat(DlnaManualResolver.BUILT_IN_HOST_CANDIDATES)
             .containsExactly(
-                "http://192.168.68.81:8200/rootDesc.xml",
-                "192.168.68.81:8200",
-                "192.168.68.81",
+                "http://192.168.68.62:8200/rootDesc.xml",
+                "192.168.68.62:8200",
+                "192.168.68.62",
                 "darklingnas",
                 "darklingnas.local",
                 "DarklingNAS",
             )
             .inOrder()
         assertThat(DlnaManualResolver.builtInDescriptionCandidates())
-            .contains("http://192.168.68.81:8200/rootDesc.xml")
+            .contains("http://192.168.68.62:8200/rootDesc.xml")
     }
 
     @Test
@@ -31,7 +31,7 @@ class DlnaManualResolverTest {
             """
             <?xml version="1.0"?>
             <root xmlns="urn:schemas-upnp-org:device-1-0">
-              <URLBase>http://192.168.68.81:8200/</URLBase>
+              <URLBase>http://192.168.68.62:8200/</URLBase>
               <device>
                 <deviceType>urn:schemas-upnp-org:device:MediaServer:1</deviceType>
                 <friendlyName>DarklingNAS</friendlyName>
@@ -49,7 +49,7 @@ class DlnaManualResolverTest {
             DlnaManualResolver(
                 loadDescription = { uri ->
                     loaded += uri
-                    if (uri.toString() == "http://192.168.68.81:8200/rootDesc.xml") {
+                    if (uri.toString() == "http://192.168.68.62:8200/rootDesc.xml") {
                         descriptionXml
                     } else {
                         throw IOException("not this one")
@@ -59,12 +59,12 @@ class DlnaManualResolverTest {
 
         val result = resolver.resolveBuiltIn()
 
-        assertThat(result.matchedHost).isEqualTo("http://192.168.68.81:8200/rootDesc.xml")
+        assertThat(result.matchedHost).isEqualTo("http://192.168.68.62:8200/rootDesc.xml")
         assertThat(result.profile.serverUdn).isEqualTo("uuid:qnap-representative")
         assertThat(result.profile.descriptionLocation)
-            .isEqualTo(URI("http://192.168.68.81:8200/rootDesc.xml"))
+            .isEqualTo(URI("http://192.168.68.62:8200/rootDesc.xml"))
         assertThat(loaded.map(URI::toString)).containsExactly(
-            "http://192.168.68.81:8200/rootDesc.xml",
+            "http://192.168.68.62:8200/rootDesc.xml",
         )
     }
 

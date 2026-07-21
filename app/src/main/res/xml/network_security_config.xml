@@ -2,7 +2,7 @@
 <network-security-config>
   <!--
     Android domain-config does not apply to IP literals, so DLNA manual entry
-    like http://192.168.68.81:8200/... requires cleartext at base-config.
+    like http://192.168.68.62:8200/... requires cleartext at base-config.
     Destination safety stays in-app:
     - DlnaEndpointPolicy allows RFC1918/ULA only; SSDP LOCATION is pinned to the UDP sender
     - LAN update uses signed HTTP to pinned origin http://darklingnas:8088
@@ -11,6 +11,6 @@
   <domain-config cleartextTrafficPermitted="true">
     <domain includeSubdomains="false">darklingnas</domain>
     <domain includeSubdomains="false">darklingnas.local</domain>
-    <domain includeSubdomains="false">192.168.68.81</domain>
+    <domain includeSubdomains="false">192.168.68.62</domain>
   </domain-config>
 </network-security-config>

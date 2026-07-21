@@ -38,7 +38,7 @@ class UpdateOriginPolicy private constructor(private val allowed: Set<UpdateOrig
 
     companion object {
         private const val QNAP_HOSTNAME = "darklingnas"
-        private const val QNAP_STATIC_LAN_IP = "192.168.68.81"
+        private const val QNAP_STATIC_LAN_IP = "192.168.68.62"
         private const val QNAP_PORT = 8088
 
         // Deliberately duplicates the IPv4 check in core:source-api's NasHostResolver:
@@ -77,6 +77,20 @@ class UpdateOriginPolicy private constructor(private val allowed: Set<UpdateOrig
 
         private fun validCachedLanIp(ip: String?): String? = ip?.trim()?.takeIf { candidate ->
             IPV4_LITERAL.matches(candidate) && candidate.split('.').all { octet -> octet.toInt() <= 255 }
+        }
+
+
+        /**
+         * Fetch artifact bytes from the LAN IP that successfully served the control
+         * file when the signed envelope still names the canonical hostname. Keeps
+         * published URLs hostname-based while avoiding Tailscale/DNS dead ends for
+         * :8088. [lanHost] must already be an allowlisted IPv4 (cached or static).
+         */
+        fun resolveLanArtifactUri(published: URI, lanHost: String?): URI {
+            val host = validCachedLanIp(lanHost) ?: return published
+            if (!published.host.equals(QNAP_HOSTNAME, ignoreCase = true)) return published
+            val port = if (published.port >= 0) published.port else QNAP_PORT
+            return URI(published.scheme, null, host, port, published.path, null, null)
         }
 
         fun remoteHttps(host: String, port: Int = 443): UpdateOriginPolicy = UpdateOriginPolicy(

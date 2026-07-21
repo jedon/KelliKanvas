@@ -53,7 +53,7 @@ class UpdateManifestPolicyTest {
     @Test
     fun `accepts only exact private origin`() {
         UpdateUrlPolicy.requireAllowed(URI("http://darklingnas:8088/release.apk"))
-        UpdateUrlPolicy.requireAllowed(URI("http://192.168.68.81:8088/release.apk"))
+        UpdateUrlPolicy.requireAllowed(URI("http://192.168.68.62:8088/release.apk"))
         listOf(
             "https://darklingnas:8088/release.apk",
             "http://darklingnas/release.apk",
@@ -73,7 +73,7 @@ class UpdateManifestPolicyTest {
         val policy = UpdateOriginPolicy.qnapLan(cachedLanIp = "192.168.68.90")
         policy.requireAllowed(URI("http://darklingnas:8088/release.apk"))
         policy.requireAllowed(URI("http://192.168.68.90:8088/release.apk"))
-        policy.requireAllowed(URI("http://192.168.68.81:8088/release.apk"))
+        policy.requireAllowed(URI("http://192.168.68.62:8088/release.apk"))
         assertThrows(UpdateRejected::class.java) {
             policy.requireAllowed(URI("http://192.168.68.91:8088/release.apk"))
         }
@@ -88,7 +88,7 @@ class UpdateManifestPolicyTest {
         listOf("evil-host", "999.9.9.9", "darklingnas", "192.168.68", " ", null).forEach { cached ->
             val policy = UpdateOriginPolicy.qnapLan(cachedLanIp = cached)
             policy.requireAllowed(URI("http://darklingnas:8088/release.apk"))
-            policy.requireAllowed(URI("http://192.168.68.81:8088/release.apk"))
+            policy.requireAllowed(URI("http://192.168.68.62:8088/release.apk"))
             assertThrows("cached=$cached", UpdateRejected::class.java) {
                 policy.requireAllowed(URI("http://evil-host:8088/release.apk"))
             }
@@ -103,17 +103,17 @@ class UpdateManifestPolicyTest {
             .containsExactly(
                 URI("http://darklingnas:8088/update-envelope.json"),
                 URI("http://192.168.68.90:8088/update-envelope.json"),
-                URI("http://192.168.68.81:8088/update-envelope.json"),
+                URI("http://192.168.68.62:8088/update-envelope.json"),
             )
             .inOrder()
         assertThat(UpdateOriginPolicy.qnapControlUris())
             .containsExactly(
                 URI("http://darklingnas:8088/update-envelope.json"),
-                URI("http://192.168.68.81:8088/update-envelope.json"),
+                URI("http://192.168.68.62:8088/update-envelope.json"),
             )
             .inOrder()
         // A cached value equal to the static default must not duplicate entries.
-        assertThat(UpdateOriginPolicy.qnapControlUris("192.168.68.81"))
+        assertThat(UpdateOriginPolicy.qnapControlUris("192.168.68.62"))
             .isEqualTo(UpdateOriginPolicy.CONTROL_URIS)
     }
 
@@ -135,4 +135,19 @@ class UpdateManifestPolicyTest {
         assertThat(UpdateCheckPolicy.shouldCheck(manual = false, nowMillis = UpdateLimits.CHECK_INTERVAL_MILLIS, lastCheckMillis = 0)).isFalse()
         assertThat(UpdateCheckPolicy.shouldCheck(manual = false, nowMillis = UpdateLimits.CHECK_INTERVAL_MILLIS + 1, lastCheckMillis = 0)).isTrue()
     }
+
+    @Test
+    fun `resolveLanArtifactUri rewrites canonical hostname to allowed lan ip`() {
+        val published = URI("http://darklingnas:8088/kellikanvas-2.apk")
+        assertThat(UpdateOriginPolicy.resolveLanArtifactUri(published, "192.168.68.90"))
+            .isEqualTo(URI("http://192.168.68.90:8088/kellikanvas-2.apk"))
+        assertThat(UpdateOriginPolicy.resolveLanArtifactUri(published, null)).isEqualTo(published)
+        assertThat(
+            UpdateOriginPolicy.resolveLanArtifactUri(
+                URI("http://192.168.68.62:8088/kellikanvas-2.apk"),
+                "192.168.68.90",
+            ),
+        ).isEqualTo(URI("http://192.168.68.62:8088/kellikanvas-2.apk"))
+    }
 }
+

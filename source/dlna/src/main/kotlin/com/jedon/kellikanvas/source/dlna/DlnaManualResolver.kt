@@ -61,9 +61,9 @@ class DlnaManualResolver(
          */
         val BUILT_IN_HOST_CANDIDATES: List<String> =
             listOf(
-                "http://192.168.68.81:8200/rootDesc.xml",
-                "192.168.68.81:8200",
-                "192.168.68.81",
+                "http://192.168.68.62:8200/rootDesc.xml",
+                "192.168.68.62:8200",
+                "192.168.68.62",
                 "darklingnas",
                 "darklingnas.local",
                 "DarklingNAS",

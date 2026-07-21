@@ -8,7 +8,7 @@ package com.jedon.kellikanvas.source.smb
  */
 object HouseholdNasDefaults {
     /** Static last-resort LAN IP; the NAS may move after DHCP renewals. */
-    const val PRIMARY_HOST: String = "192.168.68.81"
+    const val PRIMARY_HOST: String = "192.168.68.62"
     const val PORT: Int = 445
     const val DISPLAY_NAME: String = "DarklingNAS"
 
@@ -21,7 +21,7 @@ object HouseholdNasDefaults {
     /** Hostnames to try in order when connecting. */
     val HOST_CANDIDATES: List<String> =
         listOf(
-            "192.168.68.81",
+            "192.168.68.62",
             "DarklingNAS",
             "darklingnas",
             "darklingnas.local",

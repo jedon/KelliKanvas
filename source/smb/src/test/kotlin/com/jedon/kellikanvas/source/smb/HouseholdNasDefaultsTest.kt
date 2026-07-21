@@ -6,10 +6,10 @@ import org.junit.Test
 class HouseholdNasDefaultsTest {
     @Test
     fun primaryHostAndShareMatchProbe() {
-        assertThat(HouseholdNasDefaults.PRIMARY_HOST).isEqualTo("192.168.68.81")
+        assertThat(HouseholdNasDefaults.PRIMARY_HOST).isEqualTo("192.168.68.62")
         assertThat(HouseholdNasDefaults.PORT).isEqualTo(445)
         assertThat(HouseholdNasDefaults.PRIMARY_SHARE.share).isEqualTo("Kelli")
-        assertThat(HouseholdNasDefaults.HOST_CANDIDATES).contains("192.168.68.81")
+        assertThat(HouseholdNasDefaults.HOST_CANDIDATES).contains("192.168.68.62")
         assertThat(HouseholdNasDefaults.HOST_CANDIDATES).contains("DarklingNAS")
     }
 

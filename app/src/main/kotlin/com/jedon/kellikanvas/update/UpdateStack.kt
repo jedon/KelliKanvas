@@ -21,43 +21,43 @@ import java.io.File
 fun createUpdateCheckController(
     context: Context,
     httpClient: OkHttpClient,
-    cachedNasIp: String? = null,
+    cachedNasIp: () -> String? = { null },
 ): UpdateCheckController {
     val appContext = context.applicationContext
     val packageManager = appContext.packageManager
-    val originPolicy = UpdateOriginPolicy.qnapLan(cachedNasIp)
-    val transport =
-        OkHttpUpdateTransport(
-            originPolicy = originPolicy,
-            client = httpClient.newBuilder()
-                .followRedirects(false)
-                .followSslRedirects(false)
-                .build(),
-        )
+    val baseClient =
+        httpClient.newBuilder()
+            .followRedirects(false)
+            .followSslRedirects(false)
+            .build()
     val authenticator = pinnedManifestAuthenticator()
-    val manifestRepository =
-        AuthenticatedManifestRepository(
-            transport = transport,
-            authenticator = authenticator,
-            replayGuard = ReleaseReplayGuard(AndroidAuthenticatedReleaseStore(appContext)),
-            timestampStore = AndroidCheckTimestampStore(appContext),
-            originPolicy = originPolicy,
-            controlUris = UpdateOriginPolicy.qnapControlUris(cachedNasIp),
-        )
-    val updateRepository =
-        UpdateRepository(
-            transport = transport,
-            verifier = ApkVerifier(AndroidArchiveInspector(PackageManagerArchiveReader(packageManager))),
-            updateCacheDir = File(appContext.cacheDir, "updates"),
-            originPolicy = originPolicy,
-        )
+    val replayGuard = ReleaseReplayGuard(AndroidAuthenticatedReleaseStore(appContext))
+    val timestampStore = AndroidCheckTimestampStore(appContext)
+    val updateCacheDir = File(appContext.cacheDir, "updates")
     val installLauncher = InstallLauncher(AndroidInstallPlatform(appContext))
     val installedPackageReader = InstalledPackageReader(packageManager)
+
     return UpdateCheckController(
         checkManifest = { manual, installedVersionCode ->
-            manifestRepository.check(manual, installedVersionCode)
+            val cached = cachedNasIp()
+            AuthenticatedManifestRepository(
+                transport = OkHttpUpdateTransport(originPolicy = UpdateOriginPolicy.qnapLan(cached), client = baseClient),
+                authenticator = authenticator,
+                replayGuard = replayGuard,
+                timestampStore = timestampStore,
+                originPolicy = UpdateOriginPolicy.qnapLan(cached),
+                controlUris = UpdateOriginPolicy.qnapControlUris(cached),
+            ).check(manual, installedVersionCode)
         },
-        downloadAndVerify = updateRepository::downloadAndVerify,
+        downloadAndVerify = { manifest, installed ->
+            val cached = cachedNasIp()
+            UpdateRepository(
+                transport = OkHttpUpdateTransport(originPolicy = UpdateOriginPolicy.qnapLan(cached), client = baseClient),
+                verifier = ApkVerifier(AndroidArchiveInspector(PackageManagerArchiveReader(packageManager))),
+                updateCacheDir = updateCacheDir,
+                originPolicy = UpdateOriginPolicy.qnapLan(cached),
+            ).downloadAndVerify(manifest, installed)
+        },
         launchInstall = installLauncher::launch,
         readInstalled = installedPackageReader::read,
     )

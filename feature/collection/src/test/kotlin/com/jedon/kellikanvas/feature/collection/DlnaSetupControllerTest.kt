@@ -76,9 +76,9 @@ class DlnaSetupControllerTest {
         assertThat(controller.tryKnownHosts())
             .isEqualTo(
                 DiscoveredServer(
-                    friendlyName = "http://192.168.68.81:8200/rootDesc.xml",
+                    friendlyName = "http://192.168.68.62:8200/rootDesc.xml",
                     profile = profile,
-                    matchedHost = "http://192.168.68.81:8200/rootDesc.xml",
+                    matchedHost = "http://192.168.68.62:8200/rootDesc.xml",
                 ),
             )
     }
@@ -171,7 +171,7 @@ class DlnaSetupControllerTest {
         resolveManual = { profile },
         resolveBuiltIn = {
             BuiltInResolveResult(
-                matchedHost = "http://192.168.68.81:8200/rootDesc.xml",
+                matchedHost = "http://192.168.68.62:8200/rootDesc.xml",
                 profile = profile,
             )
         },

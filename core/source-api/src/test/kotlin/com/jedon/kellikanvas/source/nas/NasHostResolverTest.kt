@@ -290,6 +290,6 @@ class NasHostResolverTest {
     }
 
     private companion object {
-        const val STATIC_IP = "192.168.68.81"
+        const val STATIC_IP = "192.168.68.62"
     }
 }

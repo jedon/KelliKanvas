@@ -20,10 +20,10 @@ class UpdateOriginTraceTest {
     @Test
     fun `record keeps the most recent origin`() {
         UpdateOriginTrace.record(URI("http://darklingnas:8088/update-envelope.json"), 1_000L)
-        UpdateOriginTrace.record(URI("http://192.168.68.81:8088/update-envelope.json"), 2_000L)
+        UpdateOriginTrace.record(URI("http://192.168.68.62:8088/update-envelope.json"), 2_000L)
 
         assertThat(UpdateOriginTrace.last()).isEqualTo(
-            UpdateOriginUsed(URI("http://192.168.68.81:8088/update-envelope.json"), 2_000L),
+            UpdateOriginUsed(URI("http://192.168.68.62:8088/update-envelope.json"), 2_000L),
         )
     }
 

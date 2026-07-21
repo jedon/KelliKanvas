@@ -159,9 +159,14 @@ class UpdateRepository(
     }
 
     private fun checkedOpen(url: URI, maxBytes: Long): UpdateResponse {
-        originPolicy.requireAllowed(url)
-        val response = transport.open(url, maxBytes)
-        if (response.redirected || response.statusCode in 300..399 || response.finalUrl != url) {
+        val fetchUrl =
+            UpdateOriginPolicy.resolveLanArtifactUri(
+                url,
+                UpdateOriginTrace.last()?.uri?.host,
+            )
+        originPolicy.requireAllowed(fetchUrl)
+        val response = transport.open(fetchUrl, maxBytes)
+        if (response.redirected || response.statusCode in 300..399 || response.finalUrl != fetchUrl) {
             response.body.close()
             throw UpdateRejected("redirects are forbidden")
         }

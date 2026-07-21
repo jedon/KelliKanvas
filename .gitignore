@@ -65,3 +65,4 @@ Thumbs.db
 
 # Local JDK copies (never commit toolchains into the repo)
 .jdk17/
+.tools/

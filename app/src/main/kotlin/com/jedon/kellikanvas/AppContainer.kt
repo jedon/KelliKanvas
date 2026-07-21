@@ -47,7 +47,7 @@ class AppContainer(appContext: Context) {
         )
     val updateCheckController: UpdateCheckController? =
         runCatching {
-            createUpdateCheckController(appContext, httpClient, cachedNasIp = nasHostCache.get())
+            createUpdateCheckController(appContext, httpClient, cachedNasIp = nasHostCache::get)
         }.getOrNull()
 
     fun safAdapter(profile: SafProfile): SafSourceAdapter = SafSourceAdapter(

@@ -53,7 +53,7 @@ class DiagnosticsInfoTest {
     fun `updateOriginLabel distinguishes hostname from fallback ip`() {
         assertThat(updateOriginLabel(null)).isEqualTo("Not recorded yet this session")
         assertThat(updateOriginLabel("darklingnas")).isEqualTo("Hostname (darklingnas)")
-        assertThat(updateOriginLabel("192.168.68.81")).isEqualTo("Fallback IP (192.168.68.81)")
+        assertThat(updateOriginLabel("192.168.68.62")).isEqualTo("Fallback IP (192.168.68.62)")
     }
 
     @Test
