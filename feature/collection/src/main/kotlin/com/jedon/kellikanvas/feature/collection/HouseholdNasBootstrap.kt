@@ -193,13 +193,14 @@ class HouseholdNasBootstrap(
             )
 
         /**
-         * True when bootstrap should run: empty collection, or prior household auto-roots
-         * that are not the preferred Frame TV 16×9 folder.
+         * True when bootstrap should run: the collection is empty, or it still contains
+         * an old household folder that should be replaced by the Frame TV 16×9 root.
+         * A collection the user already chose, including one without that 16×9 folder,
+         * is left alone.
          */
         fun needsHouseholdRootReplace(roots: List<SelectedRoot>): Boolean {
             if (roots.isEmpty()) return true
-            if (roots.any(::isStaleHouseholdRoot)) return true
-            return !roots.any(::isPreferredHouseholdRoot)
+            return roots.any(::isStaleHouseholdRoot)
         }
 
         fun isPreferredHouseholdRoot(root: SelectedRoot): Boolean {
@@ -214,9 +215,11 @@ class HouseholdNasBootstrap(
             if (isPreferredHouseholdRoot(root)) return false
             val objectId = root.objectId.value
             if (STALE_OBJECT_IDS.any { it.equals(objectId, ignoreCase = true) }) return true
+            // SAF document ids look like "primary:Photos". Matching the display name
+            // "Photos" would reconnect on every launch for a normal local folder.
+            if (objectId.contains(':')) return false
             val label = root.displayLabel
-            return STALE_OBJECT_IDS.any { it.equals(label, ignoreCase = true) } ||
-                label.equals("Photos", ignoreCase = true)
+            return STALE_OBJECT_IDS.any { it.equals(label, ignoreCase = true) }
         }
     }
 }

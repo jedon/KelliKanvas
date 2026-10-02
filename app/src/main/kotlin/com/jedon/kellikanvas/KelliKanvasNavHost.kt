@@ -1,5 +1,6 @@
 package com.jedon.kellikanvas
 
+import android.content.Context
 import android.content.Intent
 import android.provider.DocumentsContract
 import androidx.compose.foundation.layout.Box
@@ -35,6 +36,7 @@ import com.jedon.kellikanvas.feature.collection.CollectionHubScreen
 import com.jedon.kellikanvas.feature.collection.DlnaSetupController
 import com.jedon.kellikanvas.feature.collection.DlnaSetupScreen
 import com.jedon.kellikanvas.feature.collection.HouseholdNasBootstrap
+import com.jedon.kellikanvas.feature.collection.RetiredSourceProfile
 import com.jedon.kellikanvas.feature.collection.SmbSetupController
 import com.jedon.kellikanvas.feature.collection.SmbSetupScreen
 import com.jedon.kellikanvas.feature.settings.AmbientSettingsScreen
@@ -85,7 +87,7 @@ private object ShellRoutes {
     const val DIAGNOSTICS = "diagnostics"
 }
 
-private data class ShellState(
+internal data class ShellState(
     val route: ShellRoute,
     val collectionLabel: String = "",
     val roots: List<SelectedRoot> = emptyList(),
@@ -202,8 +204,11 @@ fun KelliKanvasNavHost(
         composable(ShellRoutes.HOME) {
             val homeState = shellState ?: return@composable
             val canStartSlideshow = homeState.roots.isNotEmpty() && homeState.adapters.isNotEmpty()
-            val controller = remember(container.database) {
-                CollectionHubController(container.database)
+            val context = LocalContext.current
+            val controller = remember(container.database, context) {
+                CollectionHubController(container.database) { retired ->
+                    releaseRetiredSource(context, container, retired)
+                }
             }
             var collectionState by remember { mutableStateOf(CollectionScreenState()) }
             LaunchedEffect(controller, collectionRevision) {
@@ -255,8 +260,11 @@ fun KelliKanvasNavHost(
             )
         }
         composable(ShellRoutes.COLLECTION) {
-            val controller = remember(container.database) {
-                CollectionHubController(container.database)
+            val context = LocalContext.current
+            val controller = remember(container.database, context) {
+                CollectionHubController(container.database) { retired ->
+                    releaseRetiredSource(context, container, retired)
+                }
             }
             var collectionState by remember { mutableStateOf(CollectionScreenState()) }
             LaunchedEffect(controller, collectionRevision) {
@@ -291,7 +299,7 @@ fun KelliKanvasNavHost(
                             reloadShellState()
                             collectionRevision++
                             navController.navigate(ShellRoutes.COLLECTION) {
-                                popUpTo(ShellRoutes.COLLECTION) { inclusive = false }
+                                popUpTo(ShellRoutes.HOME) { inclusive = false }
                                 launchSingleTop = true
                             }
                         }
@@ -330,7 +338,7 @@ fun KelliKanvasNavHost(
                             reloadShellState()
                             collectionRevision++
                             navController.navigate(ShellRoutes.COLLECTION) {
-                                popUpTo(ShellRoutes.COLLECTION) { inclusive = false }
+                                popUpTo(ShellRoutes.HOME) { inclusive = false }
                                 launchSingleTop = true
                             }
                         }
@@ -358,7 +366,7 @@ fun KelliKanvasNavHost(
                             reloadShellState()
                             collectionRevision++
                             navController.navigate(ShellRoutes.COLLECTION) {
-                                popUpTo(ShellRoutes.COLLECTION) { inclusive = false }
+                                popUpTo(ShellRoutes.HOME) { inclusive = false }
                                 launchSingleTop = true
                             }
                         }
@@ -520,7 +528,7 @@ private suspend fun loadCollectionScreenState(
     CollectionScreenState(loadError = "Could not load collection. ${failure.message?.take(80) ?: ""}".trim())
 }
 
-private suspend fun loadShellState(container: AppContainer): ShellState {
+internal suspend fun loadShellState(container: AppContainer): ShellState {
     return try {
         val database = container.database
         val collections = database.collections.list()
@@ -665,6 +673,23 @@ private suspend fun loadShellState(container: AppContainer): ShellState {
             collectionLabel = "KelliKanvas",
             loadError = "Could not load photos. ${failure.message?.take(80) ?: "Try again."}",
         )
+    }
+}
+
+private fun releaseRetiredSource(
+    context: Context,
+    container: AppContainer,
+    retired: RetiredSourceProfile,
+) {
+    container.credentialVault.remove(retired.profileId)
+    val treeUri = retired.safTreeUri ?: return
+    try {
+        context.contentResolver.releasePersistableUriPermission(
+            treeUri.toUri(),
+            Intent.FLAG_GRANT_READ_URI_PERMISSION,
+        )
+    } catch (_: SecurityException) {
+        // The grant may already have been released.
     }
 }
 

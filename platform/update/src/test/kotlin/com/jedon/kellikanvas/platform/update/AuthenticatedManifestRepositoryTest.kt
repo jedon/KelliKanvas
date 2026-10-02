@@ -88,6 +88,45 @@ class AuthenticatedManifestRepositoryTest {
     }
 
     @Test
+    fun `unsigned body on the first control host falls through to the next`() {
+        val good = signedEnvelope(manifest())
+        val calls = mutableListOf<URI>()
+        val transport =
+            UpdateTransport { url, _ ->
+                calls += url
+                val body = if (calls.size == 1) "not-an-envelope".toByteArray() else good
+                UpdateResponse(
+                    statusCode = 200,
+                    finalUrl = url,
+                    redirected = false,
+                    contentLength = body.size.toLong(),
+                    body = ByteArrayInputStream(body),
+                )
+            }
+        val timestamps = RecordingTimestampStore()
+        val repository = repository(transport, timestamps)
+
+        val result = repository.check(manual = true, installedVersionCode = 1)
+
+        assertThat(result).isEqualTo(manifest())
+        assertThat(calls).hasSize(2)
+        assertThat(UpdateOriginTrace.last()?.uri).isEqualTo(calls[1])
+        assertThat(timestamps.recorded).containsExactly(now)
+    }
+
+    @Test
+    fun `signed but invalid manifest does not record check timestamp`() {
+        val timestamps = RecordingTimestampStore()
+        val repository = repository(FixedTransport(signedEnvelope(manifest().copy(schema = 2))), timestamps)
+
+        assertThrows(UpdateRejected::class.java) {
+            repository.check(manual = true, installedVersionCode = 1)
+        }
+
+        assertThat(timestamps.recorded).isEmpty()
+    }
+
+    @Test
     fun `successful auth of non-newer update records timestamp and returns null`() {
         val timestamps = RecordingTimestampStore()
         val current = manifest(versionCode = 2)

@@ -2,6 +2,9 @@ package com.jedon.kellikanvas
 
 import android.app.Application
 import android.util.Log
+import com.jedon.kellikanvas.dream.AppDreamSlideshowHost
+import com.jedon.kellikanvas.dream.DreamSlideshowHost
+import com.jedon.kellikanvas.dream.DreamSlideshowHostProvider
 import com.jedon.kellikanvas.logging.DiagLog
 import com.jedon.kellikanvas.logging.DiagLogLevel
 import kotlinx.coroutines.CoroutineScope
@@ -9,7 +12,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 
-class KelliKanvasApp : Application() {
+class KelliKanvasApp :
+    Application(),
+    DreamSlideshowHostProvider {
     lateinit var container: AppContainer
         private set
 
@@ -25,6 +30,8 @@ class KelliKanvasApp : Application() {
             applicationScope.launch { controller.checkForUpdatesOnStartup() }
         }
     }
+
+    override fun dreamSlideshowHost(): DreamSlideshowHost = AppDreamSlideshowHost(this)
 
     private fun installLogcatMirror() {
         DiagLog.installSink { entry, throwable ->

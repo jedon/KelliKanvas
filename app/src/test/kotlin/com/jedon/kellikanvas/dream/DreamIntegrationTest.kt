@@ -11,6 +11,7 @@ import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.FrameLayout
 import com.google.common.truth.Truth.assertThat
+import com.jedon.kellikanvas.KelliKanvasApp
 import com.jedon.kellikanvas.platform.ambient.CapabilityStatus
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -81,6 +82,16 @@ class DreamIntegrationTest {
 
         assertThat(host.attachCount).isEqualTo(1)
         assertThat(host.detachCount).isEqualTo(1)
+    }
+
+    @Test
+    fun `production application provides a slideshow host`() {
+        val application = RuntimeEnvironment.getApplication()
+
+        assertThat(application).isInstanceOf(KelliKanvasApp::class.java)
+        val host = checkNotNull((application as DreamSlideshowHostProvider).dreamSlideshowHost())
+        assertThat(host).isNotSameInstanceAs(DreamSlideshowHost.Unavailable)
+        assertThat(host.hasPlayableCollection()).isFalse()
     }
 
     @Test

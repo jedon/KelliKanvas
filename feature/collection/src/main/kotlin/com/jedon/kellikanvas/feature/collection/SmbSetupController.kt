@@ -221,11 +221,31 @@ class SmbSetupController(
                     includeDescendants = folder.includeDescendants,
                 )
             }
+        val nextRoots = retainedRoots + selectedRoots
         database.selectedRoots.replaceAllForCollection(
             collectionId = collectionId,
-            roots = retainedRoots + selectedRoots,
+            roots = nextRoots,
         )
+        retireDroppedProfiles(previousRoots, nextRoots)
         return collectionId
+    }
+
+    private suspend fun retireDroppedProfiles(
+        previousRoots: List<SelectedRoot>,
+        nextRoots: List<SelectedRoot>,
+    ) {
+        val kept = nextRoots.map { it.profileId }.toSet()
+        val dropped = previousRoots.map { it.profileId }.filter { it !in kept }.distinct()
+        for (profileId in dropped) {
+            val stillUsed =
+                database.collections.list().any { collection ->
+                    database.selectedRoots.list(collection.id).any { it.profileId == profileId }
+                }
+            if (!stillUsed) {
+                database.sourceProfiles.delete(profileId)
+                credentialVault.remove(profileId)
+            }
+        }
     }
 
     /**

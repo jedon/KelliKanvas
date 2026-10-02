@@ -66,6 +66,7 @@ class NasHostResolver(
             lastResolution = resolution
             DiagLog.i(TAG, "Resolved NAS host=${resolution.host} via ${resolution.path}")
         } else {
+            lastResolution = null
             DiagLog.w(TAG, "All NAS candidates failed (hostname=$hostname static=$staticDefaultIp)")
         }
         return resolution
@@ -78,6 +79,10 @@ class NasHostResolver(
      */
     fun recordKnownGoodIp(host: String) {
         val ip = extractIpv4Literal(host) ?: return
+        val recent = lastResolution
+        if (recent != null && recent.host != ip) {
+            lastResolution = null
+        }
         if (cache.get() == ip) return
         cache.set(ip)
         DiagLog.i(TAG, "Recorded known-good NAS IP $ip")

@@ -85,6 +85,41 @@ class NasHostResolverTest {
     }
 
     @Test
+    fun `failed refresh clears the previous resolution`() = runTest {
+        var now = 0L
+        var reachable = true
+        val resolver =
+            resolver(
+                dnsLookup = { "192.168.68.99" },
+                probe = { reachable },
+                nowMillis = { now },
+            )
+
+        assertThat(resolver.resolve()!!.host).isEqualTo("192.168.68.99")
+        now = NasHostResolver.RESOLUTION_TTL_MILLIS
+        reachable = false
+
+        assertThat(resolver.resolve()).isNull()
+        assertThat(resolver.lastResolution).isNull()
+    }
+
+    @Test
+    fun `recording a different known-good ip drops the ttl cache`() = runTest {
+        val resolver =
+            resolver(
+                dnsLookup = { "192.168.68.99" },
+                probe = { true },
+                nowMillis = { 0L },
+            )
+
+        resolver.resolve()
+        resolver.recordKnownGoodIp("192.168.68.50")
+
+        assertThat(cache.value).isEqualTo("192.168.68.50")
+        assertThat(resolver.lastResolution).isNull()
+    }
+
+    @Test
     fun `dns lookup slower than timeout does not hang resolution`() = runTest {
         cache.value = "192.168.68.90"
         val resolver =
