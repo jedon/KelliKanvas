@@ -28,6 +28,9 @@ internal fun ApplicationExtension.configureKelliKanvasApplication() {
     lint {
         warningsAsErrors = true
         baseline = null
+        // Gradle patch releases appear often. Do not fail the build just because
+        // a newer wrapper exists; upgrades stay explicit.
+        disable += "AndroidGradlePluginVersion"
     }
 }
 
@@ -52,5 +55,6 @@ internal fun LibraryExtension.configureKelliKanvasLibrary() {
     lint {
         warningsAsErrors = true
         baseline = null
+        disable += "AndroidGradlePluginVersion"
     }
 }
