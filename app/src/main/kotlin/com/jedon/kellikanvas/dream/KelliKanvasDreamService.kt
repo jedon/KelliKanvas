@@ -27,8 +27,8 @@ interface DreamSlideshowHost {
 /**
  * Supplies the slideshow host used while dreaming.
  *
- * The host must be provided by the Application (via this provider) when playback is wired;
- * until then [resolveDreamSlideshowHost] falls back to [DreamSlideshowHost.Unavailable].
+ * [com.jedon.kellikanvas.KelliKanvasApp] provides the production host. A missing provider
+ * falls back to [DreamSlideshowHost.Unavailable], which finishes the dream immediately.
  */
 interface DreamSlideshowHostProvider {
     fun dreamSlideshowHost(): DreamSlideshowHost?
@@ -37,7 +37,7 @@ interface DreamSlideshowHostProvider {
 /**
  * Resolves the dream slideshow host from [application].
  *
- * The host must be provided by the Application when playback is wired; otherwise returns
+ * The host is provided by the Application. Otherwise returns
  * [DreamSlideshowHost.Unavailable], which finishes the dream immediately.
  */
 internal fun resolveDreamSlideshowHost(application: Application): DreamSlideshowHost = (

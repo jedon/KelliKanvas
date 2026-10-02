@@ -42,6 +42,7 @@ import com.jedon.kellikanvas.renderer.surface.PhotoSurfaceView
 import com.jedon.kellikanvas.renderer.surface.isTelevisionFormFactor
 import com.jedon.kellikanvas.renderer.surface.slideshowDecodeLongEdgePx
 import com.jedon.kellikanvas.source.SourceAdapter
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 
 private const val TAG = "SimpleSlideshow"
@@ -84,7 +85,7 @@ fun SimpleSlideshowScreen(
     }
     LaunchedEffect(Unit) {
         val buildResult =
-            runCatching { CollectionPhotoPlaylist.build(adapters, roots) }.getOrElse {
+            runUnlessCancelled { CollectionPhotoPlaylist.build(adapters, roots) }.getOrElse {
                 loadFailure = true
                 CollectionPlaylistResult(photos = emptyList(), rootOutcomes = emptyList())
             }
@@ -118,7 +119,7 @@ fun SimpleSlideshowScreen(
         surfaceView?.clearFrame()
         previous?.recycle()
         val result =
-            runCatching {
+            runUnlessCancelled {
                 PhotoBitmapLoader.decode(
                     adapters.getValue(asset.profileId).open(asset),
                     resolvedMaxEdge,
@@ -251,6 +252,19 @@ fun SimpleSlideshowScreen(
             bitmap == null -> Text(text = "Loading photo…", color = Color.White)
         }
     }
+}
+
+/**
+ * [runCatching] treats [CancellationException] as a failure. Slideshow load and decode
+ * must abort when the user skips, or a cancel looks like a broken photo and can stop
+ * the show after enough skips.
+ */
+private inline fun <T> runUnlessCancelled(block: () -> T): Result<T> = try {
+    Result.success(block())
+} catch (cancelled: CancellationException) {
+    throw cancelled
+} catch (failure: Throwable) {
+    Result.failure(failure)
 }
 
 internal fun briefErrorReason(failure: Throwable): String {

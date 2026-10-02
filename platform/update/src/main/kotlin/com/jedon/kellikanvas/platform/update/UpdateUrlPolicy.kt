@@ -79,7 +79,6 @@ class UpdateOriginPolicy private constructor(private val allowed: Set<UpdateOrig
             IPV4_LITERAL.matches(candidate) && candidate.split('.').all { octet -> octet.toInt() <= 255 }
         }
 
-
         /**
          * Fetch artifact bytes from the LAN IP that successfully served the control
          * file when the signed envelope still names the canonical hostname. Keeps

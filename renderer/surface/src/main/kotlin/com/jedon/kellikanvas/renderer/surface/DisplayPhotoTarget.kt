@@ -42,6 +42,8 @@ object DisplayPhotoTarget {
         television: Boolean,
     ): Int {
         val edge = selected.longEdgePx
-        return if (television) edge else minOf(edge, NON_TV_MAX_EDGE_PX)
+        // The still surface is a 4K buffer. Decoding an 8K mode into that buffer
+        // only spends heap the panel cannot show.
+        return if (television) minOf(edge, UHD_WIDTH) else minOf(edge, NON_TV_MAX_EDGE_PX)
     }
 }

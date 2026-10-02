@@ -150,4 +150,3 @@ class UpdateManifestPolicyTest {
         ).isEqualTo(URI("http://192.168.68.62:8088/kellikanvas-2.apk"))
     }
 }
-

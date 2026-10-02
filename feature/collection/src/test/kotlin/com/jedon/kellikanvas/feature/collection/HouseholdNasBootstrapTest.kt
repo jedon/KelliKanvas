@@ -57,4 +57,34 @@ class HouseholdNasBootstrapTest {
             )
         assertThat(HouseholdNasBootstrap.needsHouseholdRootReplace(roots)).isTrue()
     }
+
+    @Test
+    fun userChosenFolderWithoutFrameTvRootStays() {
+        val roots =
+            listOf(
+                SelectedRoot(
+                    collectionId = "c1",
+                    profileId = SourceProfileId("saf"),
+                    objectId = ProviderObjectId("primary:Vacation"),
+                    displayLabel = "Vacation",
+                    includeDescendants = true,
+                ),
+            )
+        assertThat(HouseholdNasBootstrap.needsHouseholdRootReplace(roots)).isFalse()
+    }
+
+    @Test
+    fun safPhotosDisplayNameDoesNotForceReplace() {
+        val roots =
+            listOf(
+                SelectedRoot(
+                    collectionId = "c1",
+                    profileId = SourceProfileId("saf"),
+                    objectId = ProviderObjectId("primary:Photos"),
+                    displayLabel = "Photos",
+                    includeDescendants = true,
+                ),
+            )
+        assertThat(HouseholdNasBootstrap.needsHouseholdRootReplace(roots)).isFalse()
+    }
 }

@@ -17,6 +17,7 @@ import com.jedon.kellikanvas.platform.update.UpdateOriginPolicy
 import com.jedon.kellikanvas.platform.update.UpdateRepository
 import okhttp3.OkHttpClient
 import java.io.File
+import java.net.Proxy
 
 fun createUpdateCheckController(
     context: Context,
@@ -27,6 +28,7 @@ fun createUpdateCheckController(
     val packageManager = appContext.packageManager
     val baseClient =
         httpClient.newBuilder()
+            .proxy(Proxy.NO_PROXY)
             .followRedirects(false)
             .followSslRedirects(false)
             .build()

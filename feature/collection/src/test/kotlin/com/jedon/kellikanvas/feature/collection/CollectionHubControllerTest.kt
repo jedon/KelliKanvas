@@ -69,11 +69,16 @@ class CollectionHubControllerTest {
         database.collections.upsert(CatalogCollection(collectionId, "Default"))
         database.selectedRoots.replaceAllForCollection(collectionId, listOf(root))
 
+        val retired = mutableListOf<RetiredSourceProfile>()
+        controller = CollectionHubController(database) { retired += it }
+
         controller.removeRoot(root)
 
         assertThat(controller.listRoots()).isEmpty()
         assertThat(database.sourceProfiles.get(safId)).isNull()
         assertThat(database.safConnections.get(safId)).isNull()
+        assertThat(retired.map { it.profileId }).containsExactly(safId)
+        assertThat(retired.single().safTreeUri).isEqualTo("content://tree/only")
     }
 
     @Test

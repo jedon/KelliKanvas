@@ -43,6 +43,9 @@ class DisplayPhotoTargetTest {
         assertThat(
             DisplayPhotoTarget.decodeLongEdgePx(DisplaySize(1920, 1080), television = true),
         ).isEqualTo(1920)
+        assertThat(
+            DisplayPhotoTarget.decodeLongEdgePx(DisplaySize(7680, 4320), television = true),
+        ).isEqualTo(DisplayPhotoTarget.UHD_WIDTH)
     }
 
     @Test

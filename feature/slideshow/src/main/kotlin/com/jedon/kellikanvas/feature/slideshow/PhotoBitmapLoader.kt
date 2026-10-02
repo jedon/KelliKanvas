@@ -20,7 +20,16 @@ object PhotoBitmapLoader {
      * build wrongly capped at 1920. Video does not take this path — MediaCodec writes into a
      * Surface. Still photos must stay on a bounded bitmap config and recycle aggressively.
      */
-    suspend fun decode(stream: PhotoByteStream, maxEdgePx: Int): Bitmap = withContext(Dispatchers.Default) {
+    suspend fun decode(stream: PhotoByteStream, maxEdgePx: Int): Bitmap = try {
+        decodeBytes(stream, maxEdgePx)
+    } catch (failure: Throwable) {
+        // [decodeBytes] closes the stream once it enters `use`. A cancel between
+        // open() and that block would otherwise leak the file or SMB handle.
+        stream.close()
+        throw failure
+    }
+
+    private suspend fun decodeBytes(stream: PhotoByteStream, maxEdgePx: Int): Bitmap = withContext(Dispatchers.Default) {
         val bytes =
             stream.use { s ->
                 require(maxEdgePx > 0) { "maxEdgePx must be positive" }
@@ -102,10 +111,15 @@ object PhotoBitmapLoader {
         val scale = maxEdgePx.toFloat() / maxEdge.toFloat()
         val width = (bitmap.width * scale).toInt().coerceAtLeast(1)
         val height = (bitmap.height * scale).toInt().coerceAtLeast(1)
-        val scaled = bitmap.scale(width, height, true)
-        if (scaled !== bitmap) {
+        return try {
+            val scaled = bitmap.scale(width, height, true)
+            if (scaled !== bitmap) {
+                bitmap.recycle()
+            }
+            scaled
+        } catch (oom: OutOfMemoryError) {
             bitmap.recycle()
+            throw oom
         }
-        return scaled
     }
 }

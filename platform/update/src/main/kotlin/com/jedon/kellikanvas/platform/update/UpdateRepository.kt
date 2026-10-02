@@ -212,34 +212,37 @@ class AuthenticatedManifestRepository(
     fun check(manual: Boolean, installedVersionCode: Long): UpdateManifest? {
         val now = nowMillis()
         if (!UpdateCheckPolicy.shouldCheck(manual, now, timestampStore.lastCheckMillis())) return null
-        val controlBytes = fetchKnown(controlUris, UpdateLimits.METADATA_MAX_BYTES.toLong())
-        val authenticated = authenticator.authenticateEnvelope(controlBytes)
-        timestampStore.recordCheck(now)
-        if (authenticated.manifest.versionCode <= installedVersionCode) return null
+        val authenticated = fetchAuthenticated(controlUris, UpdateLimits.METADATA_MAX_BYTES.toLong())
+        if (authenticated.manifest.versionCode <= installedVersionCode) {
+            timestampStore.recordCheck(now)
+            return null
+        }
         originPolicy.validateManifest(authenticated.manifest, installedVersionCode)
         replayGuard.accept(authenticated.manifest, authenticated.payloadHash)
+        timestampStore.recordCheck(now)
         return authenticated.manifest
     }
 
-    private fun fetchKnown(uris: List<URI>, maxBytes: Long): ByteArray {
+    /**
+     * Tries each control URI until one returns a signed envelope. A hostname that
+     * answers HTTP 200 with junk (Tailscale or the wrong service on :8088) must
+     * not block the cached and static LAN IP fallbacks.
+     */
+    private fun fetchAuthenticated(uris: List<URI>, maxBytes: Long): AuthenticatedUpdateEnvelope {
         require(uris.isNotEmpty()) { "at least one control URI is required" }
         var lastError: Exception? = null
         for (uri in uris) {
             try {
                 val bytes = fetchOne(uri, maxBytes)
+                val authenticated = authenticator.authenticateEnvelope(bytes)
                 UpdateOriginTrace.record(uri, nowMillis())
-                return bytes
-            } catch (error: UpdateRejected) {
-                // Signature / schema failures are definitive; do not try another host.
-                if (isDefinitiveMetadataFailure(error)) throw error
-                lastError = error
+                return authenticated
             } catch (error: Exception) {
                 lastError = error
             }
         }
         when (val error = lastError) {
             null -> throw UpdateRejected("update check failed")
-            is UpdateRejected -> throw error
             else -> throw error
         }
     }
@@ -254,16 +257,6 @@ class AuthenticatedManifestRepository(
             if (response.statusCode != 200) throw UpdateRejected("unexpected HTTP status ${response.statusCode}")
             return body.readBounded(maxBytes)
         }
-    }
-
-    private fun isDefinitiveMetadataFailure(error: UpdateRejected): Boolean {
-        val message = error.message.orEmpty()
-        return message.contains("authentication", ignoreCase = true) ||
-            message.contains("signature", ignoreCase = true) ||
-            message.contains("malformed", ignoreCase = true) ||
-            message.contains("canonical", ignoreCase = true) ||
-            message.contains("unknown metadata", ignoreCase = true) ||
-            message.contains("envelope", ignoreCase = true)
     }
 }
 
