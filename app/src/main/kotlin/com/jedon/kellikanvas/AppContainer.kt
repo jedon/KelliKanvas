@@ -6,6 +6,7 @@ import com.jedon.kellikanvas.catalog.KelliKanvasDatabaseFactory
 import com.jedon.kellikanvas.catalog.preferences.DataStoreAppPreferencesRepository
 import com.jedon.kellikanvas.feature.settings.UpdateCheckController
 import com.jedon.kellikanvas.nas.SharedPreferencesNasHostCache
+import com.jedon.kellikanvas.nas.TailscaleNasLookup
 import com.jedon.kellikanvas.nas.isTcpReachable
 import com.jedon.kellikanvas.security.AndroidCredentialVault
 import com.jedon.kellikanvas.security.CredentialVault
@@ -37,6 +38,7 @@ class AppContainer(appContext: Context) {
     private val wifiManager: WifiManager? =
         appContext.applicationContext.getSystemService(WifiManager::class.java)
     val nasHostCache: NasHostCache = SharedPreferencesNasHostCache(appContext)
+    val tailscaleNas = TailscaleNasLookup(appContext)
     val nasHostResolver =
         NasHostResolver(
             hostname = HouseholdNasDefaults.HOSTNAME,
@@ -44,6 +46,7 @@ class AppContainer(appContext: Context) {
             cache = nasHostCache,
             probe = { host -> isTcpReachable(host, ports = listOf(HouseholdNasDefaults.PORT, NAS_DLNA_PORT)) },
             discover = ::discoverNasHost,
+            tailscaleHosts = { tailscaleNas.peerHosts(HouseholdNasDefaults.HOSTNAME) },
         )
     val updateCheckController: UpdateCheckController? =
         runCatching {

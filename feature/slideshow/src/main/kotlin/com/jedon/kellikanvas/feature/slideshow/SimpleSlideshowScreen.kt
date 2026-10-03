@@ -5,10 +5,16 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -42,6 +48,7 @@ import com.jedon.kellikanvas.renderer.surface.PhotoSurfaceView
 import com.jedon.kellikanvas.renderer.surface.isTelevisionFormFactor
 import com.jedon.kellikanvas.renderer.surface.slideshowDecodeLongEdgePx
 import com.jedon.kellikanvas.source.SourceAdapter
+import com.jedon.kellikanvas.ui.tv.KanvasColors
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 
@@ -74,6 +81,30 @@ fun SimpleSlideshowScreen(
     var rootFailureMessages by remember { mutableStateOf<List<String>>(emptyList()) }
     var photoLoadError by remember { mutableStateOf<String?>(null) }
     var consecutiveDecodeFailures by remember { mutableIntStateOf(0) }
+    var controlsVisible by remember { mutableStateOf(true) }
+    var interactionRevision by remember { mutableIntStateOf(0) }
+    var firstFrameShown by remember { mutableStateOf(false) }
+
+    LaunchedEffect(bitmap != null) {
+        if (bitmap != null && !firstFrameShown) {
+            firstFrameShown = true
+            controlsVisible = true
+            interactionRevision++
+        }
+    }
+
+    fun interact(action: () -> Unit) {
+        action()
+        controlsVisible = true
+        interactionRevision++
+    }
+
+    LaunchedEffect(interactionRevision, player?.playing) {
+        if (player?.playing != false) {
+            delay(4_000)
+            controlsVisible = false
+        }
+    }
 
     BackHandler(onBack = onExit)
     DisposableEffect(Unit) {
@@ -161,19 +192,19 @@ fun SimpleSlideshowScreen(
             detectTapGestures { position ->
                 val activePlayer = player ?: return@detectTapGestures
                 when {
-                    position.x < size.width / 3f -> activePlayer.prev()
-                    position.x > size.width * 2f / 3f -> activePlayer.next()
-                    else -> activePlayer.togglePause()
+                    position.x < size.width / 3f -> interact { activePlayer.prev() }
+                    position.x > size.width * 2f / 3f -> interact { activePlayer.next() }
+                    else -> interact { activePlayer.togglePause() }
                 }
             }
         }
     Box(
         modifier = contentModifier
-            .onKeyAction(Key.DirectionLeft) { player?.prev() }
-            .onKeyAction(Key.DirectionRight) { player?.next() }
-            .onKeyAction(Key.DirectionCenter) { player?.togglePause() }
-            .onKeyAction(Key.Enter) { player?.togglePause() }
-            .onKeyAction(Key.NumPadEnter) { player?.togglePause() },
+            .onKeyAction(Key.DirectionLeft) { interact { player?.prev() } }
+            .onKeyAction(Key.DirectionRight) { interact { player?.next() } }
+            .onKeyAction(Key.DirectionCenter) { interact { player?.togglePause() } }
+            .onKeyAction(Key.Enter) { interact { player?.togglePause() } }
+            .onKeyAction(Key.NumPadEnter) { interact { player?.togglePause() } },
         contentAlignment = Alignment.Center,
     ) {
         // SurfaceView owns still-photo pixels (panel-sized buffer). Overlay text for status.
@@ -207,6 +238,44 @@ fun SimpleSlideshowScreen(
                 }
             },
         )
+        if (controlsVisible && bitmap != null && photoLoadError == null) {
+            Surface(
+                modifier = Modifier.align(Alignment.BottomCenter).padding(24.dp),
+                color = KanvasColors.Background.copy(alpha = .92f),
+                contentColor = KanvasColors.Text,
+                shape = RoundedCornerShape(12.dp),
+            ) {
+                BoxWithConstraints {
+                    if (maxWidth < 600.dp) {
+                        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text(
+                                "${if (player?.playing == false) "Paused" else "Slideshow"}  ·  ${(player?.index ?: 0) + 1} / ${playlist?.size ?: 0}",
+                                style = MaterialTheme.typography.titleSmall,
+                            )
+                            Text(
+                                "Tap left or right to browse. Tap the center to ${if (player?.playing == false) "play" else "pause"}.",
+                                color = KanvasColors.Muted,
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
+                    } else {
+                        Row(
+                            Modifier.padding(horizontal = 24.dp, vertical = 16.dp),
+                            horizontalArrangement = Arrangement.spacedBy(24.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(if (player?.playing == false) "Paused" else "Slideshow", style = MaterialTheme.typography.titleSmall)
+                            Text("${(player?.index ?: 0) + 1} / ${playlist?.size ?: 0}", color = KanvasColors.Accent)
+                            Text(
+                                "← →  Browse     OK  ${if (player?.playing == false) "Play" else "Pause"}     Back  Gallery",
+                                color = KanvasColors.Muted,
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
+                    }
+                }
+            }
+        }
         when {
             playlist == null -> Text(text = "Loading…", color = Color.White)
             playlist?.isEmpty() == true ->

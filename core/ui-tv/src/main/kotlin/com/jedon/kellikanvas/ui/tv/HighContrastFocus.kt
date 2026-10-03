@@ -10,20 +10,19 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.unit.dp
 import androidx.tv.material3.Border
 
 /**
  * Single source of truth for the app's "unmistakable from the couch" focus
- * treatment: bright yellow border, darker fill while focused.
+ * treatment: light outline and a sage fill while focused.
  */
 object HighContrastFocusDefaults {
-    val BorderColor = Color(0xFFFFEB3B)
-    val FocusedContainerColor = Color(0xFF0D47A1)
-    val IdleContainerColor = Color(0xFF1565C0)
-    val BorderWidth = 4.dp
+    val BorderColor = KanvasColors.Text
+    val FocusedContainerColor = KanvasColors.Accent
+    val IdleContainerColor = KanvasColors.Elevated
+    val BorderWidth = 2.dp
 
     /** For tv-material `border` params ([androidx.tv.material3.Border] follows the button's own shape). */
     val TvFocusedBorder = Border(BorderStroke(BorderWidth, BorderColor))

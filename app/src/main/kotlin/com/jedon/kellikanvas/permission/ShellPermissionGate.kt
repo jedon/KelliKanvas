@@ -22,6 +22,8 @@ import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import com.jedon.kellikanvas.R
 import com.jedon.kellikanvas.ui.tv.HighContrastFocusDefaults
+import com.jedon.kellikanvas.ui.tv.KanvasButton
+import com.jedon.kellikanvas.ui.tv.KanvasPageHeader
 
 @Composable
 fun ShellPermissionGate(
@@ -40,17 +42,12 @@ fun ShellPermissionGate(
             .verticalScroll(rememberScrollState())
             .padding(32.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterVertically),
-        horizontalAlignment = Alignment.CenterHorizontally,
+        horizontalAlignment = Alignment.Start,
     ) {
-        Text(
-            text = stringResource(R.string.permission_gate_title),
-            color = MaterialTheme.colorScheme.onBackground,
-            style = MaterialTheme.typography.headlineMedium,
-        )
-        Text(
-            text = stringResource(R.string.permission_gate_subtitle),
-            color = MaterialTheme.colorScheme.onBackground,
-            style = MaterialTheme.typography.bodyLarge,
+        KanvasPageHeader(
+            title = stringResource(R.string.permission_gate_title),
+            subtitle = stringResource(R.string.permission_gate_subtitle),
+            eyebrow = "WELCOME TO KELLIKANVAS",
         )
         snapshot.rows.forEach { row ->
             PermissionRowCard(
@@ -60,9 +57,7 @@ fun ShellPermissionGate(
                 onOpenSettings = onOpenSettings,
             )
         }
-        Button(onClick = onNotNow, border = gateButtonBorder()) {
-            Text(text = stringResource(R.string.permission_not_now))
-        }
+        KanvasButton(stringResource(R.string.permission_not_now), onNotNow)
     }
 }
 

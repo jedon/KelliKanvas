@@ -14,9 +14,11 @@ import java.net.UnknownHostException
 /**
  * Finds a reachable household NAS host instead of assuming a static LAN IP.
  *
- * Candidate order: DNS resolution of [hostname], the cached last known-good IP,
- * the [staticDefaultIp], then SSDP/DLNA [discover]. Each candidate must pass the
- * caller-supplied [probe] (e.g. a TCP connect) before it is returned.
+ * Candidate order: DNS resolution of [hostname], Tailscale peer addresses from
+ * [tailscaleHosts] (the NAS MagicDNS address, usually a 100.x IP), the cached
+ * last known-good IP, the [staticDefaultIp], then SSDP/DLNA [discover]. Each
+ * candidate must pass the caller-supplied [probe] (e.g. a TCP connect) before
+ * it is returned.
  *
  * Resolution is single-flight (concurrent callers share one attempt) and a
  * successful result is reused for [resolutionTtlMillis]; failures are never cached.
@@ -28,6 +30,7 @@ class NasHostResolver(
     private val probe: suspend (host: String) -> Boolean,
     private val dnsLookup: suspend (hostname: String) -> String? = ::inetAddressLookup,
     private val discover: suspend () -> String? = { null },
+    private val tailscaleHosts: suspend () -> List<String> = { emptyList() },
     private val dnsTimeoutMillis: Long = DNS_TIMEOUT_MILLIS,
     private val resolutionTtlMillis: Long = RESOLUTION_TTL_MILLIS,
     private val nowMillis: () -> Long = System::currentTimeMillis,
@@ -59,6 +62,7 @@ class NasHostResolver(
             tryCandidate(NasResolutionPath.HOSTNAME, tried) {
                 withTimeoutOrNull(dnsTimeoutMillis) { dnsLookup(hostname) }
             }
+                ?: tryTailscale(tried)
                 ?: tryCandidate(NasResolutionPath.CACHED_IP, tried) { cache.get() }
                 ?: tryCandidate(NasResolutionPath.STATIC_DEFAULT, tried) { staticDefaultIp }
                 ?: tryCandidate(NasResolutionPath.DISCOVERY, tried) { discover() }
@@ -86,6 +90,27 @@ class NasHostResolver(
         if (cache.get() == ip) return
         cache.set(ip)
         DiagLog.i(TAG, "Recorded known-good NAS IP $ip")
+    }
+
+    private suspend fun tryTailscale(tried: MutableSet<String>): NasResolution? {
+        val hosts =
+            try {
+                tailscaleHosts()
+            } catch (failure: CancellationException) {
+                throw failure
+            } catch (failure: Exception) {
+                DiagLog.w(TAG, "Tailscale NAS lookup failed", failure)
+                emptyList()
+            }
+        if (hosts.isEmpty()) {
+            DiagLog.d(TAG, "NAS candidate ${NasResolutionPath.TAILSCALE} unavailable")
+            return null
+        }
+        for (host in hosts) {
+            val resolution = tryCandidate(NasResolutionPath.TAILSCALE, tried) { host }
+            if (resolution != null) return resolution
+        }
+        return null
     }
 
     private suspend fun tryCandidate(

@@ -134,6 +134,8 @@ dependencies {
     implementation(libs.okhttp)
 
     debugImplementation(libs.compose.ui.tooling)
+    debugImplementation(libs.compose.ui.test.manifest)
+    testImplementation(libs.compose.ui.test.junit4)
     testImplementation(project(":core:testing"))
     testImplementation(libs.robolectric)
 }

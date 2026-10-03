@@ -41,6 +41,7 @@ fun formatTimeOfDay(
 
 fun nasResolutionPathLabel(path: NasResolutionPath): String = when (path) {
     NasResolutionPath.HOSTNAME -> "hostname (DNS)"
+    NasResolutionPath.TAILSCALE -> "Tailscale"
     NasResolutionPath.CACHED_IP -> "cached IP"
     NasResolutionPath.STATIC_DEFAULT -> "static default IP"
     NasResolutionPath.DISCOVERY -> "SSDP discovery"
