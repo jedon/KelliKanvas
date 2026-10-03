@@ -32,6 +32,7 @@ class DiagnosticsInfoTest {
     @Test
     fun `nasResolutionPathLabel covers every path`() {
         assertThat(nasResolutionPathLabel(NasResolutionPath.HOSTNAME)).isEqualTo("hostname (DNS)")
+        assertThat(nasResolutionPathLabel(NasResolutionPath.TAILSCALE)).isEqualTo("Tailscale")
         assertThat(nasResolutionPathLabel(NasResolutionPath.CACHED_IP)).isEqualTo("cached IP")
         assertThat(nasResolutionPathLabel(NasResolutionPath.STATIC_DEFAULT)).isEqualTo("static default IP")
         assertThat(nasResolutionPathLabel(NasResolutionPath.DISCOVERY)).isEqualTo("SSDP discovery")

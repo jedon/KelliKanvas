@@ -3,6 +3,7 @@ package com.jedon.kellikanvas.source.nas
 /** Which candidate source produced the working NAS host. */
 enum class NasResolutionPath {
     HOSTNAME,
+    TAILSCALE,
     CACHED_IP,
     STATIC_DEFAULT,
     DISCOVERY,

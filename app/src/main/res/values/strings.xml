@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
   <string name="app_name">KelliKanvas</string>
-  <string name="permission_gate_title">Permissions</string>
-  <string name="permission_gate_subtitle">Local network access is required for photo sources. Ambient sensors are optional.</string>
+  <string name="permission_gate_title">Set up your gallery</string>
+  <string name="permission_gate_subtitle">Allow local network access to connect your photos. You can enable optional ambient sensors whenever you like.</string>
   <string name="permission_internet_title">Internet</string>
   <string name="permission_local_network_title">Local network</string>
   <string name="permission_activity_title">Activity recognition</string>

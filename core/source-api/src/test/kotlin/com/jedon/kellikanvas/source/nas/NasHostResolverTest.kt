@@ -27,6 +27,51 @@ class NasHostResolverTest {
     }
 
     @Test
+    fun `tailscale host is used when hostname dns fails`() = runTest {
+        val resolver =
+            resolver(
+                dnsLookup = { null },
+                probe = { it == "100.101.102.103" },
+                tailscaleHosts = { listOf("100.64.0.1", "100.101.102.103") },
+            )
+
+        val resolution = resolver.resolve()
+
+        assertThat(resolution!!.host).isEqualTo("100.101.102.103")
+        assertThat(resolution.path).isEqualTo(NasResolutionPath.TAILSCALE)
+    }
+
+    @Test
+    fun `hostname success does not consult tailscale`() = runTest {
+        var tailscaleCalls = 0
+        val resolver =
+            resolver(
+                dnsLookup = { "192.168.68.99" },
+                probe = { it == "192.168.68.99" },
+                tailscaleHosts = {
+                    tailscaleCalls++
+                    listOf("100.101.102.103")
+                },
+            )
+
+        assertThat(resolver.resolve()!!.path).isEqualTo(NasResolutionPath.HOSTNAME)
+        assertThat(tailscaleCalls).isEqualTo(0)
+    }
+
+    @Test
+    fun `tailscale lookup failure falls through to cached ip`() = runTest {
+        cache.value = "192.168.68.90"
+        val resolver =
+            resolver(
+                dnsLookup = { null },
+                probe = { it == "192.168.68.90" },
+                tailscaleHosts = { error("tailscale crashed") },
+            )
+
+        assertThat(resolver.resolve()!!.path).isEqualTo(NasResolutionPath.CACHED_IP)
+    }
+
+    @Test
     fun `falls through to cached ip when dns fails`() = runTest {
         cache.value = "192.168.68.90"
         val resolver =
@@ -303,6 +348,7 @@ class NasHostResolverTest {
         dnsLookup: suspend (String) -> String?,
         probe: suspend (String) -> Boolean,
         discover: suspend () -> String? = { null },
+        tailscaleHosts: suspend () -> List<String> = { emptyList() },
         nowMillis: () -> Long = System::currentTimeMillis,
     ): NasHostResolver = NasHostResolver(
         hostname = "darklingnas",
@@ -311,6 +357,7 @@ class NasHostResolverTest {
         probe = probe,
         dnsLookup = dnsLookup,
         discover = discover,
+        tailscaleHosts = tailscaleHosts,
         nowMillis = nowMillis,
     )
 

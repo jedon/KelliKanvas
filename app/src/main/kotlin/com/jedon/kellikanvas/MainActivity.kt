@@ -15,11 +15,11 @@ import androidx.compose.runtime.setValue
 import androidx.core.app.ActivityCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
-import androidx.tv.material3.MaterialTheme
 import com.jedon.kellikanvas.permission.PermissionCoordinator
 import com.jedon.kellikanvas.permission.PermissionRowId
 import com.jedon.kellikanvas.permission.PermissionStatus
 import com.jedon.kellikanvas.permission.ShellPermissionGate
+import com.jedon.kellikanvas.ui.tv.KanvasTheme
 
 class MainActivity : ComponentActivity() {
     private val permissionCoordinator by lazy { PermissionCoordinator(this) }
@@ -81,7 +81,7 @@ class MainActivity : ComponentActivity() {
                 onDispose { lifecycle.removeObserver(observer) }
             }
 
-            MaterialTheme {
+            KanvasTheme {
                 if (permissionCoordinator.shouldDisplayGate(sessionSkip, snapshot)) {
                     ShellPermissionGate(
                         snapshot = snapshot,

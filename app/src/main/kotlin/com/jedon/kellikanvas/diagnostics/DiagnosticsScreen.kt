@@ -20,6 +20,7 @@ import com.jedon.kellikanvas.feature.settings.UpdateCheckUiState
 import com.jedon.kellikanvas.feature.settings.updateCheckStatusLabel
 import com.jedon.kellikanvas.logging.BootstrapTrace
 import com.jedon.kellikanvas.logging.DiagLog
+import com.jedon.kellikanvas.nas.TailscaleHosts
 import com.jedon.kellikanvas.permission.PermissionCoordinator
 import com.jedon.kellikanvas.platform.update.UpdateOriginTrace
 import com.jedon.kellikanvas.source.nas.NasResolution
@@ -50,6 +51,8 @@ fun DiagnosticsScreen(
     updateCheckController: UpdateCheckController? = null,
     lastUpdateCheckMillis: Long? = null,
     nasResolution: NasResolution? = null,
+    tailscaleConnected: Boolean = true,
+    onOpenTailscale: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -193,6 +196,22 @@ fun DiagnosticsScreen(
                 label = "Last resolution",
                 value = nasResolutionStatusLabel(nasResolution),
             )
+        }
+        item {
+            DiagnosticsRow(
+                label = "Tailscale",
+                value = if (tailscaleConnected) "Connected" else "Not connected",
+            )
+        }
+        if (!tailscaleConnected) {
+            item {
+                SettingsActionRow(
+                    label = "Tailscale isn't connected",
+                    buttonLabel = "Open Tailscale",
+                    onClick = onOpenTailscale,
+                    supportingText = TailscaleHosts.DISCONNECTED_MESSAGE,
+                )
+            }
         }
 
         item { SettingsSectionHeader(title = "Connectivity test") }

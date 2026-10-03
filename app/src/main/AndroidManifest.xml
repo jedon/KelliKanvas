@@ -18,6 +18,10 @@
   <uses-permission android:name="android.permission.ACTIVITY_RECOGNITION" />
   <uses-permission android:name="android.permission.BODY_SENSORS" />
 
+  <queries>
+    <package android:name="com.tailscale.ipn" />
+  </queries>
+
   <application
     android:name=".KelliKanvasApp"
     android:allowBackup="false"

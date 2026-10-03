@@ -3,25 +3,16 @@ package com.jedon.kellikanvas.feature.collection
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.safeDrawing
-import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -43,32 +34,19 @@ fun SmbSetupScreen(
     onFinished: (collectionId: String) -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
+    isTailscaleConnected: () -> Boolean = { true },
+    onOpenTailscale: () -> Unit = {},
 ) {
     val scope = rememberCoroutineScope()
     var phase by remember { mutableStateOf<SmbSetupPhase>(SmbSetupPhase.Idle) }
 
     BackHandler(onBack = onBack)
 
-    Scaffold(
+    com.jedon.kellikanvas.ui.tv.KanvasSetupScaffold(
+        title = "Connect your NAS",
+        subtitle = "Bring your household photo library to your TV.",
+        onBack = onBack,
         modifier = modifier,
-        contentWindowInsets = WindowInsets.safeDrawing,
-        topBar = {
-            TopAppBar(
-                title = { Text("Household NAS (SMB)") },
-                windowInsets = WindowInsets.statusBars,
-                navigationIcon = {
-                    IconButton(
-                        onClick = onBack,
-                        modifier = Modifier.highContrastFocus(),
-                    ) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Back",
-                        )
-                    }
-                },
-            )
-        },
     ) { padding ->
         Column(
             modifier =
@@ -82,8 +60,8 @@ fun SmbSetupScreen(
                 SmbSetupPhase.Idle -> {
                     Text(
                         text =
-                        "Connect to ${HouseholdNasDefaults.DISPLAY_NAME} " +
-                            "(${HouseholdNasDefaults.PRIMARY_HOST}) over SMB and add photo folders.",
+                        "Connect to ${HouseholdNasDefaults.DISPLAY_NAME} over SMB and add photo folders. " +
+                            "Away from home, Tailscale reaches the NAS.",
                         style = MaterialTheme.typography.bodyLarge,
                     )
                     Text(
@@ -102,7 +80,8 @@ fun SmbSetupScreen(
                                     .onFailure {
                                         phase =
                                             SmbSetupPhase.Error(
-                                                "Could not connect to household NAS over SMB.",
+                                                message = "Could not connect to household NAS over SMB.",
+                                                tailscaleDisconnected = !isTailscaleConnected(),
                                             )
                                     }
                             }
@@ -159,6 +138,20 @@ fun SmbSetupScreen(
                         text = current.message,
                         color = MaterialTheme.colorScheme.error,
                     )
+                    if (current.tailscaleDisconnected) {
+                        Text(
+                            text = "Tailscale isn't connected. Open it and turn it on to reach DarklingNAS.",
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                        Button(
+                            onClick = onOpenTailscale,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .highContrastFocus(),
+                        ) {
+                            Text("Open Tailscale")
+                        }
+                    }
                     Button(
                         onClick = { phase = SmbSetupPhase.Idle },
                         modifier = Modifier
@@ -184,5 +177,6 @@ private sealed interface SmbSetupPhase {
 
     data class Error(
         val message: String,
+        val tailscaleDisconnected: Boolean = false,
     ) : SmbSetupPhase
 }

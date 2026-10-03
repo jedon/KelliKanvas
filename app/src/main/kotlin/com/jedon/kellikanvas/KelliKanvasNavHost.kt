@@ -53,6 +53,8 @@ import com.jedon.kellikanvas.logging.diagnosticSummary
 import com.jedon.kellikanvas.model.AppPreferences
 import com.jedon.kellikanvas.model.SourceKind
 import com.jedon.kellikanvas.model.SourceProfileId
+import com.jedon.kellikanvas.nas.TailscaleHosts
+import com.jedon.kellikanvas.nas.openTailscale
 import com.jedon.kellikanvas.platform.update.AndroidCheckTimestampStore
 import com.jedon.kellikanvas.security.CredentialReadResult
 import com.jedon.kellikanvas.shell.ShellRoute
@@ -65,6 +67,7 @@ import com.jedon.kellikanvas.source.smb.SmbCredentials
 import com.jedon.kellikanvas.source.smb.SmbProfile
 import com.jedon.kellikanvas.system.SystemScreen
 import com.jedon.kellikanvas.ui.PhoneMaterialTheme
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -97,6 +100,8 @@ internal data class ShellState(
     val sourceNotices: List<String> = emptyList(),
     /** Per-profile adapter restore outcomes, shown on the Diagnostics screen. */
     val restoreStatuses: List<RootRestoreStatus> = emptyList(),
+    /** DarklingNAS was unreachable and the Tailscale VPN is off. */
+    val tailscalePrompt: Boolean = false,
 )
 
 @Suppress("ktlint:standard:function-naming")
@@ -112,6 +117,7 @@ fun KelliKanvasNavHost(
     var collectionRevision by remember { mutableIntStateOf(0) }
     var bootstrapUi by remember { mutableStateOf(PhotosBootstrapUi.Idle) }
     var bootstrapError by remember { mutableStateOf<String?>(null) }
+    var tailscalePrompt by remember { mutableStateOf(false) }
     var bootstrapAttempt by remember { mutableIntStateOf(0) }
     var autoStartSlideshowToken by remember { mutableIntStateOf(0) }
     var playlistRootFailures by remember { mutableStateOf<List<String>>(emptyList()) }
@@ -139,6 +145,7 @@ fun KelliKanvasNavHost(
         if (!shouldBootstrap) {
             bootstrapUi = PhotosBootstrapUi.Idle
             bootstrapError = null
+            tailscalePrompt = current.tailscalePrompt
             return@LaunchedEffect
         }
         val wasEmpty = allRoots.isEmpty()
@@ -155,6 +162,7 @@ fun KelliKanvasNavHost(
                 reloadShellState()
                 collectionRevision++
                 bootstrapUi = PhotosBootstrapUi.Idle
+                tailscalePrompt = shellState?.tailscalePrompt == true
                 // Auto-start on first empty connect, or when replacing stale household roots.
                 if (wasEmpty || HouseholdNasBootstrap.needsHouseholdRootReplace(allRoots)) {
                     autoStartSlideshowToken++
@@ -165,9 +173,12 @@ fun KelliKanvasNavHost(
                 if (current.roots.isNotEmpty() && current.adapters.isNotEmpty()) {
                     bootstrapUi = PhotosBootstrapUi.Idle
                     bootstrapError = null
+                    tailscalePrompt = current.tailscalePrompt
                 } else {
                     bootstrapUi = PhotosBootstrapUi.Failed
                     bootstrapError = result.message
+                    tailscalePrompt = container.nasHostResolver.lastResolution == null &&
+                        !tailscaleIsConnected(container)
                 }
             }
         }
@@ -218,6 +229,7 @@ fun KelliKanvasNavHost(
             val updateAvailableVersion =
                 (updateState as? UpdateCheckUiState.UpdateAvailable)?.versionName
             HomeScreen(
+                adapters = homeState.adapters,
                 collectionLabel = homeState.collectionLabel.ifBlank { "KelliKanvas" },
                 canStartSlideshow = canStartSlideshow,
                 roots = collectionState.roots,
@@ -257,6 +269,8 @@ fun KelliKanvasNavHost(
                 onAutoStartSlideshowConsumed = { autoStartSlideshowToken = 0 },
                 updateAvailableVersion = updateAvailableVersion,
                 sourceNotices = (homeState.sourceNotices + playlistRootFailures).distinct(),
+                tailscalePrompt = tailscalePrompt || homeState.tailscalePrompt,
+                onOpenTailscale = { openTailscale(context) },
             )
         }
         composable(ShellRoutes.COLLECTION) {
@@ -348,6 +362,7 @@ fun KelliKanvasNavHost(
             }
         }
         composable(ShellRoutes.SMB_SETUP) {
+            val context = LocalContext.current
             PhoneMaterialTheme {
                 SmbSetupScreen(
                     controller =
@@ -372,6 +387,8 @@ fun KelliKanvasNavHost(
                         }
                     },
                     onBack = { navController.popBackStack() },
+                    isTailscaleConnected = { tailscaleIsConnected(container) },
+                    onOpenTailscale = { openTailscale(context) },
                 )
             }
         }
@@ -438,6 +455,8 @@ fun KelliKanvasNavHost(
                 updateCheckController = container.updateCheckController,
                 lastUpdateCheckMillis = lastUpdateCheckMillis,
                 nasResolution = container.nasHostResolver.lastResolution,
+                tailscaleConnected = tailscaleIsConnected(container),
+                onOpenTailscale = { openTailscale(context) },
             )
         }
         composable(ShellRoutes.SLIDESHOW) {
@@ -543,6 +562,7 @@ internal suspend fun loadShellState(container: AppContainer): ShellState {
         val adapters = linkedMapOf<SourceProfileId, SourceAdapter>()
         val sourceNotices = mutableListOf<String>()
         val restoreStatuses = mutableListOf<RootRestoreStatus>()
+        var tailscalePrompt = false
         for (profileId in roots.map(SelectedRoot::profileId).distinct()) {
             try {
                 database.safConnections.get(profileId)?.let { connection ->
@@ -607,10 +627,19 @@ internal suspend fun loadShellState(container: AppContainer): ShellState {
                         )
                         return@let
                     }
+                    val household = TailscaleHosts.isHouseholdNasHost(connection.host)
+                    val resolvedHost = if (household) resolveHouseholdHost(container) else null
+                    if (household && resolvedHost == null) {
+                        if (tailscaleIsConnected(container)) {
+                            sourceNotices += "DarklingNAS didn't answer. Tailscale is connected."
+                        } else {
+                            tailscalePrompt = true
+                        }
+                    }
                     val profile =
                         SmbProfile(
                             id = profileId,
-                            host = connection.host,
+                            host = resolvedHost ?: connection.host,
                             port = connection.port,
                             share = connection.share,
                             domain = connection.domain,
@@ -665,6 +694,7 @@ internal suspend fun loadShellState(container: AppContainer): ShellState {
             },
             sourceNotices = sourceNotices.distinct(),
             restoreStatuses = restoreStatuses.toList(),
+            tailscalePrompt = tailscalePrompt,
         )
     } catch (failure: Exception) {
         DiagLog.e(TAG, "loadShellState failed", failure)
@@ -691,6 +721,22 @@ private fun releaseRetiredSource(
     } catch (_: SecurityException) {
         // The grant may already have been released.
     }
+}
+
+private suspend fun resolveHouseholdHost(container: AppContainer): String? = try {
+    container.nasHostResolver.resolve()?.host
+} catch (failure: CancellationException) {
+    throw failure
+} catch (failure: Exception) {
+    DiagLog.w(TAG, "NAS host refresh failed", failure)
+    null
+}
+
+private fun tailscaleIsConnected(container: AppContainer): Boolean = try {
+    container.tailscaleNas.isConnected()
+} catch (failure: Exception) {
+    DiagLog.w(TAG, "Tailscale status check failed", failure)
+    false
 }
 
 private fun readSmbPassword(

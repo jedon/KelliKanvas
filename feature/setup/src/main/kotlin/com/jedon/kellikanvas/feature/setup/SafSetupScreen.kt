@@ -1,16 +1,19 @@
 package com.jedon.kellikanvas.feature.setup
 
 import android.net.Uri
+import androidx.activity.compose.BackHandler
+import androidx.activity.compose.LocalActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
@@ -61,85 +64,96 @@ fun SafSetupScreen(
         errorMessage = null
     }
 
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .safeDrawingPadding()
-            .padding(32.dp)
-            .widthIn(max = 720.dp),
-        verticalArrangement = Arrangement.spacedBy(24.dp, Alignment.CenterVertically),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Text(
-            text = "Choose a photos folder",
-            style = MaterialTheme.typography.headlineMedium,
-        )
-        Button(
-            onClick = {
-                errorMessage = null
-                picker.launch(null)
-            },
-            modifier = Modifier.highContrastFocus(),
+    val activity = LocalActivity.current
+    val back: () -> Unit = { if (onOpenMenu != null) onOpenMenu() else activity?.finish() }
+    BackHandler(onBack = back)
+    com.jedon.kellikanvas.ui.tv.KanvasSetupScaffold(
+        title = "Choose a photo folder",
+        subtitle = "Add photos from your TV or a connected USB drive.",
+        onBack = back,
+        modifier = modifier,
+    ) { contentPadding ->
+        Column(
+            modifier = modifier
+                .fillMaxSize()
+                .padding(contentPadding)
+                .verticalScroll(rememberScrollState())
+                .padding(32.dp)
+                .widthIn(max = 720.dp),
+            verticalArrangement = Arrangement.spacedBy(20.dp),
+            horizontalAlignment = Alignment.Start,
         ) {
-            Text(text = displayName ?: "Choose folder")
-        }
-        Row(
-            modifier = Modifier
-                .highContrastFocus(RoundedCornerShape(12.dp))
-                .toggleable(
-                    value = includeDescendants,
-                    onValueChange = { includeDescendants = it },
-                )
-                .padding(8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
-            // The row is the focus target; a focusable Switch would steal D-pad focus.
-            Switch(
-                checked = includeDescendants,
-                onCheckedChange = null,
+            Text(
+                text = "Select your source",
+                style = MaterialTheme.typography.headlineMedium,
             )
-            Text(text = "Include subfolders")
-        }
-        Button(
-            enabled = grant != null && displayName != null,
-            modifier = Modifier.highContrastFocus(),
-            onClick = {
-                val selectedGrant = grant ?: return@Button
-                val selectedName = displayName ?: return@Button
-                scope.launch {
-                    runCatching {
-                        controller.complete(
-                            profile = SafProfile(
-                                id = SourceProfileId("saf-${UUID.randomUUID()}"),
-                                grant = selectedGrant,
-                            ),
-                            displayName = selectedName,
-                            includeDescendants = includeDescendants,
-                        )
-                    }.onSuccess(onFinished)
-                        .onFailure {
-                            errorMessage = "Could not save folder selection"
-                        }
-                }
-            },
-        ) {
-            Text(text = "Confirm")
-        }
-        if (onOpenMenu != null) {
-            TextButton(
-                onClick = onOpenMenu,
+            Button(
+                onClick = {
+                    errorMessage = null
+                    picker.launch(null)
+                },
                 modifier = Modifier.highContrastFocus(),
             ) {
-                Text(text = "Open menu")
+                Text(text = displayName ?: "Choose folder")
             }
-        }
-        errorMessage?.let {
-            Text(
-                text = it,
-                color = MaterialTheme.colorScheme.error,
-                style = MaterialTheme.typography.bodyMedium,
-            )
+            Row(
+                modifier = Modifier
+                    .highContrastFocus(RoundedCornerShape(12.dp))
+                    .toggleable(
+                        value = includeDescendants,
+                        onValueChange = { includeDescendants = it },
+                    )
+                    .padding(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                // The row is the focus target; a focusable Switch would steal D-pad focus.
+                Switch(
+                    checked = includeDescendants,
+                    onCheckedChange = null,
+                )
+                Text(text = "Include subfolders")
+            }
+            Button(
+                enabled = grant != null && displayName != null,
+                modifier = Modifier.highContrastFocus(),
+                onClick = {
+                    val selectedGrant = grant ?: return@Button
+                    val selectedName = displayName ?: return@Button
+                    scope.launch {
+                        runCatching {
+                            controller.complete(
+                                profile = SafProfile(
+                                    id = SourceProfileId("saf-${UUID.randomUUID()}"),
+                                    grant = selectedGrant,
+                                ),
+                                displayName = selectedName,
+                                includeDescendants = includeDescendants,
+                            )
+                        }.onSuccess(onFinished)
+                            .onFailure {
+                                errorMessage = "Could not save folder selection"
+                            }
+                    }
+                },
+            ) {
+                Text(text = "Add to collection")
+            }
+            if (onOpenMenu != null) {
+                TextButton(
+                    onClick = onOpenMenu,
+                    modifier = Modifier.highContrastFocus(),
+                ) {
+                    Text(text = "Open menu")
+                }
+            }
+            errorMessage?.let {
+                Text(
+                    text = it,
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
         }
     }
 }
