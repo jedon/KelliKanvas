@@ -1,12 +1,12 @@
 package com.jedon.kellikanvas.platform.update
 
 import android.content.Context
-import android.content.Intent
+import android.os.SystemClock
 import androidx.core.content.FileProvider
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import androidx.test.platform.app.InstrumentationRegistry
 import com.google.common.truth.Truth.assertThat
+import org.junit.Assert.assertThrows
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
@@ -28,24 +28,29 @@ class AndroidPackageApiTest {
     }
 
     @Test
-    fun file_provider_grant_is_private_and_explicit() {
+    fun file_provider_exposes_only_update_cache_with_explicit_grants() {
         val update = File(context.cacheDir, "updates/instrumented.apk")
         update.parentFile?.mkdirs()
         update.writeBytes(byteArrayOf(1))
         val uri = FileProvider.getUriForFile(context, "${context.packageName}.updates", update)
-        val instrumentationPackage = InstrumentationRegistry.getInstrumentation().context.packageName
-
         assertThat(uri.scheme).isEqualTo("content")
-        val instrumentationUid = InstrumentationRegistry.getInstrumentation().context.applicationInfo.uid
-        context.grantUriPermission(
-            instrumentationPackage,
-            uri,
-            Intent.FLAG_GRANT_READ_URI_PERMISSION,
-        )
-        assertThat(
-            context.checkUriPermission(uri, -1, instrumentationUid, Intent.FLAG_GRANT_READ_URI_PERMISSION),
-        ).isEqualTo(android.content.pm.PackageManager.PERMISSION_GRANTED)
-        context.revokeUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        val provider = context.packageManager.resolveContentProvider("${context.packageName}.updates", 0)
+        assertThat(provider).isNotNull()
+        assertThat(provider!!.exported).isFalse()
+        assertThat(provider.grantUriPermissions).isTrue()
+        context.contentResolver.openInputStream(uri).use { stream ->
+            assertThat(stream!!.readBytes()).isEqualTo(byteArrayOf(1))
+        }
+        val privateFile = File(context.cacheDir, "private-fixture.txt")
+        privateFile.writeText("fixture only")
+        try {
+            assertThrows(IllegalArgumentException::class.java) {
+                FileProvider.getUriForFile(context, "${context.packageName}.updates", privateFile)
+            }
+        } finally {
+            privateFile.delete()
+            update.delete()
+        }
     }
 
     @Test
@@ -64,6 +69,11 @@ class AndroidPackageApiTest {
             }
         } finally {
             staged.abandon()
+        }
+        // PackageInstaller removes abandoned sessions asynchronously in system_server.
+        val deadline = SystemClock.elapsedRealtime() + 5000
+        while (installer.getSessionInfo(staged.sessionId) != null && SystemClock.elapsedRealtime() < deadline) {
+            SystemClock.sleep(50)
         }
         assertThat(installer.getSessionInfo(staged.sessionId)).isNull()
     }
