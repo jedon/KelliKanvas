@@ -1,0 +1,17 @@
+name: kellikanvas-tests
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: kellikanvas_test
+      POSTGRES_USER: kanvas_test
+      POSTGRES_PASSWORD: local-test-only
+    ports:
+      - "127.0.0.1:16439:5432"
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kanvas_test -d kellikanvas_test"]
+      interval: 2s
+      timeout: 2s
+      retries: 30

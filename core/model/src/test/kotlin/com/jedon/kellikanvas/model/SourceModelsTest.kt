@@ -177,7 +177,7 @@ class SourceModelsTest {
     @Test
     fun `source kinds cover every approved adapter`() {
         assertThat(SourceKind.entries)
-            .containsExactly(SourceKind.DLNA, SourceKind.SMB, SourceKind.SAF, SourceKind.HTTP)
+            .containsExactly(SourceKind.DLNA, SourceKind.SMB, SourceKind.SAF, SourceKind.HTTP, SourceKind.GOOGLE_DRIVE, SourceKind.GOOGLE_PHOTOS, SourceKind.JELLYFIN, SourceKind.EMBY, SourceKind.IMMICH, SourceKind.PLEX, SourceKind.WEBDAV, SourceKind.DROPBOX, SourceKind.ONEDRIVE, SourceKind.BOX, SourceKind.S3, SourceKind.FLICKR)
             .inOrder()
     }
 

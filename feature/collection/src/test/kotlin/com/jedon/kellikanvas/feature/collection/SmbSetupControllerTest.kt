@@ -98,6 +98,31 @@ class SmbSetupControllerTest {
     }
 
     @Test
+    fun phoneLogin_replacesCredentialsWithoutDuplicatingTheExistingSource() = runTest {
+        var sequence = 0
+        val controller = SmbSetupController(
+            database,
+            vault,
+            "",
+            charArrayOf(),
+            adapterFactory = { profile, credentials ->
+                assertThat(profile.username).isEqualTo(credentials.username)
+                FakeSmbAdapter(profile.id)
+            },
+            profileIdFactory = { SourceProfileId("phone-nas-${++sequence}") },
+        )
+        val first = controller.connectHousehold(username = "first-user", password = "first-password".toCharArray())
+        val firstRoots = database.selectedRoots.list(first.collectionId)
+        controller.connectHousehold(username = "second-user", password = "new-password".toCharArray())
+        val roots = database.selectedRoots.list(first.collectionId)
+        assertThat(roots.map { it.profileId }).containsExactlyElementsIn(firstRoots.map { it.profileId })
+        assertThat(sequence).isEqualTo(1)
+        val id = roots.single().profileId
+        assertThat(database.smbConnections.get(id)?.username).isEqualTo("second-user")
+        assertThat(vault.stored[id.value]).isEqualTo("new-password")
+    }
+
+    @Test
     fun connectHousehold_fallsBackToStaticCandidatesWhenResolverFails() = runTest {
         val controller =
             SmbSetupController(

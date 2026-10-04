@@ -18,11 +18,11 @@ import com.jedon.kellikanvas.platform.update.UpdateRepository
 import okhttp3.OkHttpClient
 import java.io.File
 import java.net.Proxy
+import java.net.URI
 
 fun createUpdateCheckController(
     context: Context,
     httpClient: OkHttpClient,
-    cachedNasIp: () -> String? = { null },
 ): UpdateCheckController {
     val appContext = context.applicationContext
     val packageManager = appContext.packageManager
@@ -38,29 +38,29 @@ fun createUpdateCheckController(
     val updateCacheDir = File(appContext.cacheDir, "updates")
     val installLauncher = InstallLauncher(AndroidInstallPlatform(appContext))
     val installedPackageReader = InstalledPackageReader(packageManager)
+    val originPolicy = UpdateOriginPolicy.remoteHttps("kanvas.kelli.photo")
 
     return UpdateCheckController(
         checkManifest = { manual, installedVersionCode ->
-            val cached = cachedNasIp()
             AuthenticatedManifestRepository(
-                transport = OkHttpUpdateTransport(originPolicy = UpdateOriginPolicy.qnapLan(cached), client = baseClient),
+                transport = OkHttpUpdateTransport(originPolicy = originPolicy, client = baseClient),
                 authenticator = authenticator,
                 replayGuard = replayGuard,
                 timestampStore = timestampStore,
-                originPolicy = UpdateOriginPolicy.qnapLan(cached),
-                controlUris = UpdateOriginPolicy.qnapControlUris(cached),
+                originPolicy = originPolicy,
+                controlUris = listOf(URI("https://kanvas.kelli.photo/updates/update-envelope.json")),
             ).check(manual, installedVersionCode)
         },
         downloadAndVerify = { manifest, installed ->
-            val cached = cachedNasIp()
             UpdateRepository(
-                transport = OkHttpUpdateTransport(originPolicy = UpdateOriginPolicy.qnapLan(cached), client = baseClient),
+                transport = OkHttpUpdateTransport(originPolicy = originPolicy, client = baseClient),
                 verifier = ApkVerifier(AndroidArchiveInspector(PackageManagerArchiveReader(packageManager))),
                 updateCacheDir = updateCacheDir,
-                originPolicy = UpdateOriginPolicy.qnapLan(cached),
+                originPolicy = originPolicy,
             ).downloadAndVerify(manifest, installed)
         },
         launchInstall = installLauncher::launch,
         readInstalled = installedPackageReader::read,
+        canInstall = { packageManager.canRequestPackageInstalls() },
     )
 }

@@ -2,6 +2,7 @@ package com.jedon.kellikanvas.feature.collection
 
 import androidx.room.withTransaction
 import com.jedon.kellikanvas.catalog.CatalogIds
+import com.jedon.kellikanvas.catalog.GoogleConnection
 import com.jedon.kellikanvas.catalog.KelliKanvasDatabase
 import com.jedon.kellikanvas.catalog.SelectedRoot
 import com.jedon.kellikanvas.model.SourceProfileId
@@ -9,6 +10,7 @@ import com.jedon.kellikanvas.model.SourceProfileId
 class RetiredSourceProfile(
     val profileId: SourceProfileId,
     val safTreeUri: String?,
+    val googleConnection: GoogleConnection? = null,
 )
 
 class CollectionHubController(
@@ -31,8 +33,9 @@ class CollectionHubController(
                     }
                 if (!hasRemainingRoots) {
                     val treeUri = database.safConnections.get(root.profileId)?.treeUri
+                    val google = database.googleConnections.get(root.profileId)
                     database.sourceProfiles.delete(root.profileId)
-                    RetiredSourceProfile(root.profileId, treeUri)
+                    RetiredSourceProfile(root.profileId, treeUri, google)
                 } else {
                     null
                 }

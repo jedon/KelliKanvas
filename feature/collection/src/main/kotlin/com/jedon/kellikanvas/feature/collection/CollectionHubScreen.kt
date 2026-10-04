@@ -51,6 +51,10 @@ fun CollectionHubScreen(
     modifier: Modifier = Modifier,
     backHandlerEnabled: Boolean = true,
     loadError: String? = null,
+    onAddGoogleDrive: () -> Unit = {},
+    onAddGooglePhotos: () -> Unit = {},
+    onReconnectGoogle: (SourceProfileId) -> Unit = {},
+    onBrowseConnectors: () -> Unit = {},
 ) {
     BackHandler(enabled = backHandlerEnabled, onBack = onBack)
     var pendingRemoval by remember { mutableStateOf<SelectedRoot?>(null) }
@@ -103,13 +107,26 @@ fun CollectionHubScreen(
                                     style = MaterialTheme.typography.labelSmall,
                                 )
                             }
-                            KanvasButton("Remove", { pendingRemoval = root })
+                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                if (sourceLabels[root.profileId]?.let { label -> listOf("Google", "Jellyfin", "Emby", "Plex", "Immich", "Nextcloud", "ownCloud", "Synology WebDAV", "Seafile", "WebDAV", "PhotoPrism", "Dropbox", "OneDrive", "S3", "Box", "Flickr").any(label::startsWith) } == true) {
+                                    KanvasButton("Reconnect", { onReconnectGoogle(root.profileId) })
+                                }
+                                KanvasButton("Remove", { pendingRemoval = root })
+                            }
                         }
                     }
                 }
             }
             HorizontalDivider(color = KanvasColors.Border)
-            Text("Connect a source", style = MaterialTheme.typography.titleMedium)
+            if (wide) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                    Text("Connect a source", style = MaterialTheme.typography.titleMedium)
+                    KanvasButton("Browse all connectors", onBrowseConnectors, primary = true)
+                }
+            } else {
+                Text("Connect a source", style = MaterialTheme.typography.titleMedium)
+                KanvasButton("Browse all connectors", onBrowseConnectors, primary = true)
+            }
             if (wide) {
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     SourceCard("Local or USB", "Photos stored on your TV or a connected drive.", "Choose folder", onAddLocalFolder, Modifier.weight(1f))
@@ -120,6 +137,15 @@ fun CollectionHubScreen(
                 SourceCard("Local or USB", "Photos stored on your TV or a connected drive.", "Choose folder", onAddLocalFolder)
                 SourceCard("Household NAS", "Your photo library, directly from your network.", "Connect NAS", onConnectHouseholdNas)
                 SourceCard("Media server", "Discover a QNAP or other DLNA photo library.", "Find server", onAddQnap)
+            }
+            if (wide) {
+                Row(horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+                    SourceCard("Google Drive", "Choose a photo folder from your Google account.", "Connect Drive", onAddGoogleDrive, Modifier.weight(1f))
+                    SourceCard("Google Photos", "Choose albums on your phone for this display.", "Connect Photos", onAddGooglePhotos, Modifier.weight(1f))
+                }
+            } else {
+                SourceCard("Google Drive", "Choose a photo folder from your Google account.", "Connect Drive", onAddGoogleDrive)
+                SourceCard("Google Photos", "Choose albums on your phone for this display.", "Connect Photos", onAddGooglePhotos)
             }
         }
     }

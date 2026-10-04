@@ -16,16 +16,16 @@ import androidx.tv.material3.Border
 
 /**
  * Single source of truth for the app's "unmistakable from the couch" focus
- * treatment: light outline and a sage fill while focused.
+ * treatment: a contrasting outline and the selected theme's accent while focused.
  */
 object HighContrastFocusDefaults {
-    val BorderColor = KanvasColors.Text
-    val FocusedContainerColor = KanvasColors.Accent
-    val IdleContainerColor = KanvasColors.Elevated
+    val BorderColor @Composable get() = KanvasColors.Text
+    val FocusedContainerColor @Composable get() = KanvasColors.Accent
+    val IdleContainerColor @Composable get() = KanvasColors.Elevated
     val BorderWidth = 2.dp
 
     /** For tv-material `border` params ([androidx.tv.material3.Border] follows the button's own shape). */
-    val TvFocusedBorder = Border(BorderStroke(BorderWidth, BorderColor))
+    val TvFocusedBorder @Composable get() = Border(BorderStroke(BorderWidth, BorderColor))
 }
 
 /**

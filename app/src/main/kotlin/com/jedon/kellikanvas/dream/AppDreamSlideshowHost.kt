@@ -8,6 +8,8 @@ import com.jedon.kellikanvas.KelliKanvasApp
 import com.jedon.kellikanvas.ShellState
 import com.jedon.kellikanvas.feature.slideshow.SimpleSlideshowScreen
 import com.jedon.kellikanvas.loadShellState
+import com.jedon.kellikanvas.model.AppPreferences
+import com.jedon.kellikanvas.ui.tv.KanvasTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -19,7 +21,7 @@ internal class AppDreamSlideshowHost(
     private val app: KelliKanvasApp,
 ) : DreamSlideshowHost {
     private var playable: ShellState? = null
-    private var slideDurationMillis: Long = 15_000
+    private var preferences = AppPreferences()
     private var composeView: ComposeView? = null
 
     override fun hasPlayableCollection(): Boolean {
@@ -32,12 +34,10 @@ internal class AppDreamSlideshowHost(
         val loaded =
             runBlocking(Dispatchers.IO) {
                 val state = loadShellState(container)
-                val duration =
-                    container.preferences.preferences.first().appPreferences.slideDurationMillis
-                state to duration
+                state to container.preferences.preferences.first().appPreferences
             }
         val state = loaded.first
-        slideDurationMillis = loaded.second
+        preferences = loaded.second
         playable = state.takeIf { it.roots.isNotEmpty() && it.adapters.isNotEmpty() }
         return playable != null
     }
@@ -54,12 +54,14 @@ internal class AppDreamSlideshowHost(
                         ViewGroup.LayoutParams.MATCH_PARENT,
                     )
                 setContent {
-                    SimpleSlideshowScreen(
-                        adapters = state.adapters,
-                        roots = state.roots,
-                        slideDurationMillis = slideDurationMillis,
-                        onExit = {},
-                    )
+                    KanvasTheme(theme = preferences.theme) {
+                        SimpleSlideshowScreen(
+                            adapters = state.adapters,
+                            roots = state.roots,
+                            slideDurationMillis = preferences.slideDurationMillis,
+                            onExit = {},
+                        )
+                    }
                 }
             }
         container.addView(view)

@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -32,11 +33,15 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.jedon.kellikanvas.model.AppTheme
 import com.jedon.kellikanvas.nas.TailscaleHosts
+import com.jedon.kellikanvas.ui.tv.KanvasBat
+import com.jedon.kellikanvas.ui.tv.KanvasBrand
 import com.jedon.kellikanvas.ui.tv.KanvasButton
 import com.jedon.kellikanvas.ui.tv.KanvasColors
 import com.jedon.kellikanvas.ui.tv.KanvasNotice
 import com.jedon.kellikanvas.ui.tv.KanvasStatus
+import com.jedon.kellikanvas.ui.tv.LocalKanvasTheme
 import com.jedon.kellikanvas.ui.tv.highContrastFocus
 
 @Suppress("ktlint:standard:function-naming")
@@ -73,7 +78,14 @@ internal fun HomeCenterPage(
             verticalArrangement = Arrangement.spacedBy(if (wide) 12.dp else 24.dp),
         ) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Text("GALLERY", color = KanvasColors.Accent, fontSize = 11.sp, letterSpacing = 2.sp, fontWeight = FontWeight.Medium)
+                if (!wide) {
+                    KanvasBrand()
+                } else {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        if (LocalKanvasTheme.current == AppTheme.KELLI) Icon(KanvasBat, null, Modifier.size(22.dp), tint = KanvasColors.Secondary)
+                        Text("GALLERY", color = KanvasColors.Accent, fontSize = 11.sp, letterSpacing = 2.sp, fontWeight = FontWeight.Medium)
+                    }
+                }
                 KanvasStatus(
                     label = when {
                         bootstrapUi == PhotosBootstrapUi.Connecting -> "Connecting"
@@ -137,12 +149,12 @@ internal fun HomeCenterPage(
             if (wide) {
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     GalleryShortcut("Collection", collectionDetail, Icons.AutoMirrored.Filled.List, onOpenCollection, Modifier.weight(1f))
-                    GalleryShortcut("Appearance", "Layouts, pairing & overlays", Icons.Filled.Edit, onOpenAppearance, Modifier.weight(1f))
+                    GalleryShortcut("Appearance", "Themes, layouts & overlays", Icons.Filled.Edit, onOpenAppearance, Modifier.weight(1f))
                     GalleryShortcut("Ambient", "Light, presence & schedule", Icons.Filled.Settings, onOpenAmbient, Modifier.weight(1f))
                 }
             } else {
                 GalleryShortcut("Collection", collectionDetail, Icons.AutoMirrored.Filled.List, onOpenCollection)
-                GalleryShortcut("Appearance", "Layouts, pairing & overlays", Icons.Filled.Edit, onOpenAppearance)
+                GalleryShortcut("Appearance", "Themes, layouts & overlays", Icons.Filled.Edit, onOpenAppearance)
                 GalleryShortcut("Ambient", "Light, presence & schedule", Icons.Filled.Settings, onOpenAmbient)
             }
             Text(primaryHint, color = KanvasColors.Muted, style = MaterialTheme.typography.labelSmall)

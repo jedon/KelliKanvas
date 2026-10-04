@@ -1,5 +1,6 @@
 package com.jedon.kellikanvas.catalog.preferences
 
+import com.jedon.kellikanvas.model.AppTheme
 import com.jedon.kellikanvas.model.BlurStrength
 import com.jedon.kellikanvas.model.BrightnessMode
 import com.jedon.kellikanvas.model.LayoutMode
@@ -10,6 +11,13 @@ import com.jedon.kellikanvas.model.PortraitPairingMode
 import com.jedon.kellikanvas.model.TransitionType
 
 internal object PreferenceEnumCodes {
+    val theme = StableEnumCodec(
+        AppTheme.KELLI to "theme.kelli.v1",
+        AppTheme.GALLERY to "theme.gallery.v1",
+        AppTheme.MIDNIGHT to "theme.midnight.v1",
+        AppTheme.PAPER to "theme.paper.v1",
+        AppTheme.SYSTEM to "theme.system.v1",
+    )
     val layoutMode =
         StableEnumCodec(
             LayoutMode.FULL_PHOTO to "layout.full_photo.v1",

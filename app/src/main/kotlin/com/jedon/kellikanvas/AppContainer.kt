@@ -5,6 +5,7 @@ import android.net.wifi.WifiManager
 import com.jedon.kellikanvas.catalog.KelliKanvasDatabaseFactory
 import com.jedon.kellikanvas.catalog.preferences.DataStoreAppPreferencesRepository
 import com.jedon.kellikanvas.feature.settings.UpdateCheckController
+import com.jedon.kellikanvas.google.GoogleSources
 import com.jedon.kellikanvas.nas.SharedPreferencesNasHostCache
 import com.jedon.kellikanvas.nas.TailscaleNasLookup
 import com.jedon.kellikanvas.nas.isTcpReachable
@@ -16,6 +17,7 @@ import com.jedon.kellikanvas.source.dlna.DlnaProfile
 import com.jedon.kellikanvas.source.dlna.DlnaProfileDiscovery
 import com.jedon.kellikanvas.source.dlna.DlnaSourceAdapter
 import com.jedon.kellikanvas.source.dlna.SsdpDiscoverer
+import com.jedon.kellikanvas.source.google.GoogleTvConfiguration
 import com.jedon.kellikanvas.source.nas.NasHostCache
 import com.jedon.kellikanvas.source.nas.NasHostResolver
 import com.jedon.kellikanvas.source.saf.ContentResolverSafDocuments
@@ -35,6 +37,14 @@ class AppContainer(appContext: Context) {
     val contentResolver = appContext.contentResolver
     val httpClient = OkHttpClient()
     val credentialVault: CredentialVault = AndroidCredentialVault(appContext)
+    val googleSources = GoogleSources(
+        appContext.applicationContext,
+        httpClient,
+        credentialVault,
+        GoogleTvConfiguration(BuildConfig.GOOGLE_TV_CLIENT_ID, BuildConfig.GOOGLE_TV_CLIENT_SECRET),
+    )
+    val connectorStore = com.jedon.kellikanvas.source.connected.ConnectorStore(credentialVault)
+    val cloudAccount by lazy { com.jedon.kellikanvas.account.CloudAccount(this, appContext.applicationContext) }
     private val wifiManager: WifiManager? =
         appContext.applicationContext.getSystemService(WifiManager::class.java)
     val nasHostCache: NasHostCache = SharedPreferencesNasHostCache(appContext)
@@ -50,7 +60,7 @@ class AppContainer(appContext: Context) {
         )
     val updateCheckController: UpdateCheckController? =
         runCatching {
-            createUpdateCheckController(appContext, httpClient, cachedNasIp = nasHostCache::get)
+            createUpdateCheckController(appContext, httpClient)
         }.getOrNull()
 
     fun safAdapter(profile: SafProfile): SafSourceAdapter = SafSourceAdapter(

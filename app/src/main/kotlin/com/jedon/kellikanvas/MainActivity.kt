@@ -8,18 +8,26 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.graphics.luminance
 import androidx.core.app.ActivityCompat
+import androidx.core.view.WindowCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import com.jedon.kellikanvas.catalog.preferences.AppPreferencesState
 import com.jedon.kellikanvas.permission.PermissionCoordinator
 import com.jedon.kellikanvas.permission.PermissionRowId
 import com.jedon.kellikanvas.permission.PermissionStatus
 import com.jedon.kellikanvas.permission.ShellPermissionGate
+import com.jedon.kellikanvas.ui.tv.KanvasColors
 import com.jedon.kellikanvas.ui.tv.KanvasTheme
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     private val permissionCoordinator by lazy { PermissionCoordinator(this) }
@@ -28,6 +36,9 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         setContent {
+            val container = (application as KelliKanvasApp).container
+            val scope = rememberCoroutineScope()
+            val preferences by container.preferences.preferences.collectAsState(initial = AppPreferencesState())
             var sessionSkip by remember { mutableStateOf(false) }
             var permanentlyDenied by remember { mutableStateOf(emptySet<PermissionRowId>()) }
             var snapshot by remember { mutableStateOf(permissionCoordinator.snapshot()) }
@@ -75,13 +86,21 @@ class MainActivity : ComponentActivity() {
                     LifecycleEventObserver { _, event ->
                         if (event == Lifecycle.Event.ON_START) {
                             refreshSnapshot()
+                            scope.launch { container.updateCheckController?.resumePendingInstall() }
                         }
                     }
                 lifecycle.addObserver(observer)
                 onDispose { lifecycle.removeObserver(observer) }
             }
 
-            KanvasTheme {
+            KanvasTheme(theme = preferences.appPreferences.theme) {
+                val lightBars = KanvasColors.Background.luminance() > .5f
+                SideEffect {
+                    WindowCompat.getInsetsController(window, window.decorView).apply {
+                        isAppearanceLightStatusBars = lightBars
+                        isAppearanceLightNavigationBars = lightBars
+                    }
+                }
                 if (permissionCoordinator.shouldDisplayGate(sessionSkip, snapshot)) {
                     ShellPermissionGate(
                         snapshot = snapshot,

@@ -32,6 +32,8 @@ include(
     ":source:http",
     ":source:smb",
     ":source:dlna",
+    ":source:google",
+    ":source:connected",
     ":feature:setup",
     ":feature:collection",
     ":feature:settings",

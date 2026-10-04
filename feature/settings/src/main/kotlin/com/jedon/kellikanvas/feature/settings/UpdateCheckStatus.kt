@@ -7,5 +7,6 @@ fun updateCheckStatusLabel(state: UpdateCheckUiState): String = when (state) {
     is UpdateCheckUiState.UpdateAvailable -> "Update available v${state.versionName}"
     UpdateCheckUiState.Downloading -> "Downloading"
     is UpdateCheckUiState.ReadyToInstall -> "Ready to install"
+    is UpdateCheckUiState.PermissionRequired -> "Allow app installation in Android settings, then return to Kanvas."
     is UpdateCheckUiState.Error -> state.message
 }

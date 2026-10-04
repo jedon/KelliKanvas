@@ -18,7 +18,7 @@ class BuildUpdateBundleTest(unittest.TestCase):
         build_job = workflow.split("\n  build-unsigned:", 1)[1].split("\n  apk-sign:", 1)[0]
         apk_job = workflow.split("\n  apk-sign:", 1)[1].split("\n  prepare-update:", 1)[0]
         prepare_job = workflow.split("\n  prepare-update:", 1)[1].split("\n  metadata-sign:", 1)[0]
-        metadata_job = workflow.split("\n  metadata-sign:", 1)[1]
+        metadata_job = workflow.split("\n  metadata-sign:", 1)[1].split("\n  publish:", 1)[0]
         self.assertIn(":platform:update:assembleDebugAndroidTest", verify_job)
         self.assertIn(":platform:update:connectedDebugAndroidTest", device_job)
         self.assertIn("system-images;android-34;", device_job)
@@ -44,7 +44,12 @@ class BuildUpdateBundleTest(unittest.TestCase):
         self.assertNotIn("KELLIKANVAS_KEYSTORE", metadata_job)
         self.assertNotIn("gradlew", metadata_job)
         self.assertIn("contents: read", workflow)
-        self.assertNotIn("contents: write", workflow)
+        self.assertNotIn("contents: write", workflow.split("\n  publish:", 1)[0])
+        publish_job = workflow.split("\n  publish:", 1)[1]
+        self.assertIn("contents: write", publish_job)
+        self.assertNotIn("METADATA_PRIVATE_KEY", publish_job)
+        self.assertNotIn("KELLIKANVAS_KEYSTORE", publish_job)
+        self.assertIn('gh release create "v$VERSION"', publish_job)
         sign_index = metadata_job.index("openssl dgst -sha256 -sign")
         destroy_index = metadata_job.index('destroy_secret "$metadata_key"', sign_index)
         repository_python_index = metadata_job.index("python -", sign_index)
@@ -60,9 +65,9 @@ class BuildUpdateBundleTest(unittest.TestCase):
         ).read_text(encoding="utf-8")
         self.assertIn("<verify-metadata>true</verify-metadata>", verification)
         self.assertIn("<sha256 value=", verification)
-        self.assertIn('artifact name="aapt2-9.2.0-15009934-linux.jar"', verification)
+        self.assertIn('artifact name="aapt2-9.3.0-15703166-linux.jar"', verification)
         self.assertIn(
-            'sha256 value="755f6727fb3f4cce5e319eac0f3618ed4b36b49a46d4bb2cbb6fa8e9175a54d6"',
+            'sha256 value="e772a3dae8354764f1b0793903218427f483982445207f2e4ffc8c2026755bd4"',
             verification,
         )
 
@@ -101,11 +106,11 @@ class BuildUpdateBundleTest(unittest.TestCase):
                     key_id="release-v1",
                 )
 
-            copied = dist / "kellikanvas-42.apk"
-            checksum = dist / "kellikanvas-42.apk.sha256"
+            copied = dist / "KelliKanvas-1.2.3.apk"
+            checksum = dist / "KelliKanvas-1.2.3.apk.sha256"
             self.assertEqual(apk.read_bytes(), copied.read_bytes())
             digest = hashlib.sha256(apk.read_bytes()).hexdigest()
-            self.assertEqual(f"{digest}  kellikanvas-42.apk\n", checksum.read_text(encoding="ascii"))
+            self.assertEqual(f"{digest}  KelliKanvas-1.2.3.apk\n", checksum.read_text(encoding="ascii"))
             self.assertEqual(signer, manifest["signerSha256"])
             self.assertEqual(9, manifest["sequence"])
             envelope = json.loads((dist / "update-envelope.json").read_text(encoding="utf-8"))

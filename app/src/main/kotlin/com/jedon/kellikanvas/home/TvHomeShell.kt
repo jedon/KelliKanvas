@@ -40,12 +40,12 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.InputMode
 import androidx.compose.ui.platform.LocalInputModeManager
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.jedon.kellikanvas.catalog.SelectedRoot
 import com.jedon.kellikanvas.feature.collection.CollectionHubScreen
 import com.jedon.kellikanvas.model.SourceProfileId
+import com.jedon.kellikanvas.ui.tv.KanvasBrand
 import com.jedon.kellikanvas.ui.tv.KanvasColors
 import com.jedon.kellikanvas.ui.tv.KanvasNavigationItem
 import com.jedon.kellikanvas.ui.tv.KanvasTheme
@@ -89,6 +89,10 @@ internal fun TvHomeShell(
     previewLoading: Boolean = false,
     tailscalePrompt: Boolean = false,
     onOpenTailscale: () -> Unit = {},
+    onAddGoogleDrive: () -> Unit = {},
+    onAddGooglePhotos: () -> Unit = {},
+    onReconnectGoogle: (SourceProfileId) -> Unit = {},
+    onBrowseConnectors: () -> Unit = {},
 ) {
     val activity = LocalActivity.current
     var selectedDestination by rememberSaveable { mutableStateOf(TvHomeDestination.Home) }
@@ -137,7 +141,7 @@ internal fun TvHomeShell(
                     .focusRestorer(),
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-                Text("KelliKanvas", fontSize = 22.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(start = 12.dp))
+                KanvasBrand(Modifier.padding(start = 4.dp))
                 Text(
                     "YOUR PERSONAL GALLERY",
                     color = KanvasColors.Muted,
@@ -176,6 +180,10 @@ internal fun TvHomeShell(
                         onRemoveRoot,
                         onBack = { selectedDestination = TvHomeDestination.Home },
                         loadError = collectionLoadError,
+                        onAddGoogleDrive = onAddGoogleDrive,
+                        onAddGooglePhotos = onAddGooglePhotos,
+                        onReconnectGoogle = onReconnectGoogle,
+                        onBrowseConnectors = onBrowseConnectors,
                     )
                     else -> HomeCenterPage(
                         canStartSlideshow, bootstrapUi, bootstrapError, onRetryBootstrap,

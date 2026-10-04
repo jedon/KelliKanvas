@@ -6,6 +6,7 @@ import base64
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 from dataclasses import dataclass
@@ -13,7 +14,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 PACKAGE_NAME = "com.jedon.kellikanvas"
-ORIGIN = "http://darklingnas:8088"
+ORIGIN = "https://kanvas.kelli.photo/updates"
 APK_MAX_BYTES = 500 * 1024 * 1024
 
 
@@ -83,6 +84,7 @@ def _atomic_write(path, data):
 
 
 ALLOWED_ORIGINS = {
+    "https://kanvas.kelli.photo/updates",
     "http://darklingnas:8088",
     "http://192.168.68.81:8088",
 }
@@ -101,14 +103,13 @@ def prepare_bundle(
     if sequence is None or sequence <= 0:
         raise BundleError("positive authenticated release sequence is required")
     parsed = urlparse(origin)
-    normalized = f"{parsed.scheme}://{parsed.hostname}:{parsed.port}"
     if (
         origin.rstrip("/") not in ALLOWED_ORIGINS
-        or normalized not in ALLOWED_ORIGINS
-        or (parsed.path, parsed.query, parsed.fragment) != ("", "", "")
+        or parsed.username is not None or parsed.password is not None
+        or parsed.query or parsed.fragment
     ):
         raise BundleError(
-            "origin must be http://darklingnas:8088 or http://192.168.68.81:8088"
+            "origin must be the approved Kanvas update feed or legacy NAS feed"
         )
     size = apk.stat().st_size
     if size <= 0 or size > APK_MAX_BYTES:
@@ -120,7 +121,10 @@ def prepare_bundle(
         raise BundleError("APK signer is missing")
 
     digest = hashlib.sha256(apk.read_bytes()).hexdigest()
-    apk_name = f"kellikanvas-{metadata.version_code}.apk"
+    if not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", metadata.version_name):
+        raise BundleError("APK version name must have three numeric components")
+    origin = origin.rstrip("/")
+    apk_name = f"KelliKanvas-{metadata.version_name}.apk"
     checksum_name = f"{apk_name}.sha256"
     manifest = {
         "apkUrl": f"{origin}/{apk_name}",

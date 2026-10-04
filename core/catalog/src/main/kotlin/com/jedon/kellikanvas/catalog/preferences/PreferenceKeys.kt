@@ -8,6 +8,7 @@ import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 
 object PreferenceKeys {
+    val theme = stringPreferencesKey("app_theme_v1")
     val landscapeLayout = stringPreferencesKey("landscape_layout_v1")
     val singlePortraitLayout = stringPreferencesKey("single_portrait_layout_v1")
     val singlePortraitFit = stringPreferencesKey("single_portrait_fit_v1")
@@ -34,6 +35,7 @@ object PreferenceKeys {
 
     val keys: Set<Preferences.Key<*>> =
         setOf(
+            theme,
             landscapeLayout,
             singlePortraitLayout,
             singlePortraitFit,

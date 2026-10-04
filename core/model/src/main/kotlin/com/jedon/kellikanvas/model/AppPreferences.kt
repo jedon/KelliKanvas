@@ -21,6 +21,14 @@ enum class BrightnessMode {
     SCHEDULE,
 }
 
+enum class AppTheme {
+    KELLI,
+    GALLERY,
+    MIDNIGHT,
+    PAPER,
+    SYSTEM,
+}
+
 data class AppPreferences(
     val landscapeLayout: LayoutMode = LayoutMode.FILL_SCREEN,
     val singlePortraitLayout: LayoutMode = LayoutMode.BLURRED_BORDER,
@@ -43,6 +51,7 @@ data class AppPreferences(
     val filenameOverlayEnabled: Boolean = false,
     val presenceEnabled: Boolean = false,
     val brightnessMode: BrightnessMode = BrightnessMode.FOLLOW_TV,
+    val theme: AppTheme = AppTheme.KELLI,
 ) {
     init {
         require(slideDurationMillis >= 1_000) {

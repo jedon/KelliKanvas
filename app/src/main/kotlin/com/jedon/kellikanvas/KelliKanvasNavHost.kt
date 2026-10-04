@@ -25,6 +25,7 @@ import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import com.jedon.kellikanvas.catalog.CatalogIds
 import com.jedon.kellikanvas.catalog.SelectedRoot
+import com.jedon.kellikanvas.catalog.SourceProfileKind
 import com.jedon.kellikanvas.catalog.preferences.AppPreferencesState
 import com.jedon.kellikanvas.diagnostics.ConnectivityTestRunner
 import com.jedon.kellikanvas.diagnostics.DiagnosticsScreen
@@ -46,6 +47,7 @@ import com.jedon.kellikanvas.feature.settings.UpdateCheckUiState
 import com.jedon.kellikanvas.feature.setup.SafSetupController
 import com.jedon.kellikanvas.feature.setup.SafSetupScreen
 import com.jedon.kellikanvas.feature.slideshow.SimpleSlideshowScreen
+import com.jedon.kellikanvas.google.GoogleSetupScreen
 import com.jedon.kellikanvas.home.HomeScreen
 import com.jedon.kellikanvas.home.PhotosBootstrapUi
 import com.jedon.kellikanvas.logging.DiagLog
@@ -87,7 +89,11 @@ private object ShellRoutes {
     const val PLAYBACK = "playback"
     const val AMBIENT = "ambient"
     const val SYSTEM = "system"
+    const val ACCOUNT = "account"
     const val DIAGNOSTICS = "diagnostics"
+    const val CONNECTORS = "connectors"
+    const val CONNECTOR_SETUP = "connector_setup/{provider}/{profileId}"
+    const val GOOGLE_SETUP = "google_setup/{kind}/{profileId}"
 }
 
 internal data class ShellState(
@@ -131,6 +137,35 @@ fun KelliKanvasNavHost(
 
     LaunchedEffect(container) {
         container.preferences.preferences.collect { preferences = it }
+    }
+
+    LaunchedEffect(container) {
+        while (true) {
+            kotlinx.coroutines.delay(30_000)
+            try {
+                if (container.cloudAccount.sync()) {
+                    reloadShellState()
+                    collectionRevision++
+                    container.cloudAccount.syncStatus.value = "Account settings and connections synced."
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                // Preserve local edits on conflicts and network failures; Account offers explicit restore.
+                container.cloudAccount.syncStatus.value = "Account sync needs attention. Check your connection or restore the account before saving again."
+            }
+        }
+    }
+
+    LaunchedEffect(container) {
+        while (true) {
+            try {
+                container.cloudAccount.browseFromPhone()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) { /* Offline or revoked: retry without exposing provider details. */ }
+            kotlinx.coroutines.delay(3_000)
+        }
     }
 
     LaunchedEffect(container, bootstrapAttempt) {
@@ -207,6 +242,20 @@ fun KelliKanvasNavHost(
         }
     }
 
+    fun openGoogle(kind: SourceKind, id: SourceProfileId? = null) {
+        navController.navigate("google_setup/${kind.name}/${id?.value ?: "new"}")
+    }
+    fun reconnectGoogle(id: SourceProfileId) {
+        scope.launch {
+            val kind = (container.database.sourceProfiles.get(id)?.kind as? SourceProfileKind.Known)?.value
+            if (kind == SourceKind.GOOGLE_DRIVE || kind == SourceKind.GOOGLE_PHOTOS) {
+                openGoogle(kind, id)
+            } else {
+                container.connectorStore.read(id)?.let { navController.navigate("connector_setup/${it.provider.name}/${id.value}") }
+            }
+        }
+    }
+
     NavHost(
         navController = navController,
         startDestination = ShellRoutes.HOME,
@@ -247,6 +296,10 @@ fun KelliKanvasNavHost(
                 onAddLocalFolder = { navController.navigate(ShellRoutes.SETUP) },
                 onAddQnap = { navController.navigate(ShellRoutes.DLNA_SETUP) },
                 onConnectHouseholdNas = { navController.navigate(ShellRoutes.SMB_SETUP) },
+                onAddGoogleDrive = { openGoogle(SourceKind.GOOGLE_DRIVE) },
+                onAddGooglePhotos = { openGoogle(SourceKind.GOOGLE_PHOTOS) },
+                onReconnectGoogle = ::reconnectGoogle,
+                onBrowseConnectors = { navController.navigate(ShellRoutes.CONNECTORS) },
                 onRemoveRoot = { root ->
                     scope.launch {
                         runCatching { controller.removeRoot(root) }
@@ -291,6 +344,10 @@ fun KelliKanvasNavHost(
                     onAddLocalFolder = { navController.navigate(ShellRoutes.SETUP) },
                     onAddQnap = { navController.navigate(ShellRoutes.DLNA_SETUP) },
                     onConnectHouseholdNas = { navController.navigate(ShellRoutes.SMB_SETUP) },
+                    onAddGoogleDrive = { openGoogle(SourceKind.GOOGLE_DRIVE) },
+                    onAddGooglePhotos = { openGoogle(SourceKind.GOOGLE_PHOTOS) },
+                    onReconnectGoogle = ::reconnectGoogle,
+                    onBrowseConnectors = { navController.navigate(ShellRoutes.CONNECTORS) },
                     onRemoveRoot = { root ->
                         scope.launch {
                             runCatching { controller.removeRoot(root) }
@@ -303,6 +360,54 @@ fun KelliKanvasNavHost(
                     loadError = collectionState.loadError,
                 )
             }
+        }
+        composable(ShellRoutes.CONNECTORS) {
+            com.jedon.kellikanvas.connectors.ConnectorCatalogScreen(
+                onChoose = { provider -> navController.navigate("connector_setup/${provider.name}/new") },
+                onBack = { navController.popBackStack() },
+            )
+        }
+        composable(ShellRoutes.CONNECTOR_SETUP) { entry ->
+            val provider = com.jedon.kellikanvas.source.connected.PhotoConnector.entries.firstOrNull { it.name == entry.arguments?.getString("provider") } ?: return@composable
+            val profileId = entry.arguments?.getString("profileId")?.takeUnless { it == "new" }?.let(::SourceProfileId)
+            com.jedon.kellikanvas.connectors.ConnectorSetupScreen(
+                container,
+                provider,
+                profileId,
+                onFinished = {
+                    scope.launch {
+                        reloadShellState()
+                        collectionRevision++
+                        navController.navigate(ShellRoutes.COLLECTION) {
+                            popUpTo(ShellRoutes.HOME) { inclusive = false }
+                            launchSingleTop = true
+                        }
+                    }
+                },
+                onBack = { navController.popBackStack() },
+                onHostedPhoneSetup = { navController.navigate(ShellRoutes.ACCOUNT) },
+            )
+        }
+        composable(ShellRoutes.GOOGLE_SETUP) { entry ->
+            val kind = if (entry.arguments?.getString("kind") == SourceKind.GOOGLE_DRIVE.name) SourceKind.GOOGLE_DRIVE else SourceKind.GOOGLE_PHOTOS
+            val profileId = entry.arguments?.getString("profileId")?.takeUnless { it == "new" }?.let(::SourceProfileId)
+            GoogleSetupScreen(
+                container.googleSources,
+                container.database,
+                kind,
+                profileId,
+                onFinished = {
+                    scope.launch {
+                        reloadShellState()
+                        collectionRevision++
+                        navController.navigate(ShellRoutes.COLLECTION) {
+                            popUpTo(ShellRoutes.HOME) { inclusive = false }
+                            launchSingleTop = true
+                        }
+                    }
+                },
+                onBack = { navController.popBackStack() },
+            )
         }
         composable(ShellRoutes.SETUP) {
             PhoneMaterialTheme {
@@ -365,6 +470,7 @@ fun KelliKanvasNavHost(
             val context = LocalContext.current
             PhoneMaterialTheme {
                 SmbSetupScreen(
+                    onHostedPhoneSetup = { navController.navigate(ShellRoutes.ACCOUNT) },
                     controller =
                     SmbSetupController(
                         database = container.database,
@@ -419,7 +525,18 @@ fun KelliKanvasNavHost(
                 onBack = { navController.popBackStack() },
                 onOpenDiagnostics = { navController.navigate(ShellRoutes.DIAGNOSTICS) },
                 updateCheckController = container.updateCheckController,
+                onOpenAccount = { navController.navigate(ShellRoutes.ACCOUNT) },
             )
+        }
+        composable(ShellRoutes.ACCOUNT) {
+            PhoneMaterialTheme {
+                com.jedon.kellikanvas.account.AccountScreen(container.cloudAccount, onChanged = {
+                    scope.launch {
+                        reloadShellState()
+                        collectionRevision++
+                    }
+                }, onBack = { navController.popBackStack() })
+            }
         }
         composable(ShellRoutes.DIAGNOSTICS) {
             val diagnosticsState = shellState ?: return@composable
@@ -529,6 +646,8 @@ private suspend fun loadCollectionScreenState(
         .distinct()
         .associateWith { profileId ->
             when {
+                container.database.googleConnections.get(profileId) != null ->
+                    container.database.sourceProfiles.get(profileId)?.displayName ?: "Google"
                 container.database.safConnections.get(profileId) != null -> "Local"
                 container.database.smbConnections.get(profileId) != null ->
                     container.database.smbConnections.get(profileId)
@@ -659,6 +778,35 @@ internal suspend fun loadShellState(container: AppContainer): ShellState {
                         restored = true,
                     )
                 }
+                database.googleConnections.get(profileId)?.let { connection ->
+                    val profile = database.sourceProfiles.get(profileId)
+                    val kind = (profile?.kind as? SourceProfileKind.Known)?.value
+                    if (kind == SourceKind.GOOGLE_DRIVE || kind == SourceKind.GOOGLE_PHOTOS) {
+                        val adapter = container.googleSources.restore(connection, kind)
+                        if (adapter != null) {
+                            adapters[profileId] = adapter
+                        } else {
+                            sourceNotices += "${profile.displayName} needs reconnecting from Collection"
+                        }
+                        restoreStatuses += RootRestoreStatus(
+                            profileId,
+                            profile.displayName,
+                            kind,
+                            adapter != null,
+                            if (adapter == null) "Google connection needs reconnecting" else null,
+                        )
+                    }
+                }
+                val connectedProfile = database.sourceProfiles.get(profileId)
+                val connectedKind = (connectedProfile?.kind as? SourceProfileKind.Known)?.value
+                if (com.jedon.kellikanvas.source.connected.PhotoConnector.entries.any { it.kind == connectedKind }) {
+                    val config = container.connectorStore.read(profileId)
+                    val adapter = config?.takeIf { it.provider.kind == connectedKind }?.let {
+                        com.jedon.kellikanvas.source.connected.connectedPhotoSource(profileId, it, container.httpClient)
+                    }
+                    if (adapter != null) adapters[profileId] = adapter else sourceNotices += "${connectedProfile?.displayName} needs reconnecting from Collection"
+                    restoreStatuses += RootRestoreStatus(profileId, connectedProfile?.displayName.orEmpty(), connectedKind, adapter != null, if (adapter == null) "Connection needs reconnecting" else null)
+                }
                 if (restoreStatuses.none { it.profileId == profileId }) {
                     restoreStatuses += RootRestoreStatus(
                         profileId = profileId,
@@ -688,7 +836,7 @@ internal suspend fun loadShellState(container: AppContainer): ShellState {
             roots = playableRoots,
             adapters = adapters,
             loadError = if (playableRoots.isEmpty() && roots.isNotEmpty()) {
-                "Saved photo folders could not be opened. Open Menu to reconnect."
+                "Saved photo folders could not be opened. Open Collection to reconnect."
             } else {
                 null
             },
@@ -706,11 +854,20 @@ internal suspend fun loadShellState(container: AppContainer): ShellState {
     }
 }
 
-private fun releaseRetiredSource(
+private suspend fun releaseRetiredSource(
     context: Context,
     container: AppContainer,
     retired: RetiredSourceProfile,
 ) {
+    retired.googleConnection?.let { connection ->
+        try {
+            container.googleSources.disconnect(connection)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            DiagLog.w(TAG, "Google device removal could not be completed; local connection removed")
+        }
+    }
     container.credentialVault.remove(retired.profileId)
     val treeUri = retired.safTreeUri ?: return
     try {

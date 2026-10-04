@@ -19,7 +19,7 @@ class QnapDeploymentTest(unittest.TestCase):
         self.assertRegex(compose, r"image: nginx:[^@\s]+@sha256:[0-9a-f]{64}")
         nginx = (ROOT / "deploy/qnap/nginx.conf").read_text(encoding="utf-8")
         self.assertIn("if ($request_method !~ ^(GET|HEAD)$)", nginx)
-        self.assertIn("X-Content-Type-Options nosniff", nginx)
+        self.assertRegex(nginx, r'add_header X-Content-Type-Options "?nosniff"? always;')
         self.assertIn("location = /update-envelope.json", nginx)
         self.assertNotIn("location = /manifest.json", nginx)
         readme = (ROOT / "deploy/qnap/README.md").read_text(encoding="utf-8")

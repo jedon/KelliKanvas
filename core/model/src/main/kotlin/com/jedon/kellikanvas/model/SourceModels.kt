@@ -7,6 +7,18 @@ enum class SourceKind {
     SMB,
     SAF,
     HTTP,
+    GOOGLE_DRIVE,
+    GOOGLE_PHOTOS,
+    JELLYFIN,
+    EMBY,
+    IMMICH,
+    PLEX,
+    WEBDAV,
+    DROPBOX,
+    ONEDRIVE,
+    BOX,
+    S3,
+    FLICKR,
 }
 
 data class FolderRef(

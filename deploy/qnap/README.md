@@ -1,5 +1,13 @@
 # QNAP APK host
 
+Kanvas 1.0.22 and later use the authenticated HTTPS feed at
+`https://kanvas.kelli.photo/updates/update-envelope.json`. This LAN host remains
+available for manual APK transfers. Set `KELLIKANVAS_BIND_ADDRESS=192.168.68.62`
+in this Compose project's environment before starting it.
+
+Installation compatibility checks should cover API 28, 30, 34, and 36. The
+release workflow runs the updater instrumentation suite on API 34.
+
 QNAP Container Station serves `/share/Public/KelliKanvas` through nginx at
 `http://darklingnas.local:8088` (`http://192.168.68.62:8088`). The Compose
 file binds only the stable household LAN address `192.168.68.62`; the NAS

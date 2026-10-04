@@ -5,4 +5,4 @@ import com.jedon.kellikanvas.ui.tv.KanvasTheme
 
 @Suppress("ktlint:standard:function-naming")
 @Composable
-fun SettingsMaterialTheme(content: @Composable () -> Unit) = KanvasTheme(content)
+fun SettingsMaterialTheme(content: @Composable () -> Unit) = KanvasTheme(content = content)

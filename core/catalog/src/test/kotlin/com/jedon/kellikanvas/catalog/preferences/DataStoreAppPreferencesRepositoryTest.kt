@@ -11,6 +11,7 @@ import androidx.datastore.preferences.core.mutablePreferencesOf
 import androidx.datastore.preferences.core.stringPreferencesKey
 import com.google.common.truth.Truth.assertThat
 import com.jedon.kellikanvas.model.AppPreferences
+import com.jedon.kellikanvas.model.AppTheme
 import com.jedon.kellikanvas.model.BlurStrength
 import com.jedon.kellikanvas.model.BrightnessMode
 import com.jedon.kellikanvas.model.LayoutMode
@@ -58,6 +59,7 @@ class DataStoreAppPreferencesRepositoryTest {
             AppPreferencesState(
                 appPreferences =
                 AppPreferences(
+                    theme = AppTheme.PAPER,
                     landscapeLayout = LayoutMode.SOLID_BACKGROUND,
                     singlePortraitLayout = LayoutMode.FULL_PHOTO,
                     singlePortraitFit = PortraitFit.FILL_SCREEN,
@@ -117,6 +119,7 @@ class DataStoreAppPreferencesRepositoryTest {
             it.copy(
                 reducedMotion = true,
                 lastHomeControl = HomeControl.PLAYBACK,
+                appPreferences = it.appPreferences.copy(theme = AppTheme.MIDNIGHT),
             )
         }
         first.close()
@@ -126,6 +129,7 @@ class DataStoreAppPreferencesRepositoryTest {
 
         assertThat(restored.reducedMotion).isTrue()
         assertThat(restored.lastHomeControl).isEqualTo(HomeControl.PLAYBACK)
+        assertThat(restored.appPreferences.theme).isEqualTo(AppTheme.MIDNIGHT)
         second.close()
         folder.delete()
     }
@@ -208,6 +212,7 @@ class DataStoreAppPreferencesRepositoryTest {
             it[PreferenceKeys.transitionType] = "transition.future_v9"
             it[PreferenceKeys.playbackOrder] = "playback.name.v1"
             it[PreferenceKeys.clockOverlayEnabled] = true
+            it[PreferenceKeys.theme] = "theme.future.v9"
         }
 
         val restored = fixture.repository.preferences.first().appPreferences
@@ -216,6 +221,7 @@ class DataStoreAppPreferencesRepositoryTest {
         assertThat(restored.transitionType).isEqualTo(AppPreferences().transitionType)
         assertThat(restored.playbackOrder).isEqualTo(PlaybackOrder.NAME)
         assertThat(restored.clockOverlayEnabled).isTrue()
+        assertThat(restored.theme).isEqualTo(AppTheme.KELLI)
         fixture.close()
     }
 

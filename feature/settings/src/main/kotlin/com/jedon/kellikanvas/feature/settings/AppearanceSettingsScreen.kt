@@ -4,6 +4,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import com.jedon.kellikanvas.catalog.preferences.AppPreferencesState
 import com.jedon.kellikanvas.model.AppPreferences
+import com.jedon.kellikanvas.model.AppTheme
 
 @Suppress("ktlint:standard:function-naming")
 @Composable
@@ -19,6 +20,14 @@ fun AppearanceSettingsScreen(
         onBack = onBack,
         modifier = modifier,
     ) {
+        item { SettingsSectionHeader(title = "App theme") }
+        AppTheme.entries.forEach { theme ->
+            item(key = "theme-$theme") {
+                ThemeChoice(theme, app.theme == theme) {
+                    onUpdatePreferences { current -> current.copy(theme = theme) }
+                }
+            }
+        }
         item {
             SettingsSectionHeader(title = "Layouts")
         }

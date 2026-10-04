@@ -8,6 +8,7 @@ class AppPreferencesTest {
     @Test
     fun `defaults match every approved playback and appearance decision`() {
         val preferences = AppPreferences()
+        assertThat(preferences.theme).isEqualTo(AppTheme.KELLI)
 
         assertThat(preferences.landscapeLayout).isEqualTo(LayoutMode.FILL_SCREEN)
         assertThat(preferences.singlePortraitLayout).isEqualTo(LayoutMode.BLURRED_BORDER)

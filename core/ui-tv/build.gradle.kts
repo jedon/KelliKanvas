@@ -11,6 +11,7 @@ android {
 }
 
 dependencies {
+    implementation(libs.zxing.core)
     implementation(project(":core:model"))
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.foundation)

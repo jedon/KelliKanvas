@@ -9,7 +9,13 @@ class SlideshowPlayerState(
     total: Int,
     val intervalMillis: Long,
 ) {
-    private val totalItems = total.also { require(it > 0) { "Slideshow must contain at least one item" } }
+    private var totalItems = total.also { require(it > 0) { "Slideshow must contain at least one item" } }
+
+    fun updatePlaylistSize(total: Int, preferredIndex: Int) {
+        require(total > 0) { "Slideshow must contain at least one item" }
+        totalItems = total
+        index = preferredIndex.coerceIn(0, total - 1)
+    }
 
     var index by mutableIntStateOf(0)
         private set

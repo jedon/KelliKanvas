@@ -36,6 +36,8 @@ sealed class UpdateCheckUiState {
         val versionName: String,
     ) : UpdateCheckUiState()
 
+    data class PermissionRequired(val versionName: String) : UpdateCheckUiState()
+
     data class Error(
         val message: String,
     ) : UpdateCheckUiState()
@@ -47,12 +49,46 @@ class UpdateCheckController(
     private val launchInstall: (File) -> InstallResult,
     private val readInstalled: () -> InstalledPackage,
     private val dispatcher: CoroutineDispatcher = Dispatchers.IO,
+    private val canInstall: () -> Boolean = { true },
 ) {
     private val mutex = Mutex()
     private val _state = MutableStateFlow<UpdateCheckUiState>(UpdateCheckUiState.Idle)
     val state: StateFlow<UpdateCheckUiState> = _state.asStateFlow()
+    private var pendingInstall: Pair<File, String>? = null
+
+    /** Return from Android's permission screen without downloading the APK again. */
+    suspend fun resumePendingInstall() {
+        if (_state.value !is UpdateCheckUiState.PermissionRequired || !canInstall()) return
+        installPending()
+    }
+
+    private suspend fun installPending(): Boolean = mutex.withLock {
+        val pending = pendingInstall ?: return@withLock false
+        try {
+            _state.value = withContext(dispatcher) {
+                if (!pending.first.isFile) {
+                    pendingInstall = null
+                    return@withContext UpdateCheckUiState.Error("Downloaded update is no longer available. Check again.")
+                }
+                when (launchInstall(pending.first)) {
+                    InstallResult.PERMISSION_REQUIRED -> UpdateCheckUiState.PermissionRequired(pending.second)
+                    InstallResult.CONFIRMATION_LAUNCHED -> {
+                        pendingInstall = null
+                        UpdateCheckUiState.ReadyToInstall(pending.second)
+                    }
+                }
+            }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            _state.value = UpdateCheckUiState.Error("Could not open the installer. Check for updates to retry.")
+            pendingInstall = null
+        }
+        true
+    }
 
     suspend fun checkForUpdates() {
+        if (installPending()) return
         mutex.withLock {
             when (_state.value) {
                 UpdateCheckUiState.Checking,
@@ -82,11 +118,12 @@ class UpdateCheckController(
                     yield()
                     _state.value = UpdateCheckUiState.Downloading
                     val apk = downloadAndVerify(manifest, installed)
+                    pendingInstall = apk to manifest.versionName
                     when (launchInstall(apk)) {
                         InstallResult.PERMISSION_REQUIRED ->
-                            UpdateCheckUiState.Error("Install permission required")
+                            UpdateCheckUiState.PermissionRequired(manifest.versionName)
                         InstallResult.CONFIRMATION_LAUNCHED ->
-                            UpdateCheckUiState.ReadyToInstall(manifest.versionName)
+                            UpdateCheckUiState.ReadyToInstall(manifest.versionName).also { pendingInstall = null }
                     }
                 }
             DiagLog.i(TAG, "Update check finished: $result")

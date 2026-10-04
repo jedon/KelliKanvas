@@ -75,6 +75,10 @@ fun HomeScreen(
     adapters: Map<SourceProfileId, SourceAdapter> = emptyMap(),
     tailscalePrompt: Boolean = false,
     onOpenTailscale: () -> Unit = {},
+    onAddGoogleDrive: () -> Unit = {},
+    onAddGooglePhotos: () -> Unit = {},
+    onReconnectGoogle: (SourceProfileId) -> Unit = {},
+    onBrowseConnectors: () -> Unit = {},
 ) {
     LaunchedEffect(autoStartSlideshowToken, canStartSlideshow) {
         if (AutoStartSlideshowToken.consumeIfReady(autoStartSlideshowToken, canStartSlideshow, onAutoStartSlideshowConsumed)) {
@@ -95,6 +99,7 @@ fun HomeScreen(
             bootstrapUi, bootstrapError, onRetryBootstrap, collectionLoadError,
             updateAvailableVersion, sourceNotices, preview.image, preview.loading,
             tailscalePrompt, onOpenTailscale,
+            onAddGoogleDrive, onAddGooglePhotos, onReconnectGoogle, onBrowseConnectors,
         )
         return
     }
@@ -128,6 +133,10 @@ fun HomeScreen(
                         onRemoveRoot,
                         { tab = TvHomeDestination.Home },
                         loadError = collectionLoadError,
+                        onAddGoogleDrive = onAddGoogleDrive,
+                        onAddGooglePhotos = onAddGooglePhotos,
+                        onReconnectGoogle = onReconnectGoogle,
+                        onBrowseConnectors = onBrowseConnectors,
                     )
                     else -> Column(
                         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp),

@@ -1,0 +1,18 @@
+[Unit]
+Description=Publish verified KelliKanvas GitHub releases to the HTTPS update feed
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=kanvas-updater
+Group=kanvas-updater
+ExecStart=/usr/bin/python3 /opt/kanvas-updater/sync_github_updates.py --destination /var/www/kanvas-updates --staging /var/www/kanvas-update-staging --public-key /opt/kanvas-updater/metadata-public.pem --key-id kanvas-2026
+TimeoutStartSec=600
+UMask=0022
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/www/kanvas-updates /var/www/kanvas-update-staging
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX

@@ -3,7 +3,9 @@ plugins {
     id("com.jedon.kellikanvas.android.compose")
 }
 
-val metadataPublicKeyBase64 = providers.environmentVariable("KELLIKANVAS_METADATA_PUBLIC_KEY_BASE64").orNull
+val metadataPublicKeyBase64 = providers.environmentVariable("KELLIKANVAS_METADATA_PUBLIC_KEY_BASE64").orNull?.takeIf { it.isNotBlank() }
+    ?: rootProject.file("deploy/update-metadata-pins.txt").readText().trim()
+val publicDistribution = providers.gradleProperty("publicDistribution").orNull == "true"
 
 fun escapeBuildConfigString(value: String): String = buildString {
     append('"')
@@ -57,9 +59,6 @@ fun secretProperty(name: String): String {
     return ""
 }
 
-val householdSmbUsername = secretProperty("QNAP_NAS_USERNAME")
-val householdSmbPassword = secretProperty("QNAP_NAS_PASSWORD")
-
 android {
     namespace = "com.jedon.kellikanvas"
     buildFeatures {
@@ -68,16 +67,19 @@ android {
 
     defaultConfig {
         applicationId = "com.jedon.kellikanvas"
-        versionCode = 19
-        versionName = "1.0.18"
+        versionCode = 23
+        versionName = "1.0.22"
         buildConfigField(
             "String",
             "UPDATE_METADATA_PUBLIC_KEY_BASE64",
             "\"${metadataPublicKeyBase64.orEmpty()}\"",
         )
-        // Household SMB credentials from env / .env / local.properties (never commit values).
-        buildConfigField("String", "HOUSEHOLD_SMB_USERNAME", escapeBuildConfigString(householdSmbUsername))
-        buildConfigField("String", "HOUSEHOLD_SMB_PASSWORD", escapeBuildConfigString(householdSmbPassword))
+        // NAS login is supplied at runtime from the phone pairing form, never from build inputs.
+        buildConfigField("String", "HOUSEHOLD_SMB_USERNAME", "\"\"")
+        buildConfigField("String", "HOUSEHOLD_SMB_PASSWORD", "\"\"")
+        buildConfigField("String", "CLOUD_SERVER_URL", escapeBuildConfigString(secretProperty("KELLIKANVAS_SERVER_URL").ifBlank { "https://kanvas.kelli.photo" }))
+        buildConfigField("String", "GOOGLE_TV_CLIENT_ID", escapeBuildConfigString(if (publicDistribution) "" else secretProperty("KELLIKANVAS_GOOGLE_TV_CLIENT_ID")))
+        buildConfigField("String", "GOOGLE_TV_CLIENT_SECRET", escapeBuildConfigString(if (publicDistribution) "" else secretProperty("KELLIKANVAS_GOOGLE_TV_CLIENT_SECRET")))
     }
 
     testOptions {
@@ -116,6 +118,8 @@ dependencies {
     implementation(project(":platform:update"))
     implementation(project(":renderer:surface"))
     implementation(project(":source:dlna"))
+    implementation(project(":source:google"))
+    implementation(project(":source:connected"))
     implementation(project(":source:http"))
     implementation(project(":source:saf"))
     implementation(project(":source:smb"))
@@ -132,10 +136,14 @@ dependencies {
     implementation(libs.compose.material.icons.core)
     implementation(libs.tv.material)
     implementation(libs.okhttp)
+    implementation(libs.google.auth)
+    implementation(libs.zxing.core)
+    implementation(libs.kotlinx.serialization.json)
 
     debugImplementation(libs.compose.ui.tooling)
     debugImplementation(libs.compose.ui.test.manifest)
     testImplementation(libs.compose.ui.test.junit4)
     testImplementation(project(":core:testing"))
     testImplementation(libs.robolectric)
+    testImplementation(libs.okhttp.mockwebserver)
 }

@@ -22,8 +22,9 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         SafConnectionEntity::class,
         DlnaConnectionEntity::class,
         SmbConnectionEntity::class,
+        GoogleConnectionEntity::class,
     ],
-    version = 4,
+    version = 5,
     exportSchema = true,
 )
 abstract class KelliKanvasDatabase : RoomDatabase() {
@@ -48,6 +49,9 @@ abstract class KelliKanvasDatabase : RoomDatabase() {
     internal abstract fun roomDlnaConnections(): RoomDlnaConnectionDao
 
     internal abstract fun roomSmbConnections(): RoomSmbConnectionDao
+    internal abstract fun roomGoogleConnections(): RoomGoogleConnectionDao
+
+    val googleConnections: GoogleConnectionDao by lazy { GoogleConnectionDao(roomGoogleConnections()) }
 
     val sourceProfiles: SourceProfileDao by lazy {
         SourceProfileDao(roomSourceProfiles())
@@ -103,7 +107,7 @@ object KelliKanvasDatabaseFactory {
         KelliKanvasDatabase::class.java,
         databaseName,
     )
-        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
         .build()
 
     fun inMemory(context: Context): KelliKanvasDatabase = Room.inMemoryDatabaseBuilder(
@@ -159,6 +163,22 @@ val MIGRATION_3_4 = object : Migration(3, 4) {
                 `domain` TEXT NOT NULL,
                 `username` TEXT NOT NULL,
                 `display_name` TEXT NOT NULL,
+                PRIMARY KEY(`profile_id`),
+                FOREIGN KEY(`profile_id`) REFERENCES `source_profiles`(`profile_id`)
+                    ON UPDATE NO ACTION ON DELETE CASCADE
+            )
+            """.trimIndent(),
+        )
+    }
+}
+
+val MIGRATION_4_5 = object : Migration(4, 5) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS `google_connections` (
+                `profile_id` TEXT NOT NULL, `resource_id` TEXT NOT NULL,
+                `settings_uri` TEXT NOT NULL, `client_id` TEXT NOT NULL,
                 PRIMARY KEY(`profile_id`),
                 FOREIGN KEY(`profile_id`) REFERENCES `source_profiles`(`profile_id`)
                     ON UPDATE NO ACTION ON DELETE CASCADE

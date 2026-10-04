@@ -22,6 +22,7 @@ import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import com.jedon.kellikanvas.R
 import com.jedon.kellikanvas.ui.tv.HighContrastFocusDefaults
+import com.jedon.kellikanvas.ui.tv.KanvasBrand
 import com.jedon.kellikanvas.ui.tv.KanvasButton
 import com.jedon.kellikanvas.ui.tv.KanvasPageHeader
 
@@ -44,6 +45,7 @@ fun ShellPermissionGate(
         verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterVertically),
         horizontalAlignment = Alignment.Start,
     ) {
+        KanvasBrand()
         KanvasPageHeader(
             title = stringResource(R.string.permission_gate_title),
             subtitle = stringResource(R.string.permission_gate_subtitle),

@@ -202,6 +202,18 @@ private fun SourceProfileKind.toStableCode(): String = when (this) {
             SourceKind.SMB -> "smb_v1"
             SourceKind.SAF -> "saf_v1"
             SourceKind.HTTP -> "http_v1"
+            SourceKind.GOOGLE_DRIVE -> "google_drive_v1"
+            SourceKind.GOOGLE_PHOTOS -> "google_photos_v1"
+            SourceKind.JELLYFIN -> "jellyfin_v1"
+            SourceKind.EMBY -> "emby_v1"
+            SourceKind.IMMICH -> "immich_v1"
+            SourceKind.PLEX -> "plex_v1"
+            SourceKind.WEBDAV -> "webdav_v1"
+            SourceKind.DROPBOX -> "dropbox_v1"
+            SourceKind.ONEDRIVE -> "onedrive_v1"
+            SourceKind.BOX -> "box_v1"
+            SourceKind.S3 -> "s3_v1"
+            SourceKind.FLICKR -> "flickr_v1"
         }
 }
 
@@ -210,6 +222,18 @@ private fun sourceKindFromStableCode(code: String): SourceProfileKind = when (co
     "smb_v1" -> SourceProfileKind.Known(SourceKind.SMB)
     "saf_v1" -> SourceProfileKind.Known(SourceKind.SAF)
     "http_v1" -> SourceProfileKind.Known(SourceKind.HTTP)
+    "google_drive_v1" -> SourceProfileKind.Known(SourceKind.GOOGLE_DRIVE)
+    "google_photos_v1" -> SourceProfileKind.Known(SourceKind.GOOGLE_PHOTOS)
+    "jellyfin_v1" -> SourceProfileKind.Known(SourceKind.JELLYFIN)
+    "emby_v1" -> SourceProfileKind.Known(SourceKind.EMBY)
+    "immich_v1" -> SourceProfileKind.Known(SourceKind.IMMICH)
+    "plex_v1" -> SourceProfileKind.Known(SourceKind.PLEX)
+    "webdav_v1" -> SourceProfileKind.Known(SourceKind.WEBDAV)
+    "dropbox_v1" -> SourceProfileKind.Known(SourceKind.DROPBOX)
+    "onedrive_v1" -> SourceProfileKind.Known(SourceKind.ONEDRIVE)
+    "box_v1" -> SourceProfileKind.Known(SourceKind.BOX)
+    "s3_v1" -> SourceProfileKind.Known(SourceKind.S3)
+    "flickr_v1" -> SourceProfileKind.Known(SourceKind.FLICKR)
     else -> SourceProfileKind.Unknown(code)
 }
 

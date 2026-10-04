@@ -1,0 +1,39 @@
+name: kellikanvas
+services:
+  server:
+    image: ${SERVER_IMAGE:-ghcr.io/jedon/kellikanvas-server:latest}
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:?Set PUBLIC_BASE_URL}
+      ConnectionStrings__DefaultConnection: ${DATABASE_CONNECTION:?Set DATABASE_CONNECTION}
+      CONNECTION_ENCRYPTION_KEY: ${CONNECTION_ENCRYPTION_KEY:?Set CONNECTION_ENCRYPTION_KEY}
+      WORKOS_CLIENT_ID: ${WORKOS_CLIENT_ID:?Set WORKOS_CLIENT_ID}
+      WORKOS_API_KEY: ${WORKOS_API_KEY:?Set WORKOS_API_KEY}
+      WORKOS_ORGANIZATION_ID: ${WORKOS_ORGANIZATION_ID:-}
+      ALLOWED_EMAILS: ${ALLOWED_EMAILS:-}
+      TRUSTED_PROXY_CIDRS: ${TRUSTED_PROXY_CIDRS:-}
+    ports:
+      - "127.0.0.1:${SERVER_PORT:-6080}:8080"
+    networks:
+      - database
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 512m
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+networks:
+  database:
+    external: true
+    name: ${POSTGRES_NETWORK:?Set the existing Postgres Docker network name}

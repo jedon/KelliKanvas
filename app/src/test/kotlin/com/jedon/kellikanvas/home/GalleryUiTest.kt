@@ -9,11 +9,14 @@ import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsFocused
+import androidx.compose.ui.test.hasScrollToIndexAction
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performKeyInput
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.pressKey
 import com.google.common.truth.Truth.assertThat
@@ -107,6 +110,7 @@ class GalleryUiTest {
     fun appearanceUsesSharedSettingsLayout() {
         compose.setContent { KanvasTheme { AppearanceSettingsScreen(AppPreferencesState(), {}, {}) } }
         compose.onNodeWithText("Appearance").assertIsDisplayed()
+        compose.onNode(hasScrollToIndexAction()).performScrollToNode(hasText("Landscape layout"))
         compose.onNodeWithText("Landscape layout").assertIsDisplayed()
         capture("appearance")
     }

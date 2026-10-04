@@ -66,3 +66,15 @@ Thumbs.db
 # Local JDK copies (never commit toolchains into the repo)
 .jdk17/
 .tools/
+
+# .NET server build output
+**/bin/
+**/obj/
+**/TestResults/
+
+# Browser inspection output can contain temporary OAuth URLs and account state.
+.playwright-mcp/
+
+# Private operations record contains host paths and internal network configuration.
+server/DEPLOYMENT-OVH.md
+dist-release/

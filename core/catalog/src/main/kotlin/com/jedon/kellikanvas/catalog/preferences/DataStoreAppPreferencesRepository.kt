@@ -94,6 +94,7 @@ private fun Preferences.toState(): AppPreferencesState {
     return AppPreferencesState(
         appPreferences =
         AppPreferences(
+            theme = PreferenceEnumCodes.theme.decode(this[PreferenceKeys.theme], defaults.theme),
             landscapeLayout =
             PreferenceEnumCodes.layoutMode.decode(
                 this[PreferenceKeys.landscapeLayout],
@@ -181,6 +182,7 @@ private fun Preferences.toState(): AppPreferencesState {
 private fun MutablePreferences.write(state: AppPreferencesState) {
     val values = state.appPreferences
     clear()
+    this[PreferenceKeys.theme] = PreferenceEnumCodes.theme.encode(values.theme)
     this[PreferenceKeys.landscapeLayout] =
         PreferenceEnumCodes.layoutMode.encode(values.landscapeLayout)
     this[PreferenceKeys.singlePortraitLayout] =

@@ -127,7 +127,43 @@ class UpdateCheckControllerTest {
         controller.checkForUpdates()
 
         assertThat(controller.state.value)
-            .isEqualTo(UpdateCheckUiState.Error("Install permission required"))
+            .isEqualTo(UpdateCheckUiState.PermissionRequired("1.0.7"))
+    }
+
+    @Test
+    fun returningAfterPermissionResumesTheVerifiedApkWithoutDownloadingAgain() = runTest {
+        val apk = File.createTempFile("kanvas-update", ".apk")
+        var allowed = false
+        var downloads = 0
+        var installs = 0
+        val controller = UpdateCheckController(
+            checkManifest = { _, _ -> newerManifest },
+            downloadAndVerify = { _, _ ->
+                downloads++
+                apk
+            },
+            launchInstall = {
+                installs++
+                if (allowed) InstallResult.CONFIRMATION_LAUNCHED else InstallResult.PERMISSION_REQUIRED
+            },
+            readInstalled = { installed },
+            dispatcher = UnconfinedTestDispatcher(testScheduler),
+            canInstall = { allowed },
+        )
+        try {
+            controller.checkForUpdates()
+            controller.resumePendingInstall()
+            assertThat(installs).isEqualTo(1)
+            assertThat(controller.state.value).isEqualTo(UpdateCheckUiState.PermissionRequired("1.0.7"))
+            allowed = true
+            controller.resumePendingInstall()
+            controller.resumePendingInstall()
+            assertThat(downloads).isEqualTo(1)
+            assertThat(installs).isEqualTo(2)
+            assertThat(controller.state.value).isEqualTo(UpdateCheckUiState.ReadyToInstall("1.0.7"))
+        } finally {
+            apk.delete()
+        }
     }
 
     @Test

@@ -39,7 +39,7 @@ class SmbSetupController(
     },
 ) {
     /**
-     * Connects using baked-in household hosts/shares and build-time credentials.
+     * Connects using household hosts/shares and credentials entered at runtime.
      * Auto-selects probe-proven photo roots that exist on the share.
      *
      * @param replaceNetworkRoots when true, drops prior SMB/DLNA roots (keeps SAF).
@@ -48,31 +48,37 @@ class SmbSetupController(
     suspend fun connectHousehold(
         replaceNetworkRoots: Boolean = false,
         onStep: (BootstrapTraceStep) -> Unit = {},
+        username: String = householdUsername,
+        password: CharArray = householdPassword,
     ): HouseholdConnectResult {
-        require(householdUsername.isNotBlank()) {
-            "Household SMB username missing (set QNAP_NAS_USERNAME for the build)"
+        require(username.isNotBlank()) {
+            "Enter your NAS username"
         }
-        require(householdPassword.isNotEmpty()) {
-            "Household SMB password missing (set QNAP_NAS_PASSWORD for the build)"
+        require(password.isNotEmpty()) {
+            "Enter your NAS password"
         }
         var lastFailure: Throwable? = null
         val credentials =
             SmbCredentials(
-                username = householdUsername,
-                password = householdPassword.copyOf(),
+                username = username,
+                password = password.copyOf(),
                 domain = "",
             )
         try {
+            val knownConnections = database.selectedRoots.list(CatalogIds.DEFAULT_COLLECTION_ID)
+                .map { it.profileId }.distinct().mapNotNull { database.smbConnections.get(it) }
             for (host in householdHostCandidates(onStep)) {
                 for (shareDef in HouseholdNasDefaults.PHOTO_SHARES) {
                     try {
                         val profile =
                             SmbProfile(
-                                id = profileIdFactory(),
+                                id = knownConnections.firstOrNull {
+                                    it.host.equals(host, ignoreCase = true) && it.share == shareDef.share
+                                }?.profileId ?: profileIdFactory(),
                                 host = host,
                                 port = HouseholdNasDefaults.PORT,
                                 share = shareDef.share,
-                                username = householdUsername,
+                                username = username,
                             )
                         val adapter = adapterFactory(profile, credentials)
                         adapter.probe()

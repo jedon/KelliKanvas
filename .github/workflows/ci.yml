@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - "feature/**"
+      - "codex/**"
   pull_request:
 
 permissions:
@@ -59,14 +60,28 @@ jobs:
         run: ./gradlew --dependency-verification strict :build-logic:test --stacktrace
 
       - name: Check and assemble
-        run: ./gradlew --dependency-verification strict ktlintCheck lintDebug testDebugUnitTest assembleDebug assembleDebugAndroidTest --stacktrace
+        run: ./gradlew --dependency-verification strict -PpublicDistribution=true ktlintCheck lintDebug testDebugUnitTest assembleDebug assembleDebugAndroidTest --stacktrace
+
+      - name: Name APK by app version
+        id: apk-version
+        run: |
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          import json, pathlib, shutil
+          directory = pathlib.Path('app/build/outputs/apk/debug')
+          metadata = json.loads((directory / 'output-metadata.json').read_text())
+          version = metadata['elements'][0]['versionName']
+          destination = pathlib.Path('build/ci-apk')
+          destination.mkdir(parents=True, exist_ok=True)
+          shutil.copyfile(directory / metadata['elements'][0]['outputFile'], destination / f'KelliKanvas-{version}.apk')
+          print(f'version={version}')
+          PY
 
       - name: Upload debug APK
         if: success()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: kellikanvas-debug-apk
-          path: app/build/outputs/apk/debug/*.apk
+          name: KelliKanvas-${{ steps.apk-version.outputs.version }}
+          path: build/ci-apk/*.apk
           if-no-files-found: error
 
       - name: Upload build reports
@@ -120,4 +135,5 @@ jobs:
             :source:saf:connectedDebugAndroidTest
             :core:catalog:connectedDebugAndroidTest
             :core:security:connectedDebugAndroidTest
+            :platform:update:connectedDebugAndroidTest
             --stacktrace

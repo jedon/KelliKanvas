@@ -41,6 +41,7 @@ fun SystemScreen(
     onOpenDiagnostics: () -> Unit,
     modifier: Modifier = Modifier,
     updateCheckController: UpdateCheckController? = null,
+    onOpenAccount: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -79,6 +80,10 @@ fun SystemScreen(
         onBack = onBack,
         modifier = modifier,
     ) {
+        item { SettingsSectionHeader(title = "Your account") }
+        item {
+            SettingsActionRow(label = "Account and phone sign-in", supportingText = "Save your gallery settings and connections for your screens.", buttonLabel = "Open", onClick = onOpenAccount)
+        }
         item {
             SettingsSectionHeader(title = "About")
         }
@@ -124,7 +129,7 @@ fun SystemScreen(
                         updateState is UpdateCheckUiState.Downloading
                 SettingsActionRow(
                     label = "App updates",
-                    buttonLabel = "Check for updates",
+                    buttonLabel = if (updateState is UpdateCheckUiState.PermissionRequired) "Continue installation" else "Check for updates",
                     onClick = {
                         scope.launch { updateCheckController.checkForUpdates() }
                     },

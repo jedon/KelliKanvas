@@ -17,11 +17,9 @@ import com.jedon.kellikanvas.source.PhotoByteStream
 import com.jedon.kellikanvas.source.SourceAdapter
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import java.nio.charset.StandardCharsets
 import java.util.Base64
-import kotlin.coroutines.coroutineContext
 
 interface SmbBackend {
     suspend fun probe()
@@ -210,10 +208,9 @@ class SmbjBackend(
         )
     }
 
-    override suspend fun open(path: String): PhotoByteStream {
-        coroutineContext.ensureActive()
+    override suspend fun open(path: String): PhotoByteStream = openSmbPhotoStream {
         val scope = SmbSessionScope.open(profile, credentials)
-        return try {
+        try {
             val smbPath = toSmbRelative(path)
             val file = scope.share.openFile(
                 smbPath,

@@ -26,13 +26,14 @@ import androidx.compose.ui.input.InputMode
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalInputModeManager
 import androidx.compose.ui.unit.dp
+import com.jedon.kellikanvas.ui.tv.KanvasBrand
 import com.jedon.kellikanvas.ui.tv.KanvasButton
 import com.jedon.kellikanvas.ui.tv.KanvasColors
 import com.jedon.kellikanvas.ui.tv.KanvasPageHeader
 import com.jedon.kellikanvas.ui.tv.isTelevisionUi
 
 private fun settingsDescription(title: String): String = when (title) {
-    "Appearance" -> "Give every photo the right space. Adjust layouts, portrait pairing and the details on your display."
+    "Appearance" -> "Make your gallery your own. Choose a theme, then adjust photo layouts and display details."
     "Playback" -> "Set the pace of your gallery. Choose timing and how your slideshow moves between moments."
     "Ambient" -> "A display that follows your day. Configure brightness, presence and when your gallery is active."
     "System" -> "Manage your screensaver, application updates and device information."
@@ -63,6 +64,7 @@ fun SettingsScreenScaffold(
                         verticalArrangement = Arrangement.spacedBy(24.dp),
                     ) {
                         KanvasButton("Gallery", onBack, icon = Icons.AutoMirrored.Filled.ArrowBack)
+                        KanvasBrand()
                         KanvasPageHeader(title, settingsDescription(title), eyebrow = "SETTINGS")
                         HorizontalDivider(color = KanvasColors.Border)
                         Text(

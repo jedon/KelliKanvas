@@ -42,6 +42,7 @@ import androidx.tv.material3.Text
 import com.jedon.kellikanvas.catalog.SelectedRoot
 import com.jedon.kellikanvas.logging.DiagLog
 import com.jedon.kellikanvas.model.AssetRef
+import com.jedon.kellikanvas.model.SourceKind
 import com.jedon.kellikanvas.model.SourceProfileId
 import com.jedon.kellikanvas.renderer.surface.DisplayPhotoTarget
 import com.jedon.kellikanvas.renderer.surface.PhotoSurfaceView
@@ -136,6 +137,24 @@ fun SimpleSlideshowScreen(
         if (photoLoadError != null || bitmap == null) return@LaunchedEffect
         delay(activePlayer.intervalMillis)
         activePlayer.next()
+    }
+    LaunchedEffect(adapters, roots) {
+        val googleRoots = roots.filter { adapters[it.profileId]?.kind == SourceKind.GOOGLE_PHOTOS }
+        if (googleRoots.isEmpty()) return@LaunchedEffect
+        while (true) {
+            delay(10 * 60_000L)
+            val current = playlist ?: continue
+            val activePlayer = player ?: continue
+            val refreshed = CollectionPhotoPlaylist.build(adapters, googleRoots)
+            val successfulProfiles = refreshed.rootOutcomes.filterIsInstance<PlaylistRootOutcome.Loaded>().map { it.root.profileId }.toSet()
+            if (successfulProfiles.isEmpty()) continue
+            val activeKey = current.getOrNull(activePlayer.index)?.key
+            val updated = (current.filterNot { it.profileId in successfulProfiles } + refreshed.photos).distinctBy { it.key }
+            if (updated.isNotEmpty()) {
+                activePlayer.updatePlaylistSize(updated.size, updated.indexOfFirst { it.key == activeKey }.coerceAtLeast(0))
+                playlist = updated
+            }
+        }
     }
     LaunchedEffect(player?.index, playlist, resolvedMaxEdge) {
         val activePlaylist = playlist ?: return@LaunchedEffect
