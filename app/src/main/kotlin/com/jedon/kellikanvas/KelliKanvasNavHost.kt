@@ -581,13 +581,16 @@ fun KelliKanvasNavHost(
             if (slideshowState.adapters.isEmpty() || slideshowState.roots.isEmpty()) {
                 Text(text = "No photos in this collection")
             } else {
-                SimpleSlideshowScreen(
-                    adapters = slideshowState.adapters,
-                    roots = slideshowState.roots,
-                    slideDurationMillis = preferences.appPreferences.slideDurationMillis,
-                    onExit = { navController.popBackStack() },
-                    onRootFailures = { playlistRootFailures = it },
-                )
+                // A phone selection replaces the running playlist as well as the home gallery.
+                androidx.compose.runtime.key(slideshowState.adapters, slideshowState.roots) {
+                    SimpleSlideshowScreen(
+                        adapters = slideshowState.adapters,
+                        roots = slideshowState.roots,
+                        slideDurationMillis = preferences.appPreferences.slideDurationMillis,
+                        onExit = { navController.popBackStack() },
+                        onRootFailures = { playlistRootFailures = it },
+                    )
+                }
             }
         }
     }

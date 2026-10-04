@@ -1,8 +1,9 @@
 # Phone slideshow setup and updates
 
-Install **KelliKanvas-1.0.22.apk** once on the TV. Versions through 1.0.21 were
+Install **KelliKanvas-1.0.23.apk** once on the TV. Versions through 1.0.21 were
 built without an update verification key, so they cannot bootstrap this update.
 The new build keeps the existing signing certificate and preserves app data.
+Version 1.0.23 also refreshes an already playing slideshow after a phone selection.
 
 1. On the TV, open **Account setup** and scan its QR code with your phone.
 2. Sign in at **https://kanvas.kelli.photo** and approve the matching TV code.
