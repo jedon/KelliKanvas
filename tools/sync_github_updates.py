@@ -5,6 +5,7 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import tempfile
 import urllib.request
 from pathlib import Path
@@ -82,9 +83,19 @@ def publish(release, destination, staging, public_key, key_id, fetch=download):
             target = destination/source.name
             if target.exists() and (target.stat().st_size!=source.stat().st_size or digest(target)!=digest(source)): raise ValueError('Immutable release asset collision')
         for source in (apk,checksum,envelope):
-            # Staging and public directory must share a filesystem for atomic replacement.
-            os.chmod(source,0o644)
-            os.replace(source,destination/source.name)
+            # systemd mounts each writable directory separately; rename must stay
+            # inside the public mount. Inputs have already been authenticated.
+            descriptor, name = tempfile.mkstemp(prefix='.kanvas-update-',dir=destination)
+            pending = Path(name)
+            try:
+                with os.fdopen(descriptor,'wb') as output, source.open('rb') as input_stream:
+                    shutil.copyfileobj(input_stream,output,1024*1024)
+                    output.flush()
+                    os.fsync(output.fileno())
+                os.chmod(pending,0o644)
+                os.replace(pending,destination/source.name)
+            finally:
+                pending.unlink(missing_ok=True)
         return True
 
 def main():

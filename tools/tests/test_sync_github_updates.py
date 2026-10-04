@@ -1,11 +1,13 @@
 import base64
 import hashlib
 import json
+import os
 import shutil
 import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from tools.sync_github_updates import publish, allowed_url
 from tools.verify_update_envelope import EnvelopeError
@@ -30,7 +32,12 @@ class ReleaseMirrorTests(unittest.TestCase):
                 def fetch(url,path,maximum):path.write_bytes(bodies[url.rsplit('/',1)[-1]]);return path
                 return release,fetch,bodies
             release,fetch,bodies=assets()
-            self.assertTrue(publish(release,destination,staging,public,'fixture',fetch))
+            real_replace=os.replace
+            def same_mount_replace(source,target):
+                self.assertEqual(Path(source).parent,Path(target).parent,'Atomic replacement must stay inside one systemd writable mount')
+                return real_replace(source,target)
+            with patch('tools.sync_github_updates.os.replace',side_effect=same_mount_replace):
+                self.assertTrue(publish(release,destination,staging,public,'fixture',fetch))
             original=(destination/'update-envelope.json').read_bytes()
             self.assertFalse(publish(release,destination,staging,public,'fixture',fetch))
             broken,fetch,_=assets('1.0.23',24,11,True)
