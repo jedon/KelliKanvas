@@ -1,15 +1,20 @@
 # Phone slideshow setup and updates
 
-Install **KelliKanvas-1.0.23.apk** once on the TV. Versions through 1.0.21 were
+Install **KelliKanvas-1.0.24.apk** on the TV. Versions 1.0.22 and newer can use
+**System → App updates → Check for updates**. Versions through 1.0.21 were
 built without an update verification key, so they cannot bootstrap this update.
 The new build keeps the existing signing certificate and preserves app data.
-Version 1.0.23 also refreshes an already playing slideshow after a phone selection.
+Version 1.0.24 draws photos in the app's composed window to avoid black slides
+during navigation transitions, and uses the controller's Back button throughout.
 
 1. On the TV, open **Account setup** and scan its QR code with your phone.
 2. Sign in at **https://kanvas.kelli.photo** and approve the matching TV code.
-3. Add **Immich** with `http://darklingnas:2283` and Kelli's own API key.
-   In Immich, create the key under her account settings with `album.read`,
-   `asset.read`, and `asset.download` permissions. Do not use an administrator's key.
+3. Add **Immich**, select the linked TV, and tap **Find Immich on my network**.
+   Select DarklingNAS, then enter Kelli's Immich email and password. The TV
+   signs in locally and creates a restricted key for her photos. If Immich requires
+   changing her initial password, do that in Immich first. **API key · Advanced**
+   remains available for an existing key with `album.read`, `asset.read`,
+   `asset.download`, and `asset.view` permissions.
 4. Choose **Choose photos**, open her **Kanvas** album, and add it to the slideshow.
 5. **Save slideshow**. The linked TV receives the selection within 30 seconds
    while Kanvas is open. The default checkbox makes account selections the TV's
@@ -19,10 +24,16 @@ Kelli can organize photos in Immich and add or remove them from that album
 without selecting the album again. For an actual NAS directory, add **NAS / SMB**,
 enter the share `Kelli`, then browse to `Digital Photos` and the desired subfolder.
 The phone can use mobile data: a linked TV performs LAN directory browsing.
+Discovery also runs on the linked TV: keep Kanvas open and connect the TV to
+the NAS's network. It checks saved hosts, common Immich names, and port 2283 on
+one private IPv4 subnet. Enter `http://darklingnas:2283` manually if discovery
+does not find it, or use a manual address for a different port or network.
 
 Connections may be saved before choosing photos. Their stored credentials are
 encrypted and never returned to the phone account page. Browsing jobs expire in
 two minutes and return folder names, IDs and photo counts only.
+Immich passwords are encrypted while queued, then discarded after completion;
+the temporary login session is logged out. Only the restricted key is retained.
 
 Future releases use **v1.0.22** style tags and **KelliKanvas-1.0.22.apk** style
 filenames. On the TV, use **System → App updates → Check for updates**. Kanvas

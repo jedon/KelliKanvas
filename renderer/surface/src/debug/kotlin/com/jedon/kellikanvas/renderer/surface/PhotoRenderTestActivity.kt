@@ -18,7 +18,7 @@ class PhotoRenderTestActivity : Activity() {
         parent.addView(photo, FrameLayout.LayoutParams(-1, -1))
         parent.addView(
             TextView(this).apply {
-                text = "Slideshow · 1 / 2"
+                setText(R.string.render_test_overlay)
                 setTextColor(Color.WHITE)
                 setBackgroundColor(Color.BLUE)
             },

@@ -94,7 +94,8 @@ jobs:
           adb shell settings put global transition_animation_scale 0
           adb shell settings put global animator_duration_scale 0
           ./gradlew --dependency-verification strict \
-            :platform:update:connectedDebugAndroidTest --stacktrace
+            :platform:update:connectedDebugAndroidTest \
+            :renderer:surface:connectedDebugAndroidTest --stacktrace
 
   build-unsigned:
     needs: device-security
