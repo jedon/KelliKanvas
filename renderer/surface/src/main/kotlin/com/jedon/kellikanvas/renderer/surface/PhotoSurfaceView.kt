@@ -6,38 +6,42 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Matrix
 import android.graphics.Paint
+import android.graphics.SurfaceTexture
 import android.util.AttributeSet
-import android.view.SurfaceHolder
-import android.view.SurfaceView
+import android.view.TextureView
 import com.jedon.kellikanvas.logging.DiagLog
 
 private const val TAG = "PhotoSurfaceView"
 
 /**
- * Full-screen still-photo surface.
+ * Still-photo texture composed in the same window as navigation and status overlays.
  *
  * Hardware video players decode into a Surface without a Java-heap ARGB frame.
- * This view is the still-photo counterpart: draw one RGB_565 (or cheaper) bitmap
- * into the surface buffer sized to the panel, and never keep a second full frame.
+ * A separate SurfaceView can remain behind Compose's opaque navigation layer after
+ * its transition. TextureView participates in that layer's alpha and transforms.
+ * Keep one bounded RGB_565 bitmap and a panel-sized texture buffer.
  */
 class PhotoSurfaceView @JvmOverloads constructor(
     context: Context,
     attrs: AttributeSet? = null,
-) : SurfaceView(context, attrs),
-    SurfaceHolder.Callback {
+) : TextureView(context, attrs),
+    TextureView.SurfaceTextureListener {
     private val paint = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG)
     private val drawMatrix = Matrix()
     private var frame: Bitmap? = null
-    private var surfaceReady = false
+    private var panelWidth = 0
+    private var panelHeight = 0
 
     init {
-        holder.addCallback(this)
-        setZOrderOnTop(false)
+        surfaceTextureListener = this
+        isOpaque = true
     }
 
     fun setFixedPanelSize(widthPx: Int, heightPx: Int) {
         if (widthPx > 0 && heightPx > 0) {
-            holder.setFixedSize(widthPx, heightPx)
+            panelWidth = widthPx
+            panelHeight = heightPx
+            surfaceTexture?.setDefaultBufferSize(widthPx, heightPx)
         }
     }
 
@@ -51,30 +55,29 @@ class PhotoSurfaceView @JvmOverloads constructor(
         redraw()
     }
 
-    override fun surfaceCreated(holder: SurfaceHolder) {
-        surfaceReady = true
+    override fun onSurfaceTextureAvailable(surface: SurfaceTexture, width: Int, height: Int) {
+        configureBuffer(surface, width, height)
         redraw()
     }
 
-    override fun surfaceChanged(
-        holder: SurfaceHolder,
-        format: Int,
-        width: Int,
-        height: Int,
-    ) {
-        surfaceReady = true
+    override fun onSurfaceTextureSizeChanged(surface: SurfaceTexture, width: Int, height: Int) {
+        configureBuffer(surface, width, height)
         redraw()
     }
 
-    override fun surfaceDestroyed(holder: SurfaceHolder) {
-        surfaceReady = false
+    override fun onSurfaceTextureDestroyed(surface: SurfaceTexture): Boolean = true
+
+    override fun onSurfaceTextureUpdated(surface: SurfaceTexture) = Unit
+
+    private fun configureBuffer(surface: SurfaceTexture, width: Int, height: Int) {
+        surface.setDefaultBufferSize(panelWidth.takeIf { it > 0 } ?: width, panelHeight.takeIf { it > 0 } ?: height)
     }
 
     private fun redraw() {
-        if (!surfaceReady) return
+        if (!isAvailable) return
         val canvas: Canvas? =
             try {
-                holder.lockHardwareCanvas() ?: holder.lockCanvas()
+                lockCanvas()
             } catch (failure: Exception) {
                 DiagLog.w(TAG, "Failed to lock canvas; skipping frame", failure)
                 return
@@ -107,7 +110,7 @@ class PhotoSurfaceView @JvmOverloads constructor(
             canvas.drawBitmap(bitmap, drawMatrix, paint)
         } finally {
             try {
-                holder.unlockCanvasAndPost(canvas)
+                unlockCanvasAndPost(canvas)
             } catch (failure: Exception) {
                 // Surface gone during unlock — nothing to recover.
                 DiagLog.w(TAG, "Failed to unlock canvas after draw", failure)

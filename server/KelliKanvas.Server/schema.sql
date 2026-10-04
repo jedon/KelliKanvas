@@ -36,3 +36,11 @@ CREATE TABLE IF NOT EXISTS kanvas.browse_requests (
     FOREIGN KEY(user_id,connection_id) REFERENCES kanvas.connections(user_id,id) ON DELETE CASCADE
 );
 CREATE INDEX IF NOT EXISTS browse_device_queue ON kanvas.browse_requests(device_id,status,expires_at);
+CREATE TABLE IF NOT EXISTS kanvas.service_requests (
+    id uuid PRIMARY KEY, user_id text NOT NULL REFERENCES kanvas.users(id) ON DELETE CASCADE,
+    device_id uuid NOT NULL REFERENCES kanvas.devices(id) ON DELETE CASCADE,
+    operation text NOT NULL, expected_revision bigint NOT NULL, encrypted_request bytea, encrypted_result bytea,
+    status text NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','working','complete')),
+    expires_at timestamptz NOT NULL, claimed_at timestamptz
+);
+CREATE INDEX IF NOT EXISTS service_device_queue ON kanvas.service_requests(device_id,status,expires_at);

@@ -57,6 +57,7 @@ class CloudAccount(
     private val mutex = Mutex()
     val syncStatus = kotlinx.coroutines.flow.MutableStateFlow("Your linked TV automatically receives phone selections.")
     private val phoneBrowser = CloudPhotoBrowser(httpClient)
+    private val immichIntegration = ImmichIntegration(httpClient, LocalImmichDiscovery(context.applicationContext, httpClient)::discover)
     suspend fun browseFromPhone() {
         withContext(Dispatchers.IO) {
             if (session() == null) {
@@ -64,6 +65,11 @@ class CloudAccount(
                 return@withContext
             }
             val api = api()
+            val integration = api.nextService()
+            if (integration != null) {
+                api.completeService(integration.getValue("id").jsonPrimitive.content, immichIntegration.execute(integration))
+                return@withContext
+            }
             val work = api.nextBrowse() ?: return@withContext
             val result = phoneBrowser.list(work)
             api.completeBrowse(work.getValue("id").jsonPrimitive.content, result)

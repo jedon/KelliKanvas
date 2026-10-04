@@ -14,6 +14,7 @@ builder.Services.AddSingleton<Secrets>();
 builder.Services.AddSingleton(services => NpgsqlDataSource.Create(services.GetRequiredService<ServerOptions>().Database));
 builder.Services.AddSingleton<IAccountStore, PostgresAccountStore>();
 builder.Services.AddSingleton<PhotoBrowser>();
+builder.Services.AddSingleton<ServiceLinker>();
 builder.Services.AddHttpClient<IWorkOs, WorkOs>(client => client.Timeout = TimeSpan.FromSeconds(20))
     .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
 builder.Services.Configure<ForwardedHeadersOptions>(forwarded =>
@@ -150,6 +151,19 @@ account.MapGet("/browse/{id:guid}", async (Guid id, HttpContext ctx, PhotoBrowse
     await browser.Status(AccountFilter.Session(ctx).User.Id, id, ct) is { } result ? Results.Ok(result) : Results.NotFound());
 
 var device = app.MapGroup("/api/device").AddEndpointFilter(new AccountFilter("device"));
+account.MapPost("/services", async (ServiceLinkRequest body, HttpContext ctx, ServiceLinker linker, CancellationToken ct) => Results.Ok(await linker.Start(AccountFilter.Session(ctx).User.Id, body, ct)));
+account.MapGet("/services/{id:guid}", async (Guid id, HttpContext ctx, ServiceLinker linker, CancellationToken ct) =>
+    await linker.Status(AccountFilter.Session(ctx).User.Id, id, ct) is { } result ? Results.Ok(result) : Results.NotFound());
+device.MapPost("/services/next", async (HttpContext ctx, ServiceLinker linker, CancellationToken ct) =>
+{
+    var session = AccountFilter.Session(ctx);
+    return await linker.Next(session.User.Id, session.DeviceId!.Value, ct) is { } work ? Results.Ok(work) : Results.NoContent();
+});
+device.MapPost("/services/{id:guid}/complete", async (Guid id, ServiceLinkResult body, HttpContext ctx, ServiceLinker linker, CancellationToken ct) =>
+{
+    var session = AccountFilter.Session(ctx);
+    return await linker.Complete(session.User.Id, session.DeviceId!.Value, id, body, ct) ? Results.NoContent() : Results.Conflict();
+});
 device.MapGet("/state", async (HttpContext ctx, IAccountStore store, CancellationToken ct) => Results.Ok(await store.State(AccountFilter.Session(ctx).User.Id, ct)));
 device.MapPost("/browse/next", async (HttpContext ctx, PhotoBrowser browser, CancellationToken ct) =>
 {

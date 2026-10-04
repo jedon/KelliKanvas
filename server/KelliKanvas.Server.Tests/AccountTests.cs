@@ -117,6 +117,41 @@ public sealed class AccountTests : IAsyncLifetime
         Assert.Throws<ArgumentException>(() => Validation.Connection(Connection() with { Id = "kanvas-account-v1" }));
         Validation.State(new(0, Settings(), [Connection()]));
     }
+    [Fact] public async Task Immich_linking_scopes_discovery_and_discards_password_after_saving_only_integration_key()
+    {
+        var linker = new ServiceLinker(source, store, new Secrets(options));
+        var pair = await store.StartPairing("Discovery TV", default);
+        Assert.True(await store.ApprovePairing(pair.UserCode, userId, default));
+        var linked = await store.PollPairing(pair.Id, pair.DeviceSecret, default);
+        var tv = linked.DeviceId!.Value;
+        var discover = await linker.Start(userId, new(tv, "discover"), default);
+        var work = await linker.Next(userId, tv, default);
+        Assert.Equal(discover.Id, work!.Id);
+        Assert.Null(await linker.Next("different-user", tv, default));
+        Assert.Null(await linker.Status("different-user", discover.Id, default));
+        Assert.False(await linker.Complete(userId, Guid.NewGuid(), discover.Id, new([new("http://192.168.7.216:2283/", "Immich")]), default));
+        Assert.True(await linker.Complete(userId, tv, discover.Id, new([new("http://192.168.7.216:2283/", "Immich")]), default));
+        Assert.Single((await linker.Status(userId, discover.Id, default))!.Servers!);
+        var login = await linker.Start(userId, new(tv, "login", 0, "http://darklingnas:2283", "kelli@example.test", "fixture-password", "Kelli's Immich"), default);
+        await linker.Next(userId, tv, default);
+        await using (var db = await source.OpenConnectionAsync())
+        await using (var cmd = new NpgsqlCommand("SELECT encrypted_request FROM kanvas.service_requests WHERE id=$1", db))
+        { cmd.Parameters.AddWithValue(login.Id); Assert.DoesNotContain("fixture-password", Encoding.UTF8.GetString((byte[])(await cmd.ExecuteScalarAsync())!)); }
+        Assert.True(await linker.Complete(userId, tv, login.Id, new([], "fixture-api-key"), default));
+        Assert.False(await linker.Complete(userId, tv, login.Id, new([], "fixture-api-key"), default));
+        var state = await store.State(userId, default);
+        var connection = Assert.Single(state.Connections);
+        Assert.Equal("fixture-api-key", connection.Configuration["secret"]!.GetValue<string>());
+        Assert.DoesNotContain("fixture-password", connection.Configuration.ToJsonString());
+        Assert.DoesNotContain("fixture-api-key", System.Text.Json.JsonSerializer.Serialize(await linker.Status(userId, login.Id, default)));
+        await using (var db = await source.OpenConnectionAsync())
+        await using (var cmd = new NpgsqlCommand("SELECT encrypted_request FROM kanvas.service_requests WHERE id=$1", db))
+        { cmd.Parameters.AddWithValue(login.Id); Assert.Equal(DBNull.Value, await cmd.ExecuteScalarAsync()); }
+        var revoked = await linker.Start(userId, new(tv, "discover"), default);
+        await linker.Next(userId, tv, default);
+        await store.RevokeDevice(userId, tv, default);
+        Assert.False(await linker.Complete(userId, tv, revoked.Id, new([]), default));
+    }
     [Fact] public async Task Http_auth_enforces_csrf_device_scope_and_metadata_only_browser_responses()
     {
         using var factory = new Factory(options);

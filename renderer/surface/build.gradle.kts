@@ -4,6 +4,7 @@ plugins {
 
 android {
     namespace = "com.jedon.kellikanvas.renderer.surface"
+    defaultConfig { testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner" }
 
     testOptions {
         unitTests.isIncludeAndroidResources = true
@@ -18,4 +19,8 @@ dependencies {
     testImplementation(libs.junit4)
     testImplementation(libs.truth)
     testImplementation(libs.robolectric)
+    androidTestImplementation(libs.androidx.test.core.ktx)
+    androidTestImplementation(libs.androidx.test.junit.ktx)
+    androidTestImplementation(libs.androidx.test.runner)
+    androidTestImplementation(libs.truth)
 }

@@ -14,8 +14,6 @@ import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -27,7 +25,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalInputModeManager
 import androidx.compose.ui.unit.dp
 import com.jedon.kellikanvas.ui.tv.KanvasBrand
-import com.jedon.kellikanvas.ui.tv.KanvasButton
 import com.jedon.kellikanvas.ui.tv.KanvasColors
 import com.jedon.kellikanvas.ui.tv.KanvasPageHeader
 import com.jedon.kellikanvas.ui.tv.isTelevisionUi
@@ -63,7 +60,6 @@ fun SettingsScreenScaffold(
                         Modifier.width(260.dp).fillMaxSize().background(KanvasColors.Rail).padding(32.dp),
                         verticalArrangement = Arrangement.spacedBy(24.dp),
                     ) {
-                        KanvasButton("Gallery", onBack, icon = Icons.AutoMirrored.Filled.ArrowBack)
                         KanvasBrand()
                         KanvasPageHeader(title, settingsDescription(title), eyebrow = "SETTINGS")
                         HorizontalDivider(color = KanvasColors.Border)
@@ -84,7 +80,6 @@ fun SettingsScreenScaffold(
                 Column(Modifier.fillMaxSize()) {
                     Row(Modifier.fillMaxWidth().padding(24.dp), horizontalArrangement = Arrangement.SpaceBetween) {
                         KanvasPageHeader(title, "Make your gallery your own.", Modifier.weight(1f), "SETTINGS")
-                        KanvasButton("Back", onBack)
                     }
                     LazyColumn(
                         modifier = Modifier.weight(1f),

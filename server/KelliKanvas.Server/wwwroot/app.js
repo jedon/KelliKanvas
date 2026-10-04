@@ -52,6 +52,7 @@ async function load() {
     row.append(actions);return row;
   }));
   if(!account.connections.length) $("connections").textContent="Your saved photo connections will appear here.";
+  $("service-device").replaceChildren(...account.devices.map(device=>{const option=document.createElement("option");option.value=device.id;option.textContent=device.name;return option;}));
 }
 async function pairing(code) {
   const normalized=code.replace(/[\s-]/g,"").toUpperCase();
@@ -74,10 +75,53 @@ $("credential-form").onsubmit=e=>{e.preventDefault();act(async()=>{
 $("logout").onclick=()=>act(async()=>{await request("/api/account/logout","POST");location.assign("/");});
 $("code-form").onsubmit=e=>{e.preventDefault();act(()=>pairing($("code").value));};
 for(const p of providers){const option=document.createElement("option");option.value=p[0];option.textContent=p[1];$("provider").append(option);}
-function providerChanged(){const p=providers.find(p=>p[0]===$("provider").value);$("nas-group").hidden=p[0]!=="SMB";$("endpoint-group").hidden=p[0]==="SMB"||!!p[2];$("endpoint").value=p[2];$("endpoint").required=p[0]!=="SMB";$("host").required=$("share").required=p[0]==="SMB";$("username-label").textContent=p[3];$("secret-label").textContent=p[4];$("provider-help").textContent=p[5];$("secret").value="";}
+function providerChanged(){
+  const p=providers.find(p=>p[0]===$("provider").value), immich=p[0]==="IMMICH";
+  $("nas-group").hidden=p[0]!=="SMB";$("endpoint-group").hidden=p[0]==="SMB"||!!p[2];$("endpoint").value=p[2];$("endpoint").required=p[0]!=="SMB";$("host").required=$("share").required=p[0]==="SMB";$("username-label").textContent=p[3];$("secret-label").textContent=p[4];$("provider-help").textContent=p[5];$("secret").value="";
+  $("immich-discovery").hidden=$("immich-method-group").hidden=!immich;$("username").required=false;
+  $("connection-submit").textContent=immich?"Connect Immich":"Save connection";
+  $("service-status").textContent="";$("service-found").replaceChildren();
+  if(immich){$("name").value=$("name").value||"Immich";$("username").value=account?.user.email||"";immichMethodChanged();}
+}
+function immichMethodChanged(){
+  const login=$("immich-method").value==="login";$("username-label").textContent=login?"Immich email":"Email (optional)";
+  $("username").required=login;$("secret-label").textContent=login?"Immich password":"API key";$("secret").value="";
+  $("secret").autocomplete=login?"current-password":"new-password";
+  $("provider-help").textContent=login?"Sign in with your own Immich account. Kanvas creates a photo-read integration key and discards your password. Keep Kanvas open on your TV.":"Advanced: paste a key with album.read, asset.read, asset.download and asset.view permissions.";
+}
+$("immich-method").onchange=immichMethodChanged;
+async function integration(operation,fields={}){
+  if(!$("service-device").value)throw Error("Link your TV using Account setup first, then keep Kanvas open on it.");
+  $("service-status").textContent=operation==="discover"?"Searching your TV’s local network… Keep Kanvas open. Requires version 1.0.24 or later.":"Connecting through your TV…";
+  const work=await request("/api/account/services","POST",{deviceId:$("service-device").value,operation,expectedRevision:account.revision,...fields});
+  $("secret").value="";
+  const deadline=Date.now()+125000;
+  while(Date.now()<deadline){
+    await new Promise(resolve=>setTimeout(resolve,1500));
+    const result=await request("/api/account/services/"+work.id);
+    if(result.status==="expired")break;
+    if(result.status!=="complete")continue;
+    if(result.error)throw Error(({authentication:"Immich rejected this login. Check your email and password, or try an API key.",password_change:"Open Immich and change your initial password first, then connect here.",network:"The TV could not reach Immich. Check the server address and TV network.",conflict:"Your account changed. Refresh this page before connecting again.",unavailable:"Immich could not be connected. Check the address, login and server version. An API key is also supported."})[result.error]||"Could not connect Immich.");
+    return result;
+  }
+  throw Error("The TV did not respond. Install version 1.0.24 or later and keep Kanvas open, then try again.");
+}
+$("service-find").onclick=()=>act(async()=>{
+  $("service-found").replaceChildren();
+  try{
+    const result=await integration("discover");
+    $("service-status").textContent=result.servers.length?"Select your Immich server below, then sign in.":"No Immich server found on this network. You can enter its address below.";
+    for(const server of result.servers){const button=document.createElement("button");button.type="button";button.className="folder";button.textContent=server.name;button.onclick=()=>{$("endpoint").value=server.endpoint;$("service-status").textContent="Server selected. Enter your Immich login to connect.";$("username").focus();};$("service-found").append(button);}
+  }catch(error){$("service-status").textContent=error.message;throw error;}
+});
 $("provider").onchange=providerChanged;providerChanged();
 $("connection-form").onsubmit=e=>{e.preventDefault();act(async()=>{
   const provider=$("provider").value, name=$("name").value.trim(), configuration={endpoint:$("endpoint").value.trim(),username:$("username").value.trim(),secret:$("secret").value};
+  if(provider==="IMMICH"){
+    const result=await integration($("immich-method").value,{...configuration,name});
+    $("connection-form").reset();providerChanged();$("connection-details").open=false;await load();status("Immich connected. Choose an album for your slideshow.");
+    openPicker(account.connections.find(c=>c.id===result.connectionId));return;
+  }
   let objectId=provider==="BOX" ? "0" : "root";
   if(provider==="SMB"){configuration.host=$("host").value.trim();configuration.port=445;configuration.share=$("share").value.trim();configuration.domain="";objectId=$("path").value.trim() || ".";}
   else if(["NEXTCLOUD","OWNCLOUD","SYNOLOGY","SEAFILE","WEBDAV","PHOTOPRISM"].includes(provider)){objectId=new URL(configuration.endpoint.replace(/\/$/,"")+"/").pathname;}

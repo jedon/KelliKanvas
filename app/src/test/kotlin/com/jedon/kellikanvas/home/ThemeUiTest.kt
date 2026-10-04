@@ -116,7 +116,7 @@ class ThemeUiTest {
         compose.onNodeWithText("Midnight").performScrollTo().performClick()
         compose.runOnIdle { assertThat(preferences.theme).isEqualTo(AppTheme.MIDNIGHT) }
         compose.onNodeWithText("Midnight").assertIsSelected()
-        compose.onNodeWithText("Back").assertIsDisplayed()
+        compose.onNodeWithText("Back").assertDoesNotExist()
         capture("theme-picker-midnight-phone")
     }
 

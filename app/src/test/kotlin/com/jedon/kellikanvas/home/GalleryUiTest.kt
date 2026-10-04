@@ -58,7 +58,7 @@ class GalleryUiTest {
         compose.onNodeWithText("Your collection").assertIsDisplayed()
         compose.onNodeWithText("Family photographs").assertIsDisplayed()
         capture("collection")
-        compose.onNodeWithText("Back").performClick()
+        compose.runOnIdle { compose.activity.onBackPressedDispatcher.onBackPressed() }
         compose.onNodeWithText("Start slideshow").assertIsDisplayed()
     }
 
@@ -136,7 +136,7 @@ class GalleryUiTest {
     fun phoneSettingsHaveWorkingDecrementAndIncrementButtons() {
         var value = AppPreferencesState().appPreferences
         compose.setContent { KanvasTheme { PlaybackSettingsScreen(AppPreferencesState(), { change -> value = change(value) }, {}) } }
-        compose.onNodeWithText("Back").assertIsDisplayed().assertIsEnabled()
+        compose.onNodeWithText("Back").assertDoesNotExist()
         capture("phone-playback")
         val before = value.slideDurationMillis
         compose.onAllNodes(androidx.compose.ui.test.hasText("−"))[0].performClick()

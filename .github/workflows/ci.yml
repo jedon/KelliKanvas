@@ -47,7 +47,7 @@ jobs:
             find . -type f -name '*.kt' -path '*/src/androidTest/*' \
               | sed 's|^\./||' \
               | sort -u \
-              | grep -Ev '^(app|core/catalog|core/security|platform/update|source/saf)/src/androidTest/' \
+              | grep -Ev '^(app|core/catalog|core/security|platform/update|renderer/surface|source/saf)/src/androidTest/' \
               || true
           )"
           if [[ -n "$uncovered" ]]; then
@@ -136,4 +136,5 @@ jobs:
             :core:catalog:connectedDebugAndroidTest
             :core:security:connectedDebugAndroidTest
             :platform:update:connectedDebugAndroidTest
+            :renderer:surface:connectedDebugAndroidTest
             --stacktrace

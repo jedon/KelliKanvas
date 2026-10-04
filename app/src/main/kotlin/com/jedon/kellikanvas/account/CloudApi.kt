@@ -46,6 +46,11 @@ internal class CloudApi(origin: String, client: OkHttpClient, private val token:
     }
     suspend fun state(): JsonObject = http.json(url("api/device/state")).jsonObject
     suspend fun nextBrowse(): JsonObject? = http.text(url("api/device/browse/next"), "POST", buildJsonObject {}.body()).takeIf { it.isNotBlank() }?.let { kotlinx.serialization.json.Json.parseToJsonElement(it).jsonObject }
+    suspend fun nextService(): JsonObject? = http.text(url("api/device/services/next"), "POST", buildJsonObject {}.body()).takeIf { it.isNotBlank() }?.let { kotlinx.serialization.json.Json.parseToJsonElement(it).jsonObject }
+    suspend fun completeService(id: String, result: JsonObject) {
+        require(id.matches(Regex("[a-fA-F0-9-]{36}")))
+        http.open(url("api/device/services/$id/complete"), "POST", result.body()).close()
+    }
     suspend fun completeBrowse(id: String, result: JsonObject) {
         require(id.matches(Regex("[a-fA-F0-9-]{36}")))
         http.open(url("api/device/browse/$id/complete"), "POST", result.body()).close()

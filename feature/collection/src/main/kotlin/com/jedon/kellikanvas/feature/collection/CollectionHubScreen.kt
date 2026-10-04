@@ -66,7 +66,6 @@ fun CollectionHubScreen(
         ) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Top) {
                 KanvasPageHeader("Your collection", "The photo folders that make your gallery.", Modifier.weight(1f), "LIBRARY")
-                KanvasButton("Back", onBack)
             }
             loadError?.let { KanvasNotice(it, error = true) }
             Text("PHOTO FOLDERS · ${roots.size}", style = MaterialTheme.typography.labelMedium, color = KanvasColors.Muted)

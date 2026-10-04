@@ -113,7 +113,7 @@ class GoogleUiTest {
         compose.onNodeWithText("Enter this code: ABCD-EFGH").assertIsDisplayed()
         assertScannable(capture("google-photos-pairing-phone"), url)
         compose.onNodeWithText("Start again").performScrollTo().assertIsDisplayed().assertIsEnabled()
-        compose.onNodeWithText("Back").assertIsDisplayed()
+        compose.onNodeWithText("Back").assertDoesNotExist()
     }
 
     @Test fun expiredPhoneSignInCanRestartWithoutShowingAStaleQR() {
@@ -193,7 +193,7 @@ class GoogleUiTest {
     @Test fun configuredPhotosOffersPhoneSignIn() {
         setup(SourceKind.GOOGLE_PHOTOS, configuration = GoogleTvConfiguration("client", "client-secret")) {
             compose.onNodeWithText("Sign in using your phone").assertIsDisplayed().assertIsEnabled()
-            compose.onNodeWithText("Back").assertIsDisplayed().assertIsEnabled()
+            compose.onNodeWithText("Back").assertDoesNotExist()
             capture("google-photos-configured-tv")
         }
     }
@@ -203,7 +203,7 @@ class GoogleUiTest {
         setup(SourceKind.GOOGLE_DRIVE, onBack = { backs++ }) {
             compose.onNodeWithText("Continue with Google").assertIsDisplayed().assertIsEnabled()
             capture("google-drive-setup-tv")
-            compose.onNodeWithText("Back").performClick()
+            compose.runOnIdle { compose.activity.onBackPressedDispatcher.onBackPressed() }
             compose.waitUntil(5_000) { backs == 1 }
         }
     }
@@ -213,7 +213,7 @@ class GoogleUiTest {
     fun phoneShowsPhotosSetupAndBackWithoutClipping() {
         setup(SourceKind.GOOGLE_PHOTOS) {
             compose.onNodeWithText("Connect Google Photos").assertIsDisplayed()
-            compose.onNodeWithText("Back").assertIsDisplayed().assertIsEnabled()
+            compose.onNodeWithText("Back").assertDoesNotExist()
             compose.onNodeWithText("Sign in using your phone").performScrollTo().assertIsDisplayed().assertIsNotEnabled()
             capture("google-photos-setup-phone")
         }
