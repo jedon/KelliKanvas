@@ -73,7 +73,9 @@ class PhotoSurfaceView @JvmOverloads constructor(
     override fun onSurfaceTextureUpdated(surface: SurfaceTexture) {
         val callback = onPresented
         onPresented = null
-        callback?.invoke()
+        // Texture updates arrive inside drawing. Reordering siblings there can skip the
+        // outgoing view for one traversal; commit transitions after that draw has finished.
+        if (callback != null) post { callback() }
     }
 
     private fun configureBuffer(surface: SurfaceTexture, width: Int, height: Int) {
