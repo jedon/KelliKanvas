@@ -15,7 +15,10 @@ an explicitly selected Fade Through Black retains its intentional dark phase.
 1. On the TV, open **Account setup** and scan its QR code with your phone.
 2. Sign in at **https://kanvas.kelli.photo** and approve the matching TV code.
 3. Add **Immich**, select the linked TV, and tap **Find Immich on my network**.
-   Select DarklingNAS, then enter Kelli's Immich email and password. The TV
+   A single discovered server is selected automatically; when several are found,
+   choose DarklingNAS. The selected address is supplied automatically, so there is
+   no URL to type. Use **Enter a different server address** for manual setup.
+   Then enter Kelli's Immich email and password. The TV
    signs in locally and creates a restricted key for her photos. If Immich requires
    changing her initial password, do that in Immich first. **API key · Advanced**
    remains available for an existing key with `album.read`, `asset.read`,

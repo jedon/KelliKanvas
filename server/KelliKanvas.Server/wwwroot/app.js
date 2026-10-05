@@ -80,9 +80,21 @@ function providerChanged(){
   $("nas-group").hidden=p[0]!=="SMB";$("endpoint-group").hidden=p[0]==="SMB"||!!p[2];$("endpoint").value=p[2];$("endpoint").required=p[0]!=="SMB";$("host").required=$("share").required=p[0]==="SMB";$("username-label").textContent=p[3];$("secret-label").textContent=p[4];$("provider-help").textContent=p[5];$("secret").value="";
   $("immich-discovery").hidden=$("immich-method-group").hidden=!immich;$("username").required=false;
   $("connection-submit").textContent=immich?"Connect Immich":"Save connection";
-  $("service-status").textContent="";$("service-found").replaceChildren();
+  $("service-status").textContent="";$("service-found").replaceChildren();$("service-selection").hidden=$("service-manual").hidden=true;$("service-selected-name").textContent="";$("service-selected-address").textContent="";
   if(immich){$("name").value=$("name").value||"Immich";$("username").value=account?.user.email||"";immichMethodChanged();}
 }
+function selectImmichServer(server){
+  $("endpoint").value=server.endpoint;$("endpoint").required=false;$("endpoint-group").hidden=true;
+  $("service-selection").hidden=false;$("service-manual").hidden=false;$("service-selected-name").textContent=server.name;$("service-selected-address").textContent=server.endpoint;
+  for(const button of $("service-found").querySelectorAll("button"))button.setAttribute("aria-pressed",String(button.dataset.endpoint===server.endpoint));
+  $("service-status").textContent="Server selected. Enter your Immich login to connect.";
+}
+function enterImmichAddress(){
+  $("service-selection").hidden=true;$("endpoint-group").hidden=false;$("endpoint").required=true;$("service-manual").hidden=true;
+  for(const button of $("service-found").querySelectorAll("button"))button.setAttribute("aria-pressed","false");
+  $("service-status").textContent="Enter your Immich server address below.";$("endpoint").focus();
+}
+$("service-manual").onclick=enterImmichAddress;
 function immichMethodChanged(){
   const login=$("immich-method").value==="login";$("username-label").textContent=login?"Immich email":"Email (optional)";
   $("username").required=login;$("secret-label").textContent=login?"Immich password":"API key";$("secret").value="";
@@ -110,14 +122,19 @@ $("service-find").onclick=()=>act(async()=>{
   $("service-found").replaceChildren();
   try{
     const result=await integration("discover");
+    $("service-found").hidden=result.servers.length<2;
     $("service-status").textContent=result.servers.length?"Select your Immich server below, then sign in.":"No Immich server found on this network. You can enter its address below.";
-    for(const server of result.servers){const button=document.createElement("button");button.type="button";button.className="folder";button.textContent=server.name;button.onclick=()=>{$("endpoint").value=server.endpoint;$("service-status").textContent="Server selected. Enter your Immich login to connect.";$("username").focus();};$("service-found").append(button);}
+    for(const server of result.servers){const button=document.createElement("button");button.type="button";button.className="folder";button.textContent=server.name;button.dataset.endpoint=server.endpoint;button.setAttribute("aria-pressed","false");button.onclick=()=>{selectImmichServer(server);$("username").focus();};$("service-found").append(button);}
+    if(result.servers.length===1){selectImmichServer(result.servers[0]);$("service-status").textContent="Immich found and selected. Enter your email and password to connect.";}
+    else if(result.servers.length>1){$("endpoint").value="";$("endpoint").required=false;$("endpoint-group").hidden=true;$("service-selection").hidden=true;$("service-manual").hidden=false;}
+    else {enterImmichAddress();$("service-status").textContent="No Immich server found on this network. Enter its address below.";}
   }catch(error){$("service-status").textContent=error.message;throw error;}
 });
 $("provider").onchange=providerChanged;providerChanged();
 $("connection-form").onsubmit=e=>{e.preventDefault();act(async()=>{
   const provider=$("provider").value, name=$("name").value.trim(), configuration={endpoint:$("endpoint").value.trim(),username:$("username").value.trim(),secret:$("secret").value};
   if(provider==="IMMICH"){
+    if(!configuration.endpoint){$("service-find").focus();throw Error("Choose an Immich server from the results, or enter its address.");}
     const result=await integration($("immich-method").value,{...configuration,name});
     $("connection-form").reset();providerChanged();$("connection-details").open=false;await load();status("Immich connected. Choose an album for your slideshow.");
     openPicker(account.connections.find(c=>c.id===result.connectionId));return;
