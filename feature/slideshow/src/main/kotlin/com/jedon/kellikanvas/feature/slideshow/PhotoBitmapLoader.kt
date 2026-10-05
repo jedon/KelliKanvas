@@ -5,8 +5,11 @@ import android.graphics.BitmapFactory
 import androidx.core.graphics.scale
 import com.jedon.kellikanvas.source.PhotoByteStream
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import okio.Buffer
+import java.io.File
 import java.io.IOException
 
 object PhotoBitmapLoader {
@@ -20,22 +23,39 @@ object PhotoBitmapLoader {
      * build wrongly capped at 1920. Video does not take this path — MediaCodec writes into a
      * Surface. Still photos must stay on a bounded bitmap config and recycle aggressively.
      */
-    suspend fun decode(stream: PhotoByteStream, maxEdgePx: Int): Bitmap = try {
-        decodeBytes(stream, maxEdgePx)
-    } catch (failure: Throwable) {
-        // [decodeBytes] closes the stream once it enters `use`. A cancel between
-        // open() and that block would otherwise leak the file or SMB handle.
-        stream.close()
-        throw failure
+    suspend fun decode(stream: PhotoByteStream, maxEdgePx: Int, cacheDirectory: File? = null): Bitmap {
+        var owned: Bitmap? = null
+        try {
+            return withContext(Dispatchers.IO) {
+                require(maxEdgePx > 0) { "maxEdgePx must be positive" }
+                val file = File.createTempFile("kanvas-photo-", ".tmp", cacheDirectory)
+                try {
+                    // Bounded disk spool avoids two copies of a 40 MiB payload beside both frames.
+                    spool(stream, file)
+                    withContext(Dispatchers.Default) {
+                        owned = decodeFile(file, maxEdgePx)
+                        currentCoroutineContext().ensureActive()
+                        requireNotNull(owned)
+                    }
+                } finally {
+                    file.delete()
+                }
+            }
+        } catch (failure: Throwable) {
+            // Prompt cancellation can discard a withContext return after native decode completed.
+            owned?.recycle()
+            stream.close()
+            throw failure
+        }
     }
 
-    private suspend fun decodeBytes(stream: PhotoByteStream, maxEdgePx: Int): Bitmap = withContext(Dispatchers.Default) {
-        val bytes =
-            stream.use { s ->
-                require(maxEdgePx > 0) { "maxEdgePx must be positive" }
+    private suspend fun spool(stream: PhotoByteStream, file: File) {
+        stream.use { s ->
+            file.outputStream().buffered().use { output ->
                 val buffer = Buffer()
                 var totalRead = 0L
                 while (true) {
+                    currentCoroutineContext().ensureActive()
                     val toRead = minOf(8192L, MAX_COMPRESSED_BYTES - totalRead + 1L)
                     val read = s.read(buffer, toRead)
                     if (read == -1L) break
@@ -45,15 +65,17 @@ object PhotoBitmapLoader {
                             "Photo size exceeds maximum limit of 40 MiB",
                         )
                     }
+                    buffer.writeTo(output, read)
                 }
-                buffer.readByteArray()
             }
-
+        }
+    }
+    private fun decodeFile(file: File, maxEdgePx: Int): Bitmap {
         val bounds =
             BitmapFactory.Options().apply {
                 inJustDecodeBounds = true
             }
-        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+        BitmapFactory.decodeFile(file.absolutePath, bounds)
 
         val srcWidth = bounds.outWidth
         val srcHeight = bounds.outHeight
@@ -66,9 +88,9 @@ object PhotoBitmapLoader {
         // OOM backoff: retry coarser sampling if the panel-sized decode still exceeds heap.
         repeat(6) {
             try {
-                val decoded = decodeSampled(bytes, inSampleSize)
+                val decoded = decodeSampled(file, inSampleSize)
                 if (decoded != null) {
-                    return@withContext ensureMaxEdge(decoded, maxEdgePx)
+                    return ensureMaxEdge(decoded, maxEdgePx)
                 }
                 lastError = IOException("Failed to decode bitmap")
             } catch (oom: OutOfMemoryError) {
@@ -93,7 +115,7 @@ object PhotoBitmapLoader {
     }
 
     private fun decodeSampled(
-        bytes: ByteArray,
+        file: File,
         inSampleSize: Int,
     ): Bitmap? {
         val options =
@@ -102,7 +124,7 @@ object PhotoBitmapLoader {
                 // Opaque photos: half the heap of ARGB at the same resolution.
                 inPreferredConfig = Bitmap.Config.RGB_565
             }
-        return BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
+        return BitmapFactory.decodeFile(file.absolutePath, options)
     }
 
     private fun ensureMaxEdge(bitmap: Bitmap, maxEdgePx: Int): Bitmap {

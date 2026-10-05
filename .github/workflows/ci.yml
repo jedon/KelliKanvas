@@ -129,7 +129,8 @@ jobs:
           force-avd-creation: true
           emulator-boot-timeout: 600
           emulator-options: -no-snapshot -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim
-          disable-animations: true
+          # Photo compositor tests must observe real, timed transitions.
+          disable-animations: false
           script: >-
             ./gradlew --dependency-verification strict
             :source:saf:connectedDebugAndroidTest
@@ -137,4 +138,5 @@ jobs:
             :core:security:connectedDebugAndroidTest
             :platform:update:connectedDebugAndroidTest
             :renderer:surface:connectedDebugAndroidTest
+            :app:connectedDebugAndroidTest
             --stacktrace

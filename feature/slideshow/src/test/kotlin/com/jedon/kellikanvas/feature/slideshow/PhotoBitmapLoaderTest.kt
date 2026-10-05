@@ -3,6 +3,9 @@ package com.jedon.kellikanvas.feature.slideshow
 import android.graphics.Bitmap
 import com.google.common.truth.Truth.assertThat
 import com.jedon.kellikanvas.source.PhotoByteStream
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import okio.Buffer
 import org.junit.Before
@@ -13,10 +16,50 @@ import org.robolectric.annotation.Config
 import org.robolectric.shadows.ShadowBitmapFactory
 import java.io.ByteArrayOutputStream
 import java.io.IOException
+import java.nio.file.Files
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
 class PhotoBitmapLoaderTest {
+
+    @Test fun cancelledReadClosesSourceAndRemovesTheTemporaryPayload() = runTest {
+        val directory = Files.createTempDirectory("kanvas-decode-test").toFile()
+        val started = CompletableDeferred<Unit>()
+        var closed = false
+        val stream = object : PhotoByteStream(null) {
+            override suspend fun readAtMostTo(sink: Buffer, byteCount: Long): Long {
+                started.complete(Unit)
+                kotlinx.coroutines.awaitCancellation()
+            }
+            override fun close() {
+                closed = true
+            }
+        }
+        try {
+            val load = launch { PhotoBitmapLoader.decode(stream, 3840, directory) }
+            started.await()
+            assertThat(directory.listFiles()).hasLength(1)
+            load.cancelAndJoin()
+            assertThat(closed).isTrue()
+            assertThat(directory.listFiles()).isEmpty()
+        } finally {
+            directory.delete()
+        }
+    }
+
+    @Test fun successfulDecodeRemovesPayloadAndRetainsOnlyTheReturnedBitmap() = runTest {
+        val directory = Files.createTempDirectory("kanvas-decode-test").toFile()
+        try {
+            val stream = FakePhotoByteStream(createTestImageBytes(100, 100))
+            val decoded = PhotoBitmapLoader.decode(stream, 100, directory)
+            assertThat(directory.listFiles()).isEmpty()
+            assertThat(decoded.isRecycled).isFalse()
+            assertThat(stream.closed).isTrue()
+            decoded.recycle()
+        } finally {
+            directory.delete()
+        }
+    }
 
     @Before
     fun setUp() {

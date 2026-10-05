@@ -587,6 +587,8 @@ fun KelliKanvasNavHost(
                         adapters = slideshowState.adapters,
                         roots = slideshowState.roots,
                         slideDurationMillis = preferences.appPreferences.slideDurationMillis,
+                        transitionType = preferences.appPreferences.transitionType,
+                        transitionDurationMillis = preferences.appPreferences.transitionDurationMillis,
                         onExit = { navController.popBackStack() },
                         onRootFailures = { playlistRootFailures = it },
                     )

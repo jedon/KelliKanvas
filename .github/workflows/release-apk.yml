@@ -92,10 +92,11 @@ jobs:
           [[ "$(adb shell getprop sys.boot_completed | tr -d '\r')" == "1" ]]
           adb shell settings put global window_animation_scale 0
           adb shell settings put global transition_animation_scale 0
-          adb shell settings put global animator_duration_scale 0
+            adb shell settings put global animator_duration_scale 1
           ./gradlew --dependency-verification strict \
             :platform:update:connectedDebugAndroidTest \
-            :renderer:surface:connectedDebugAndroidTest --stacktrace
+            :renderer:surface:connectedDebugAndroidTest \
+            :app:connectedDebugAndroidTest --stacktrace
 
   build-unsigned:
     needs: device-security

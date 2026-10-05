@@ -59,6 +59,8 @@ internal class AppDreamSlideshowHost(
                             adapters = state.adapters,
                             roots = state.roots,
                             slideDurationMillis = preferences.slideDurationMillis,
+                            transitionType = preferences.transitionType,
+                            transitionDurationMillis = preferences.transitionDurationMillis,
                             onExit = {},
                         )
                     }

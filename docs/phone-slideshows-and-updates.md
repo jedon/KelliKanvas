@@ -1,11 +1,16 @@
 # Phone slideshow setup and updates
 
-Install **KelliKanvas-1.0.24.apk** on the TV. Versions 1.0.22 and newer can use
+Install **KelliKanvas-1.0.25.apk** on the TV. Versions 1.0.22 and newer can use
 **System → App updates → Check for updates**. Versions through 1.0.21 were
 built without an update verification key, so they cannot bootstrap this update.
 The new build keeps the existing signing certificate and preserves app data.
 Version 1.0.24 draws photos in the app's composed window to avoid black slides
 during navigation transitions, and uses the controller's Back button throughout.
+Version 1.0.25 preloads the next photo while the current one stays visible and
+uses the saved transition type and duration in both the app and screensaver.
+Slow or unreadable photos retain the current frame; loading is shown only before
+the first photo. Random transitions choose crossfade, slides, or pan/zoom;
+an explicitly selected Fade Through Black retains its intentional dark phase.
 
 1. On the TV, open **Account setup** and scan its QR code with your phone.
 2. Sign in at **https://kanvas.kelli.photo** and approve the matching TV code.

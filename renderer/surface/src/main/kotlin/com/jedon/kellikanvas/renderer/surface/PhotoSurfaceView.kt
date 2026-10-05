@@ -29,6 +29,7 @@ class PhotoSurfaceView @JvmOverloads constructor(
     private val paint = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG)
     private val drawMatrix = Matrix()
     private var frame: Bitmap? = null
+    private var onPresented: (() -> Unit)? = null
     private var panelWidth = 0
     private var panelHeight = 0
 
@@ -45,12 +46,14 @@ class PhotoSurfaceView @JvmOverloads constructor(
         }
     }
 
-    fun showFrame(bitmap: Bitmap?) {
+    fun showFrame(bitmap: Bitmap?, onPresented: (() -> Unit)? = null) {
         frame = bitmap
+        this.onPresented = onPresented
         redraw()
     }
 
     fun clearFrame() {
+        onPresented = null
         frame = null
         redraw()
     }
@@ -67,7 +70,11 @@ class PhotoSurfaceView @JvmOverloads constructor(
 
     override fun onSurfaceTextureDestroyed(surface: SurfaceTexture): Boolean = true
 
-    override fun onSurfaceTextureUpdated(surface: SurfaceTexture) = Unit
+    override fun onSurfaceTextureUpdated(surface: SurfaceTexture) {
+        val callback = onPresented
+        onPresented = null
+        callback?.invoke()
+    }
 
     private fun configureBuffer(surface: SurfaceTexture, width: Int, height: Int) {
         surface.setDefaultBufferSize(panelWidth.takeIf { it > 0 } ?: width, panelHeight.takeIf { it > 0 } ?: height)

@@ -10,11 +10,11 @@ import android.widget.TextView
 
 /** Debug-only real compositor fixture; never included in the distributed APK. */
 class PhotoRenderTestActivity : Activity() {
-    lateinit var photo: PhotoSurfaceView
+    lateinit var photo: PhotoTransitionView
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val parent = FrameLayout(this).apply { setBackgroundColor(Color.BLACK) }
-        photo = PhotoSurfaceView(this).apply { setFixedPanelSize(3840, 2160) }
+        photo = PhotoTransitionView(this).apply { setFixedPanelSize(3840, 2160) }
         parent.addView(photo, FrameLayout.LayoutParams(-1, -1))
         parent.addView(
             TextView(this).apply {

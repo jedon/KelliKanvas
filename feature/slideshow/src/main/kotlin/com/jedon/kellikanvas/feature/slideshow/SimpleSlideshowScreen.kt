@@ -22,7 +22,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -44,14 +46,19 @@ import com.jedon.kellikanvas.logging.DiagLog
 import com.jedon.kellikanvas.model.AssetRef
 import com.jedon.kellikanvas.model.SourceKind
 import com.jedon.kellikanvas.model.SourceProfileId
+import com.jedon.kellikanvas.model.TransitionType
 import com.jedon.kellikanvas.renderer.surface.DisplayPhotoTarget
-import com.jedon.kellikanvas.renderer.surface.PhotoSurfaceView
+import com.jedon.kellikanvas.renderer.surface.PhotoTransitionView
 import com.jedon.kellikanvas.renderer.surface.isTelevisionFormFactor
 import com.jedon.kellikanvas.renderer.surface.slideshowDecodeLongEdgePx
 import com.jedon.kellikanvas.source.SourceAdapter
 import com.jedon.kellikanvas.ui.tv.KanvasColors
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlin.coroutines.resume
 
 private const val TAG = "SimpleSlideshow"
 private const val DECODE_ERROR_DWELL_MS = 1_200L
@@ -64,6 +71,8 @@ fun SimpleSlideshowScreen(
     onExit: () -> Unit,
     modifier: Modifier = Modifier,
     slideDurationMillis: Long = 15_000,
+    transitionType: TransitionType = TransitionType.CROSSFADE,
+    transitionDurationMillis: Long = 700,
     maxEdgePx: Int? = null,
     onRootFailures: (List<String>) -> Unit = {},
 ) {
@@ -77,7 +86,15 @@ fun SimpleSlideshowScreen(
     var playlist by remember { mutableStateOf<List<AssetRef>?>(null) }
     var player by remember { mutableStateOf<SlideshowPlayerState?>(null) }
     var bitmap by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
-    var surfaceView by remember { mutableStateOf<PhotoSurfaceView?>(null) }
+    var surfaceView by remember { mutableStateOf<PhotoTransitionView?>(null) }
+    var displayedAsset by remember { mutableStateOf<AssetRef?>(null) }
+    var displayedIndex by remember { mutableIntStateOf(0) }
+    val scope = rememberCoroutineScope()
+    val prefetcher = remember(adapters, resolvedMaxEdge) {
+        PhotoPrefetcher(scope) { asset ->
+            PhotoBitmapLoader.decode(adapters.getValue(asset.profileId).open(asset), resolvedMaxEdge, context.cacheDir)
+        }
+    }
     var loadFailure by remember { mutableStateOf(false) }
     var rootFailureMessages by remember { mutableStateOf<List<String>>(emptyList()) }
     var photoLoadError by remember { mutableStateOf<String?>(null) }
@@ -108,8 +125,9 @@ fun SimpleSlideshowScreen(
     }
 
     BackHandler(onBack = onExit)
-    DisposableEffect(Unit) {
+    DisposableEffect(prefetcher) {
         onDispose {
+            prefetcher.close()
             surfaceView?.clearFrame()
             bitmap?.recycle()
             bitmap = null
@@ -129,12 +147,12 @@ fun SimpleSlideshowScreen(
         }
         focusRequester.requestFocus()
     }
-    LaunchedEffect(player?.playing, player?.index, playlist, bitmap, photoLoadError) {
+    LaunchedEffect(player?.playing, player?.index, playlist, bitmap, displayedIndex, photoLoadError) {
         val activePlayer = player ?: return@LaunchedEffect
         val activePlaylist = playlist ?: return@LaunchedEffect
-        if (activePlaylist.isEmpty() || !activePlayer.playing) return@LaunchedEffect
+        if (activePlaylist.size <= 1 || !activePlayer.playing) return@LaunchedEffect
         // Advance only while a photo is visible; decode failures skip via their own dwell.
-        if (photoLoadError != null || bitmap == null) return@LaunchedEffect
+        if (photoLoadError != null || bitmap == null || activePlayer.index != displayedIndex) return@LaunchedEffect
         delay(activePlayer.intervalMillis)
         activePlayer.next()
     }
@@ -162,24 +180,15 @@ fun SimpleSlideshowScreen(
         val index = activePlayer.index
         val asset = activePlaylist.getOrNull(index) ?: return@LaunchedEffect
         photoLoadError = null
-        // Drop the previous frame before decoding the next so we never hold two panel-sized
-        // bitmaps plus the compressed PNG bytes at once.
-        val previous = bitmap
-        bitmap = null
-        surfaceView?.clearFrame()
-        previous?.recycle()
-        val result =
-            runUnlessCancelled {
-                PhotoBitmapLoader.decode(
-                    adapters.getValue(asset.profileId).open(asset),
-                    resolvedMaxEdge,
-                )
-            }
-        val decoded = result.getOrNull()
-        bitmap = decoded
-        if (decoded != null) {
-            surfaceView?.showFrame(decoded)
+        if (asset == displayedAsset && bitmap != null) {
+            displayedIndex = index
+            consecutiveDecodeFailures = 0
+            if (activePlaylist.size > 1) prefetcher.prefetch(activePlaylist[(index + 1) % activePlaylist.size])
+            return@LaunchedEffect
         }
+        // Keep the current photo visible while a queued decode finishes (or a manual skip loads).
+        val result = runUnlessCancelled { prefetcher.take(asset) }
+        val decoded = result.getOrNull()
         if (decoded == null) {
             val reason =
                 result.exceptionOrNull()?.let { failure ->
@@ -189,7 +198,8 @@ fun SimpleSlideshowScreen(
             photoLoadError = reason
             consecutiveDecodeFailures += 1
             if (consecutiveDecodeFailures >= activePlaylist.size) {
-                // Every item failed — stay on the error so Back can exit.
+                // Keep the last good photo when all remaining reads fail; first-load errors stay actionable.
+                activePlayer.pause()
                 return@LaunchedEffect
             }
             delay(DECODE_ERROR_DWELL_MS)
@@ -197,8 +207,28 @@ fun SimpleSlideshowScreen(
                 activePlayer.next()
             }
         } else {
+            var presentationView: PhotoTransitionView? = null
+            var adopted = false
+            try {
+                val view = surfaceView ?: snapshotFlow { surfaceView }.filterNotNull().first()
+                presentationView = view
+                view.present(decoded, transitionType, transitionDurationMillis.coerceIn(0, (slideDurationMillis - 1).coerceAtLeast(0)))
+                val previous = bitmap
+                bitmap = decoded
+                displayedAsset = asset
+                displayedIndex = index
+                adopted = true
+                previous?.recycle()
+            } finally {
+                if (!adopted) {
+                    presentationView?.cancelTransition()
+                    decoded.recycle()
+                }
+            }
             consecutiveDecodeFailures = 0
             photoLoadError = null
+            // Only start another decode after the outgoing bitmap has been released: two frames maximum.
+            if (activePlaylist.size > 1) prefetcher.prefetch(activePlaylist[(index + 1) % activePlaylist.size])
         }
     }
 
@@ -226,11 +256,10 @@ fun SimpleSlideshowScreen(
             .onKeyAction(Key.NumPadEnter) { interact { player?.togglePause() } },
         contentAlignment = Alignment.Center,
     ) {
-        // SurfaceView owns still-photo pixels (panel-sized buffer). Overlay text for status.
-        // Video never uses this Compose/ARGB path — MediaCodec → Surface; stills must match.
+        // Two photo textures compose GPU transitions; no per-tick 4K bitmap allocation or redraw.
         AndroidView(
             factory = { ctx ->
-                PhotoSurfaceView(ctx).also { view ->
+                PhotoTransitionView(ctx).also { view ->
                     view.layoutParams =
                         ViewGroup.LayoutParams(
                             ViewGroup.LayoutParams.MATCH_PARENT,
@@ -249,12 +278,6 @@ fun SimpleSlideshowScreen(
             modifier = Modifier.fillMaxSize(),
             update = { view ->
                 surfaceView = view
-                val frame = bitmap
-                if (frame != null && !frame.isRecycled) {
-                    view.showFrame(frame)
-                } else {
-                    view.clearFrame()
-                }
             },
         )
         if (controlsVisible && bitmap != null && photoLoadError == null) {
@@ -268,7 +291,7 @@ fun SimpleSlideshowScreen(
                     if (maxWidth < 600.dp) {
                         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             Text(
-                                "${if (player?.playing == false) "Paused" else "Slideshow"}  ·  ${(player?.index ?: 0) + 1} / ${playlist?.size ?: 0}",
+                                "${if (player?.playing == false) "Paused" else "Slideshow"}  ·  ${displayedIndex + 1} / ${playlist?.size ?: 0}",
                                 style = MaterialTheme.typography.titleSmall,
                             )
                             Text(
@@ -284,7 +307,7 @@ fun SimpleSlideshowScreen(
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Text(if (player?.playing == false) "Paused" else "Slideshow", style = MaterialTheme.typography.titleSmall)
-                            Text("${(player?.index ?: 0) + 1} / ${playlist?.size ?: 0}", color = KanvasColors.Accent)
+                            Text("${displayedIndex + 1} / ${playlist?.size ?: 0}", color = KanvasColors.Accent)
                             Text(
                                 "← →  Browse     OK  ${if (player?.playing == false) "Play" else "Pause"}     Back  Gallery",
                                 color = KanvasColors.Muted,
@@ -320,7 +343,7 @@ fun SimpleSlideshowScreen(
                         )
                     }
                 }
-            photoLoadError != null ->
+            photoLoadError != null && bitmap == null ->
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     modifier = Modifier.padding(24.dp),
@@ -340,6 +363,11 @@ fun SimpleSlideshowScreen(
             bitmap == null -> Text(text = "Loading photo…", color = Color.White)
         }
     }
+}
+
+private suspend fun PhotoTransitionView.present(bitmap: android.graphics.Bitmap, type: TransitionType, durationMillis: Long) = suspendCancellableCoroutine<Unit> { continuation ->
+    transitionTo(bitmap, type, durationMillis) { if (continuation.isActive) continuation.resume(Unit) }
+    continuation.invokeOnCancellation { cancelTransition() }
 }
 
 /**
